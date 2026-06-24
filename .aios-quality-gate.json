@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "projectId": "career-ops",
+  "preCommitGates": [
+    "test_quality"
+  ],
+  "fullGates": [
+    "test_quality"
+  ]
+}

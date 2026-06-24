@@ -149,6 +149,12 @@ Top 5 cambios al CV + Top 5 cambios a LinkedIn.
 | Red flags | -X (si hay) |
 | **Global** | **X/5** |
 
+### Score gate (after Paso 2)
+
+After computing the Global Score:
+- **Score < 4.0/5**: skip Paso 3 (report) and Paso 4 (PDF). Write the tracker TSV (Paso 5) with status `NO APLICAR` and `pdf = ❌`. Output the JSON with `"report": null, "pdf": null`. Stop here.
+- **Score >= 4.0/5**: continue with Paso 3 and Paso 4.
+
 ### Paso 3 — Guardar Report .md
 
 Guardar evaluación completa en:
