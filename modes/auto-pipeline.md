@@ -19,6 +19,12 @@ Si el input es una **URL** (no texto de JD pegado), seguir esta estrategia para 
 ## Paso 1 — Evaluación A-F
 Ejecutar exactamente igual que el modo `oferta` (leer `modes/oferta.md` para todos los bloques A-F).
 
+## Score gate (after Paso 1)
+
+Check the Global Score computed in Paso 1:
+- **Score < 4.0/5**: skip Paso 2 and Paso 3. Tell the user the score and why you're skipping the report and PDF. Still update the tracker (Paso 5) with status `NO APLICAR`. Jump straight to Paso 5.
+- **Score >= 4.0/5**: continue with Paso 2 and Paso 3 as normal.
+
 ## Paso 2 — Guardar Report .md
 Guardar la evaluación completa en `reports/{###}-{company-slug}-{YYYY-MM-DD}.md` (ver formato en `modes/oferta.md`).
 

@@ -91,6 +91,11 @@ Incluir también:
 
 **SIEMPRE** después de generar los bloques A-F:
 
+### Score gate
+
+- If **Global Score < 4.0/5**: do NOT write a report file. Tell the user the score and that you're skipping the report. Still register in the tracker with status `NO APLICAR`. Stop here.
+- If **Global Score >= 4.0/5**: continue with steps 1–2 below.
+
 ### 1. Guardar report .md
 
 Guardar evaluación completa en `reports/{###}-{company-slug}-{YYYY-MM-DD}.md`.
