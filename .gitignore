@@ -25,6 +25,7 @@ modes/_profile.md
 # Generated
 .resolved-prompt-*
 node_modules/
+package-lock.json
 
 # OS
 .DS_Store
