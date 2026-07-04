@@ -244,6 +244,22 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 
 ---
 
+## Research & Lessons Learned -- MANDATORY
+
+`research/INDEX.md` is the thin index into `research/*` -- a growing set of standalone docs (market intel, company research, negotiation lessons, scoring calibration notes, etc.). It is User Layer (see Data Contract) and never touched by system updates.
+
+**The rule: no valuable lesson gets lost to a single conversation.** Whenever you or the user surfaces something worth remembering beyond the current session -- a market shift, a scoring miscalibration, a negotiation outcome, a pattern across rejections, a correction to how you evaluated something -- record it:
+
+1. Check `research/INDEX.md` for an existing doc on the topic. Prefer updating that doc over creating a near-duplicate.
+2. If none exists, create `research/{topic-slug}.md` (or `{topic-slug}-{YYYY-MM}.md` for time-bound research) and add a row to `research/INDEX.md`.
+3. Keep `research/INDEX.md` thin -- one row per doc, summary refreshed on update, no content inlined into the index itself.
+
+This is separate from and in addition to updating `modes/_profile.md` / `config/profile.yml` for personalization -- research docs capture *findings and lessons*, the profile files capture *who the user is*.
+
+**Job board search:** use the `firecrawl-search` skill (Firecrawl CLI) for job board queries, especially when WebSearch throughput/rate limits are a concern. Prefer it over spawning many parallel research agents for the same goal.
+
+---
+
 ## Stack and Conventions
 
 - Node.js (mjs modules), Playwright (PDF + scraping), YAML (config), HTML/CSS (template), Markdown (data), Canva MCP (optional visual CV)
