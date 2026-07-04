@@ -5,6 +5,7 @@
     "DATA_CONTRACT.md",
     "modes/_shared.md",
     "modes/pipeline.md",
+    "modes/scan.md",
     "update-system.mjs",
     ".local-overrides.json"
   ]
