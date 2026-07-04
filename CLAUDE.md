@@ -1,5 +1,13 @@
 # Career-Ops -- AI Job Search Pipeline
 
+## Operations Index (read first)
+
+**Before acting, consult [`INDEX.md`](INDEX.md)** — the thin routing map to every mode,
+doc, canonical source, and script. Open only the file(s) it points to instead of scanning
+the tree. Directory indexes: [`modes/INDEX.md`](modes/INDEX.md),
+[`docs/INDEX.md`](docs/INDEX.md), [`research/INDEX.md`](research/INDEX.md). The hard rules
+in this file remain in force regardless of what you load.
+
 ## Origin
 
 This system was built and used by [santifer](https://santifer.io) to evaluate 740+ job offers, generate 100+ tailored CVs, and land a Head of Applied AI role. The archetypes, scoring logic, negotiation scripts, and proof point structure all reflect his specific career search in AI/automation roles.
