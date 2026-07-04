@@ -17,6 +17,7 @@ jds/*
 
 # User config and customization (never auto-updated)
 config/profile.yml
+config/application-profile.json
 portals.yml
 modes/_profile.md
 .update-dismissed
@@ -29,6 +30,7 @@ package-lock.json
 .update-incoming/
 .scan-*.json
 .scan-tmp.mjs
+.playwright-mcp/
 
 # OS
 .DS_Store
