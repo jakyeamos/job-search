@@ -6,7 +6,7 @@ linkedin.com/in/jakyeamos
 
 PROFESSIONAL SUMMARY
 
-Full-stack software engineer with experience building enterprise applications, internal tooling, AI-enabled systems, and product-focused platforms across startups, consulting environments, Amazon engineering teams, and independent projects. Proven ability to ship quickly under pressure, lead end-to-end builds, and deliver measurable outcomes across healthcare, architecture, developer productivity, and consumer software. Strong technical foundation in TypeScript, JavaScript, Python, Java, Go, React, Next.js, Node.js, Docker, PostgreSQL, AWS, Prisma, tRPC, and real-time systems. Your GitHub profile and public repos now reinforce that with current work in monorepo product architecture, simulation systems, and AI-assisted development tooling.
+Full-stack software engineer with three Amazon SDE internships and startup engineering-leadership experience, building enterprise applications, internal tooling, AI-enabled systems, and product-focused platforms across startups, consulting environments, and independent projects. Proven ability to ship quickly under pressure, lead end-to-end builds, and deliver measurable outcomes across healthcare, architecture, developer productivity, and consumer software. Strong technical foundation in TypeScript, JavaScript, Python, Java, Go, React, Next.js, Node.js, Docker, PostgreSQL, AWS, Prisma, tRPC, and real-time systems, with current work in monorepo product architecture, simulation systems, and AI-assisted developer tooling.
 
 TECHNICAL SKILLS
 
@@ -34,7 +34,7 @@ Developed an inline coverage-vector tool for real-time testing coverage awarenes
 Software Development Engineer Intern
 Amazon | 2023 – 2025
 
-Contributed across multiple terms and teams, including Ads and FinTech/business systems environments.
+Completed three SDE internship terms across multiple teams, including Ads and FinTech/business systems environments.
 Enhanced customer process efficiency and pipeline testing capabilities across distributed systems infrastructure.
 Built a data analytics project that provided actionable hiring insights to business leaders and hiring managers.
 Completed coding projects that improved team efficiency and broadened internal testing capabilities.
