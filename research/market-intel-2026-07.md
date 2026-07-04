@@ -19,7 +19,7 @@ Worst entry-level market in over a decade -- but it reads as a broad hiring free
 ## Strategic Implications for This Search
 
 - Triage brief's Hard DQ on 3+ YOE postings is well-calibrated -- most postings genuinely drifted senior, this isn't over-filtering on our end.
-- Terrace/AIOS "AI-assisted dev tooling" analog archetype is undervalued in `modes/_brief.md` (currently Bonus-only). Given the 340% YoY surge in AI-fluency signal, consider promoting it to a Secondary archetype or adding a scoring bump when a JD explicitly signals AI-tool fluency expectations. **Status: proposed, not yet applied.**
+- Terrace/AIOS "AI-assisted dev tooling" analog archetype is undervalued in `modes/_brief.md` (currently Bonus-only). Given the 340% YoY surge in AI-fluency signal, consider promoting it to a Secondary archetype or adding a scoring bump when a JD explicitly signals AI-tool fluency expectations. **Status: applied 2026-07-03** -- promoted to Secondary, see `research/playbook-review-2026-07.md`.
 - Volume expectations reset: ~3 PASS-tier (4.0+) matches out of a 41-job batch is consistent with market conditions, not a sign the filters are too strict.
 
 ## Open Questions / Follow-ups
