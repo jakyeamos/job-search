@@ -21,6 +21,8 @@
 **RULE: For article/project metrics, article-digest.md takes precedence over cv.md.**
 **RULE: Read _profile.md AFTER this file. User customizations in _profile.md override defaults here.**
 
+**Exception -- triage pass:** `modes/triage.md` (first-pass batch scoring) reads ONLY `modes/_brief.md`, not the full stack above. This is a deliberate token-efficiency trade-off for high-volume batches -- see `modes/pipeline.md` Two-Pass Triage Gate. Full evaluations (`modes/oferta.md`) always read the complete context.
+
 ---
 
 ## Scoring System
