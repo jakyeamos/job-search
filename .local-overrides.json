@@ -1,0 +1,11 @@
+{
+  "_comment": "System-layer files that have been locally customized beyond upstream career-ops. update-system.mjs must NEVER blind-overwrite these on apply. Upstream versions are staged in .update-incoming/ for manual review/merge instead. Add a path here whenever you customize a file that is normally auto-updatable (see DATA_CONTRACT.md System Layer table).",
+  "paths": [
+    "CLAUDE.md",
+    "DATA_CONTRACT.md",
+    "modes/_shared.md",
+    "modes/pipeline.md",
+    "update-system.mjs",
+    ".local-overrides.json"
+  ]
+}

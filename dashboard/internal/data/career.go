@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/santifer/career-ops/dashboard/internal/model"
 )
@@ -14,15 +16,35 @@ import (
 var (
 	reReportLink     = regexp.MustCompile(`\[(\d+)\]\(([^)]+)\)`)
 	reScoreValue     = regexp.MustCompile(`(\d+\.?\d*)/5`)
-	reArchetype      = regexp.MustCompile(`(?i)\*\*Arquetipo(?:\s+detectado)?\*\*\s*\|\s*(.+)`)
+	reArchetype      = regexp.MustCompile(`(?i)\*\*(?:Arquetipo|Archetype)(?:\s+(?:detectado|detected))?\*\*\s*\|\s*(.+)`)
 	reTlDr           = regexp.MustCompile(`(?i)\*\*TL;DR\*\*\s*\|\s*(.+)`)
 	reTlDrColon      = regexp.MustCompile(`(?i)\*\*TL;DR:\*\*\s*(.+)`)
 	reRemote         = regexp.MustCompile(`(?i)\*\*Remote\*\*\s*\|\s*(.+)`)
 	reComp           = regexp.MustCompile(`(?i)\*\*Comp\*\*\s*\|\s*(.+)`)
-	reArchetypeColon = regexp.MustCompile(`(?i)\*\*Arquetipo:\*\*\s*(.+)`)
+	reArchetypeColon = regexp.MustCompile(`(?i)\*\*(?:Arquetipo|Archetype):\*\*\s*(.+)`)
+	reArchetypeYAML  = regexp.MustCompile(`(?m)^archetype:\s*"?([^"\n]+)"?\s*$`)
 	reReportURL      = regexp.MustCompile(`(?m)^\*\*URL:\*\*\s*(https?://\S+)`)
 	reBatchID        = regexp.MustCompile(`(?m)^\*\*Batch ID:\*\*\s*(\d+)`)
 )
+
+// resolveReportPath converts a report link from the tracker into a path
+// relative to careerOpsPath. Links are normally relative to the tracker
+// file's own directory (see merge-tracker.mjs link normalization, #760);
+// legacy trackers may still carry root-relative links, so fall back to the
+// raw link when the tracker-relative resolution does not exist on disk.
+func resolveReportPath(careerOpsPath, trackerPath, link string) string {
+	resolved := filepath.Join(filepath.Dir(trackerPath), link)
+	if _, err := os.Stat(resolved); err != nil {
+		legacy := filepath.Join(careerOpsPath, link)
+		if _, err2 := os.Stat(legacy); err2 == nil {
+			resolved = legacy
+		}
+	}
+	if rel, err := filepath.Rel(careerOpsPath, resolved); err == nil {
+		return rel
+	}
+	return link
+}
 
 // ParseApplications reads applications.md and returns parsed applications.
 // It tries both {path}/applications.md and {path}/data/applications.md for compatibility.
@@ -42,6 +64,12 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 	apps := make([]model.CareerApplication, 0)
 	num := 0
 
+	// Map columns by header name rather than fixed position, so a customized or
+	// reordered tracker (e.g. an inserted Location column) does not desync the
+	// reader. Falls back to the legacy fixed layout when no header is present.
+	// This matches the Node tracker tooling, which became header-aware in #954.
+	cols := resolveTrackerColumns(lines)
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "|---") || strings.HasPrefix(line, "| #") {
@@ -51,55 +79,54 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 			continue
 		}
 
-		// Detect delimiter: if line contains tabs, use tab-aware splitting
-		var fields []string
-		if strings.Contains(line, "\t") {
-			// Mixed format: starts with "| " then tab-separated
-			line = strings.TrimPrefix(line, "|")
-			line = strings.TrimSpace(line)
-			parts := strings.Split(line, "\t")
-			for _, p := range parts {
-				fields = append(fields, strings.TrimSpace(strings.Trim(p, "|")))
-			}
-		} else {
-			// Pure pipe format
-			line = strings.Trim(line, "|")
-			parts := strings.Split(line, "|")
-			for _, p := range parts {
-				fields = append(fields, strings.TrimSpace(p))
-			}
-		}
-
+		fields := splitTrackerRow(line)
 		if len(fields) < 8 {
 			continue
 		}
 
-		num++
-		app := model.CareerApplication{
-			Number:  num,
-			Date:    fields[1],
-			Company: fields[2],
-			Role:    fields[3],
-			Status:  fields[5],
-			HasPDF:  strings.Contains(fields[6], "\u2705"),
+		at := func(name string) string {
+			if idx, ok := cols[name]; ok && idx >= 0 && idx < len(fields) {
+				return fields[idx]
+			}
+			return ""
 		}
 
-		// Parse score (field 4 = Score column)
-		app.ScoreRaw = fields[4]
-		if sm := reScoreValue.FindStringSubmatch(fields[4]); sm != nil {
+		num++
+		trackerNumber := num
+		if parsedNumber, err := strconv.Atoi(at("num")); err == nil {
+			trackerNumber = parsedNumber
+		}
+		app := model.CareerApplication{
+			Number:  trackerNumber,
+			Date:    at("date"),
+			Company: at("company"),
+			Role:    at("role"),
+			Status:  at("status"),
+			HasPDF:  strings.Contains(at("pdf"), "\u2705"),
+		}
+
+		// Parse score from the Score column.
+		app.ScoreRaw = at("score")
+		if sm := reScoreValue.FindStringSubmatch(at("score")); sm != nil {
 			app.Score, _ = strconv.ParseFloat(sm[1], 64)
 		}
 
-		// Parse report link
-		if rm := reReportLink.FindStringSubmatch(fields[7]); rm != nil {
+		// Parse report link. Tracker links are written relative to the
+		// tracker file itself (e.g. ../reports/... when the tracker lives in
+		// data/), so resolve against the tracker's directory and normalize
+		// back to a careerOpsPath-relative path, which is what every
+		// consumer joins against. Legacy root-relative links are kept as a
+		// fallback when the resolved file does not exist.
+		if rm := reReportLink.FindStringSubmatch(at("report")); rm != nil {
 			app.ReportNumber = rm[1]
-			app.ReportPath = rm[2]
+			app.ReportPath = resolveReportPath(careerOpsPath, filePath, rm[2])
 		}
 
-		// Notes (field 8 if exists)
-		if len(fields) > 8 {
-			app.Notes = fields[8]
-		}
+		// Notes column, when present.
+		app.Notes = at("notes")
+
+		// Lift location / work mode / pay / last-contact out of the notes free-text
+		deriveNoteFields(&app)
 
 		apps = append(apps, app)
 	}
@@ -510,6 +537,8 @@ func LoadReportSummary(careerOpsPath, reportPath string) (archetype, tldr, remot
 		archetype = cleanTableCell(m[1])
 	} else if m := reArchetypeColon.FindStringSubmatch(text); m != nil {
 		archetype = cleanTableCell(m[1])
+	} else if m := reArchetypeYAML.FindStringSubmatch(text); m != nil {
+		archetype = strings.TrimSpace(m[1])
 	}
 
 	// Try table-format TL;DR first (most reports), then colon format
@@ -535,6 +564,91 @@ func LoadReportSummary(careerOpsPath, reportPath string) (archetype, tldr, remot
 	return
 }
 
+// splitTrackerRow splits a tracker table line into trimmed cell values, using
+// the same delimiter logic as ParseApplications: a mixed "| " + tab-separated
+// body, or a pure pipe-delimited row. Field 0 is the first real column (num), so
+// the returned indices match the legacy layout (Status is field 5).
+func splitTrackerRow(line string) []string {
+	line = strings.TrimSpace(line)
+	var fields []string
+	if strings.Contains(line, "\t") {
+		// Mixed format: starts with "| " then tab-separated.
+		line = strings.TrimPrefix(line, "|")
+		line = strings.TrimSpace(line)
+		for _, p := range strings.Split(line, "\t") {
+			fields = append(fields, strings.TrimSpace(strings.Trim(p, "|")))
+		}
+	} else {
+		// Pure pipe format.
+		line = strings.Trim(line, "|")
+		for _, p := range strings.Split(line, "|") {
+			fields = append(fields, strings.TrimSpace(p))
+		}
+	}
+	return fields
+}
+
+// trackerHeaderAliases maps a lowercased header cell to a canonical field name.
+// Mirrors HEADER_ALIASES in tracker-parse.mjs (including the Spanish aliases) so
+// the Go data layer tolerates the same customized layouts as the Node tracker
+// tooling after #954.
+var trackerHeaderAliases = map[string]string{
+	"#": "num", "num": "num", "date": "date",
+	"company": "company", "empresa": "company",
+	"role": "role", "puesto": "role",
+	"location": "location", "score": "score", "status": "status",
+	"pdf": "pdf", "report": "report", "notes": "notes",
+}
+
+// legacyTrackerColumns is the original fixed layout in splitTrackerRow field
+// space (num=0 … notes=8), used when no recognizable header row is present.
+var legacyTrackerColumns = map[string]int{
+	"num": 0, "date": 1, "company": 2, "role": 3, "score": 4,
+	"status": 5, "pdf": 6, "report": 7, "notes": 8,
+}
+
+// detectTrackerColumns scans for the table header row and maps canonical field
+// names to column indices in splitTrackerRow field space. It returns nil unless
+// the essential columns are all present, so a stray pipe line cannot yield a
+// bogus mapping and the caller falls back to legacyTrackerColumns. Mirrors
+// detectColumns in tracker-parse.mjs (#954).
+func detectTrackerColumns(lines []string) map[string]int {
+	for _, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
+			continue
+		}
+		cells := splitTrackerRow(line)
+		m := make(map[string]int)
+		for i, c := range cells {
+			if name, ok := trackerHeaderAliases[strings.ToLower(c)]; ok {
+				if _, seen := m[name]; !seen {
+					m[name] = i
+				}
+			}
+		}
+		complete := true
+		for _, k := range []string{"num", "company", "role", "score", "status"} {
+			if _, ok := m[k]; !ok {
+				complete = false
+				break
+			}
+		}
+		if complete {
+			return m
+		}
+	}
+	return nil
+}
+
+// resolveTrackerColumns returns the header-detected column map, falling back to
+// the legacy fixed layout when no header row is found.
+func resolveTrackerColumns(lines []string) map[string]int {
+	if m := detectTrackerColumns(lines); m != nil {
+		return m
+	}
+	return legacyTrackerColumns
+}
+
 // UpdateApplicationStatus updates the status of an application in applications.md.
 func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, newStatus string) error {
 	filePath := filepath.Join(careerOpsPath, "applications.md")
@@ -550,6 +664,11 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 	lines := strings.Split(string(content), "\n")
 	found := false
 
+	// Locate the Status column by header name so a customized layout (e.g. an
+	// inserted Location column) is written to the right cell. Falls back to the
+	// legacy fixed index when no header is present.
+	statusIdx := resolveTrackerColumns(lines)["status"]
+
 	for i, line := range lines {
 		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
 			continue
@@ -557,7 +676,7 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 		// Match by report number
 		if app.ReportNumber != "" && strings.Contains(line, fmt.Sprintf("[%s]", app.ReportNumber)) {
 			// Replace the status field
-			lines[i] = replaceStatusInLine(line, app.Status, newStatus)
+			lines[i] = replaceStatusInLine(line, app.Status, newStatus, statusIdx)
 			found = true
 			break
 		}
@@ -570,10 +689,75 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
 }
 
-// replaceStatusInLine replaces the old status with new status in a table line.
-func replaceStatusInLine(line, oldStatus, newStatus string) string {
-	// Case-insensitive replacement of the status field
-	return strings.Replace(line, oldStatus, newStatus, 1)
+// replaceStatusInLine rewrites only the Status cell of a tracker row, leaving
+// every other cell untouched. The previous implementation used
+// strings.Replace(line, oldStatus, …, 1), which replaces the first occurrence of
+// the status text anywhere in the row — so a status word appearing as a
+// substring of an earlier cell (e.g. Company "Applied Materials") was rewritten
+// instead of the Status cell, corrupting that cell while the status appeared to
+// stay unchanged (#1180). Matching is whole-cell (never a substring) and, as the
+// old comment claimed but the code did not, case-insensitive.
+//
+// statusField is the Status column index in splitTrackerRow field space (5 in
+// the legacy layout), resolved from the table header so a customized layout
+// (e.g. an inserted Location column) targets the right cell.
+func replaceStatusInLine(line, oldStatus, newStatus string, statusField int) string {
+	want := strings.TrimSpace(oldStatus)
+
+	// Mixed "| " + tab-separated format (mirrors ParseApplications). The body is
+	// tab-split, so cell index equals the field index.
+	if strings.Contains(line, "\t") {
+		prefix, body, found := strings.Cut(line, "|")
+		if !found {
+			return line
+		}
+		cells := strings.Split(body, "\t")
+		if idx := statusCellIndex(cells, statusField, want); idx >= 0 {
+			cells[idx] = spliceCellValue(cells[idx], newStatus)
+			return prefix + "|" + strings.Join(cells, "\t")
+		}
+		return line
+	}
+
+	// Pure pipe format. strings.Split keeps the segments between pipes; content
+	// cell N is segment N+1 (segment 0 is the empty text before the leading
+	// pipe), so the Status field maps to segment statusField+1.
+	segments := strings.Split(line, "|")
+	if idx := statusCellIndex(segments, statusField+1, want); idx >= 0 {
+		segments[idx] = spliceCellValue(segments[idx], newStatus)
+		return strings.Join(segments, "|")
+	}
+	return line
+}
+
+// statusCellIndex returns the index of the Status cell. It prefers the canonical
+// column (canonicalIdx, matching ParseApplications) and verifies it by value; if
+// that doesn't match — e.g. a custom tracker layout — it falls back to the first
+// cell that equals want exactly. Matching is whole-cell and case-insensitive,
+// never a substring, so a status word inside an earlier cell is never hit.
+// Returns -1 when nothing matches, so the caller leaves the row untouched rather
+// than corrupt a guess.
+func statusCellIndex(cells []string, canonicalIdx int, want string) int {
+	if canonicalIdx < len(cells) && strings.EqualFold(strings.TrimSpace(cells[canonicalIdx]), want) {
+		return canonicalIdx
+	}
+	for i, c := range cells {
+		if strings.EqualFold(strings.TrimSpace(c), want) {
+			return i
+		}
+	}
+	return -1
+}
+
+// spliceCellValue swaps a cell's inner value while preserving its surrounding
+// whitespace, so "| Applied |" becomes "| Interview |" rather than "|Interview|".
+func spliceCellValue(cell, newVal string) string {
+	trimmed := strings.TrimSpace(cell)
+	if trimmed == "" {
+		return cell
+	}
+	start := strings.Index(cell, trimmed)
+	return cell[:start] + newVal + cell[start+len(trimmed):]
 }
 
 // cleanTableCell removes trailing pipes and whitespace from a table cell value.
@@ -605,4 +789,130 @@ func StatusPriority(status string) int {
 	default:
 		return 8
 	}
+}
+
+// ComputeProgressMetrics computes progress-oriented analytics from applications.
+func ComputeProgressMetrics(apps []model.CareerApplication) model.ProgressMetrics {
+	pm := model.ProgressMetrics{}
+
+	// Count by normalized status
+	statusCounts := make(map[string]int)
+	var totalScore float64
+	var scored int
+
+	for _, app := range apps {
+		norm := NormalizeStatus(app.Status)
+		statusCounts[norm]++
+
+		if app.Score > 0 {
+			totalScore += app.Score
+			scored++
+			if app.Score > pm.TopScore {
+				pm.TopScore = app.Score
+			}
+		}
+
+		if norm == "offer" {
+			pm.TotalOffers++
+		}
+		if norm != "skip" && norm != "rejected" && norm != "discarded" {
+			pm.ActiveApps++
+		}
+	}
+
+	if scored > 0 {
+		pm.AvgScore = totalScore / float64(scored)
+	}
+
+	// Funnel: each stage counts all apps that reached at least that stage.
+	// An app in "interview" has passed through evaluated -> applied -> responded -> interview.
+	total := len(apps)
+	applied := statusCounts["applied"] + statusCounts["responded"] + statusCounts["interview"] + statusCounts["offer"] + statusCounts["rejected"]
+	responded := statusCounts["responded"] + statusCounts["interview"] + statusCounts["offer"]
+	interview := statusCounts["interview"] + statusCounts["offer"]
+	offer := statusCounts["offer"]
+
+	pm.FunnelStages = []model.FunnelStage{
+		{Label: "Evaluated", Count: total, Pct: 100.0},
+		{Label: "Applied", Count: applied, Pct: safePct(applied, total)},
+		{Label: "Responded", Count: responded, Pct: safePct(responded, applied)},
+		{Label: "Interview", Count: interview, Pct: safePct(interview, applied)},
+		{Label: "Offer", Count: offer, Pct: safePct(offer, applied)},
+	}
+
+	// Rates (relative to applied)
+	if applied > 0 {
+		pm.ResponseRate = float64(responded) / float64(applied) * 100
+		pm.InterviewRate = float64(interview) / float64(applied) * 100
+		pm.OfferRate = float64(offer) / float64(applied) * 100
+	}
+
+	// Score distribution
+	buckets := [5]int{} // 0: 4.5-5.0, 1: 4.0-4.4, 2: 3.5-3.9, 3: 3.0-3.4, 4: <3.0
+	for _, app := range apps {
+		if app.Score <= 0 {
+			continue
+		}
+		switch {
+		case app.Score >= 4.5:
+			buckets[0]++
+		case app.Score >= 4.0:
+			buckets[1]++
+		case app.Score >= 3.5:
+			buckets[2]++
+		case app.Score >= 3.0:
+			buckets[3]++
+		default:
+			buckets[4]++
+		}
+	}
+	pm.ScoreBuckets = []model.ScoreBucket{
+		{Label: "4.5-5.0", Count: buckets[0]},
+		{Label: "4.0-4.4", Count: buckets[1]},
+		{Label: "3.5-3.9", Count: buckets[2]},
+		{Label: "3.0-3.4", Count: buckets[3]},
+		{Label: "  <3.0", Count: buckets[4]},
+	}
+
+	// Weekly activity: group by ISO week from Date field, show last 8 weeks.
+	weekCounts := make(map[string]int)
+	for _, app := range apps {
+		if app.Date == "" {
+			continue
+		}
+		t, err := time.Parse("2006-01-02", app.Date)
+		if err != nil {
+			continue
+		}
+		year, week := t.ISOWeek()
+		key := fmt.Sprintf("%d-W%02d", year, week)
+		weekCounts[key]++
+	}
+
+	// Sort weeks and take last 8
+	var weeks []string
+	for w := range weekCounts {
+		weeks = append(weeks, w)
+	}
+	sort.Strings(weeks)
+	if len(weeks) > 8 {
+		weeks = weeks[len(weeks)-8:]
+	}
+
+	for _, w := range weeks {
+		pm.WeeklyActivity = append(pm.WeeklyActivity, model.WeekActivity{
+			Week:  w,
+			Count: weekCounts[w],
+		})
+	}
+
+	return pm
+}
+
+// safePct returns the percentage of part/whole, or 0 if whole is 0.
+func safePct(part, whole int) float64 {
+	if whole == 0 {
+		return 0
+	}
+	return float64(part) / float64(whole) * 100
 }
