@@ -11,6 +11,7 @@ These files contain your personal data, customizations, and work product. Update
 | `cv.md` | Your CV in markdown |
 | `config/profile.yml` | Your identity, targets, comp range |
 | `modes/_profile.md` | Your archetypes, narrative, negotiation scripts |
+| `modes/_brief.md` | Your compact triage brief (regenerated from cv.md/profile.yml/_profile.md, never overwritten by updates) |
 | `article-digest.md` | Your proof points from portfolio |
 | `interview-prep/story-bank.md` | Your accumulated STAR+R stories |
 | `portals.yml` | Your customized company list |
@@ -20,6 +21,7 @@ These files contain your personal data, customizations, and work product. Update
 | `reports/*` | Your evaluation reports |
 | `output/*` | Your generated PDFs |
 | `jds/*` | Your saved job descriptions |
+| `research/*` | Your market/company research and lessons-learned docs, indexed by `research/INDEX.md` |
 
 ## System Layer (safe to auto-update)
 
@@ -28,6 +30,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | File | Purpose |
 |------|---------|
 | `modes/_shared.md` | Scoring system, global rules, tools |
+| `modes/triage.md` | Fast first-pass triage scoring instructions |
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
 | `modes/scan.md` | Portal scanner instructions |
