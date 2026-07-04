@@ -17,7 +17,7 @@ Languages: English (Fluent), French (Intermediate)
 
 EXPERIENCE
 
-Lead Engineer
+CTO
 Forward Automations | 2023 – Present
 
 Delivered a Cleveland Clinic clinical coaching MVP in 2 weeks, managing full-stack architecture for a regulated healthcare deployment.
