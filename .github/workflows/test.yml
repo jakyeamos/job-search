@@ -9,16 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-      # Skip the postinstall (npx playwright install chromium); the tests
-      # never launch a browser, so the ~170 MB download is pure CI overhead.
-      - run: npm install --ignore-scripts
-      - run: node test-all.mjs --quick
+      # This fork carries dashboard/ but not the full upstream monorepo
+      # (scaffolder/, web/, and their internal test scripts), so test-all.mjs
+      # is not applicable here. Go dashboard tests are the only in-repo suite.
       - name: Go dashboard tests
         run: go test ./...
         working-directory: dashboard
