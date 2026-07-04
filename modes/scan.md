@@ -145,6 +145,8 @@ For companies with a public API or structured feed **that are not in `local_pars
 
 The `search_queries` with `site:` filters cover portals transversally (all Ashby, all Greenhouse, etc.). Useful for discovering NEW companies that are not yet in `tracked_companies`, but results might be outdated. After filtering out hits from companies in `local_parser_ok`, the remaining results are deduplicated with Levels 0–2.
 
+**Rate-limit fallback:** if WebSearch throughput/rate limits become a concern (per project `CLAUDE.md` → Research & Lessons Learned), run these queries through the `firecrawl-search` skill instead of raw WebSearch. It returns full page content per result (reducing the need for a separate liveness fetch) and avoids spawning multiple parallel research agents for the same goal.
+
 **Execution Priority:**
 1. Level 0: Local Parser → companies with a configured `parser:` and existing script; build `local_parser_ok`
 2. Level 1: Playwright → `tracked_companies` with a `careers_url`, **except** `local_parser_ok`
@@ -196,7 +198,7 @@ Levels are additive — they are executed in order, and results are merged and d
 
 6. **Level 3 — WebSearch Queries** (parallel if possible):
    For each query in `search_queries` with `enabled: true` (general queries by portal/role — not dedicated queries for a company with an active local parser):
-   a. Execute WebSearch with the defined `query`.
+   a. Execute WebSearch with the defined `query`. If WebSearch throughput/rate limits are a concern, use the `firecrawl-search` skill instead (same query, full page content returned).
    b. From each result, extract: `{title, url, company}`.
       - **title**: from the result title (before " @ " or " | ")
       - **url**: URL of the result
