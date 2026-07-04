@@ -57,8 +57,20 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `VERSION` | Current version number |
 | `DATA_CONTRACT.md` | This file |
 
+## Locally-Forked System Files (protected via `.local-overrides.json`)
+
+Some System Layer files have been locally customized beyond stock upstream career-ops (e.g. the two-pass triage gate in `modes/pipeline.md`/`modes/_shared.md`, or this document's `research/*` row). Blind-replacing these on update would silently destroy that work.
+
+`.local-overrides.json` lists every such path. `update-system.mjs apply` treats them specially: it never checks them out from upstream. Instead, the incoming upstream version is staged at `.update-incoming/<path>` for manual review/merge, and the local customized file is left untouched.
+
+**Rule: whenever you customize a System Layer file instead of just accepting upstream's version, add its path to `.local-overrides.json`.** Forgetting this step means the next `apply` will silently discard the customization.
+
+Currently overridden: `CLAUDE.md`, `DATA_CONTRACT.md`, `modes/_shared.md`, `modes/pipeline.md`, `update-system.mjs`, `.local-overrides.json`.
+
 ## The Rule
 
 **If a file is in the User Layer, no update process may read, modify, or delete it.**
 
-**If a file is in the System Layer, it can be safely replaced with the latest version from the upstream repo.**
+**If a file is in the System Layer and NOT in `.local-overrides.json`, it can be safely replaced with the latest version from the upstream repo.**
+
+**If a file is in the System Layer and IS in `.local-overrides.json`, it is locally forked — updates stage the upstream diff for manual review instead of overwriting it.**

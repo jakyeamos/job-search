@@ -16,7 +16,7 @@
  */
 
 import { execSync } from 'child_process';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -52,10 +52,13 @@ const SYSTEM_PATHS = [
   'dedup-tracker.mjs',
   'normalize-statuses.mjs',
   'cv-sync-check.mjs',
+  'doctor.mjs',
+  'check-liveness.mjs',
   'update-system.mjs',
   'batch/batch-prompt.md',
   'batch/batch-runner.sh',
   'dashboard/',
+  'plugins/',
   'templates/',
   'fonts/',
   '.claude/skills/',
@@ -83,6 +86,20 @@ const USER_PATHS = [
   'output/',
   'jds/',
 ];
+
+// Locally-customized system files — see .local-overrides.json.
+// These are never blind-overwritten; upstream versions are staged in
+// .update-incoming/ instead so the local customization can be manually
+// reviewed and merged.
+function loadOverrides() {
+  const p = join(ROOT, '.local-overrides.json');
+  if (!existsSync(p)) return [];
+  try {
+    return JSON.parse(readFileSync(p, 'utf-8')).paths || [];
+  } catch {
+    return [];
+  }
+}
 
 function localVersion() {
   const vPath = join(ROOT, 'VERSION');
@@ -180,10 +197,28 @@ async function apply() {
     console.log('Fetching latest from upstream...');
     git(`fetch ${CANONICAL_REPO} main`);
 
-    // 3. Checkout system files only
+    // 3. Checkout system files only — except locally-customized ones
     console.log('Updating system files...');
+    const overrides = loadOverrides();
+    const stagingDir = join(ROOT, '.update-incoming');
+    if (existsSync(stagingDir)) rmSync(stagingDir, { recursive: true });
     const updated = [];
+    const skipped = [];
     for (const path of SYSTEM_PATHS) {
+      if (overrides.includes(path)) {
+        // Locally customized: never overwrite. Stage the upstream version
+        // for manual review instead.
+        try {
+          const upstreamContent = git(`show FETCH_HEAD:${path}`);
+          const stagingPath = join(stagingDir, path);
+          mkdirSync(dirname(stagingPath), { recursive: true });
+          writeFileSync(stagingPath, upstreamContent + '\n');
+          skipped.push(path);
+        } catch {
+          // Path doesn't exist upstream (or is a directory) — nothing to stage
+        }
+        continue;
+      }
       try {
         git(`checkout FETCH_HEAD -- ${path}`);
         updated.push(path);
@@ -219,9 +254,9 @@ async function apply() {
 
     // 5. Install any new dependencies
     try {
-      execSync('npm install --silent', { cwd: ROOT, timeout: 60000 });
+      execSync('pnpm install --silent', { cwd: ROOT, timeout: 60000 });
     } catch {
-      console.log('npm install skipped (may need manual run)');
+      console.log('pnpm install skipped (may need manual run)');
     }
 
     // 6. Commit the update
@@ -239,6 +274,11 @@ async function apply() {
 
     console.log(`\nUpdate complete: v${local} → v${remote}`);
     console.log(`Updated ${updated.length} system paths.`);
+    if (skipped.length) {
+      console.log(`Skipped ${skipped.length} locally-customized path(s) (see .local-overrides.json):`);
+      for (const p of skipped) console.log(`  - ${p} → upstream version staged at .update-incoming/${p}`);
+      console.log('Review and merge these manually — your customizations were left untouched.');
+    }
     console.log(`Rollback available: node update-system.mjs rollback`);
 
   } finally {

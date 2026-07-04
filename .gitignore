@@ -26,6 +26,9 @@ modes/_profile.md
 .resolved-prompt-*
 node_modules/
 package-lock.json
+.update-incoming/
+.scan-*.json
+.scan-tmp.mjs
 
 # OS
 .DS_Store
