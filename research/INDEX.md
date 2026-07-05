@@ -11,6 +11,7 @@ This is the User Layer memory for the job search: market intel, company/industry
 | [playbook-review-2026-07.md](playbook-review-2026-07.md) | Review of the CS Career Playbook doc above | 2026-07-03 | Weak sourcing but sound thesis; added Data/Analytics/AI-ML Engineer as secondary archetypes + promoted AI-tooling analog; flagged portfolio project gap |
 | [pre-ipo-target-list-2026-07.md](pre-ipo-target-list-2026-07.md) | Targeted pre-IPO new-grad application list (28 companies) | 2026-07-04 | Tier-ranked US pre-IPO targets w/ named new-grad programs (Ramp, Watershed, Abridge, Notion, Mercury, OpenEvidence, Hippocratic AI); Cleveland Clinic MVP = healthtech hook; includes apply-order tracker vs current pipeline |
 | [pipeline-latency-lessons-2026-07.md](pipeline-latency-lessons-2026-07.md) | Evaluate-but-don't-ship costs offers | 2026-07-04 | 2 of 3 top picks (Replit 4.5, Salesforce 4.2) closed in the 3-month gap before applying; apply within days of a ≥4.0 eval; a 404 ≠ closed (re-check careers page) |
+| [scan-calibration-lessons-2026-07.md](scan-calibration-lessons-2026-07.md) | Scan fit-filtering + scanner infra | 2026-07-04 | Raw title-match ~100× the actionable set — filter US+non-defense+early-career before adding; "Associate" over-matches non-eng; geo-dupes; ATS drift (Temporal, W&B→CoreWeave, Tinybird); rebuilt missing scan.mjs (safe-by-default --write) |
 
 ## Conventions
 
