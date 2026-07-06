@@ -43,3 +43,10 @@ package-lock.json
 career-dashboard
 
 .quality-runner/
+
+# Generated / cache / audit output
+.aios/
+.turbo/
+.firecrawl/
+.pytest_cache/
+__pycache__/
