@@ -46,6 +46,9 @@ Jakye Amos -- Backend / AI / Product Software Engineer, New Grad (B.A. Computer 
 - Tenure: LaunchNY cohort organizational-intelligence venture; v1.1 shipped and pilot-ready, with human-reviewed extraction, permissioned wiki, cited Q&A, and process intelligence reports
 - BidCamp: live closed-beta multi-tenant government-contracting SaaS with Claude-powered RFP analysis, procurement intelligence, and tenant-scoped RLS
 - Quality Runner: published Python CLI and MCP server for evidence-backed quality orchestration
+- Framework Labs: public software research lab for reasoning engines; Concordia and Continuum are presented as in production, with Praxis in development
+- Chiron's Forge: live multi-AI research product producing skill files, research reports, and Cursor rules through independent judging and refinement
+- BBDSE/CourtIQ: basketball analytics and simulator/product suite; public deployment paused, public repository retained for evidence
 - Amazon SDE Intern (2023-2025): Ads + FinTech/business systems teams, pipeline testing across distributed infra
 - CrimClock: neutral legal time-intelligence platform with explainable procedural-timing and sentencing calculations
 - Hoopscout: private-beta recruiting-intelligence platform with coach-specific fit weighting, ranked school-fit signals, and trust operations
