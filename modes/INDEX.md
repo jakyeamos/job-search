@@ -20,6 +20,7 @@ Modes are System Layer except `_profile.md` (User Layer personalization). See
 | [training.md](training.md) | evaluates a course/cert | Training/course evaluation vs goals |
 | [project.md](project.md) | evaluates a project idea | Portfolio project evaluation |
 | [tracker.md](tracker.md) | "application status?" | Applications tracker overview |
+| [weekly.md](weekly.md) | "what should I do now?" / weekly review | Current job-search scoreboard, funnel diagnosis, and next actions |
 
 ## Context files (read as dependencies, not triggered directly)
 

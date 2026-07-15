@@ -37,6 +37,14 @@ Jakye Amos -- Backend / AI / Product Software Engineer, New Grad (B.A. Computer 
 | Data / Analytics Engineer | ETL/ELT, analytics, data pipelines, modeling, decision surfaces | Secondary -- lean on Amazon analytics, Dsci-proj, BBDSE/CourtIQ, Fantasy, and Tenure's pipeline |
 | Analog: AI-assisted dev tooling | agents, dev tooling, Claude Code / Copilot-adjacent, RAG/LLM pipelines | Secondary -- Quality Runner, Pre-CR, Terrace, TMCP, AIOS, and Anti-Slop are direct proof |
 
+## Search Operating Model
+
+- Objective: increase human conversations and screen-to-final conversion; do not optimize for more resume variants.
+- Weekly target: 15 high-fit applications, 15 warm messages, 5 follow-ups, 1 proof asset, 3 technical-practice sessions.
+- Default lane order: Backend / AI / platform → Applied AI / client delivery → Data / analytics → Product / full-stack → Solutions / forward-deployed.
+- Default project block: Tenure + BidCamp + Quality Runner. Swap to Pre-CR / AIOS for devtools, Dsci-proj / BBDSE for data, or Forward Automations / client work for solutions roles.
+- Application gate: live posting, truthful evidence, lane-specific resume, and company-site submission when available; follow with targeted outreach.
+
 ## Proof Points (exact metrics -- never invent, never round differently)
 
 - Cleveland Clinic clinical coaching MVP: shipped in 2 weeks, regulated healthcare deployment (Forward Automations)

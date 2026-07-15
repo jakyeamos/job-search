@@ -3,9 +3,13 @@
   "paths": [
     "CLAUDE.md",
     "DATA_CONTRACT.md",
+    ".gitignore",
+    "modes/INDEX.md",
     "modes/_shared.md",
     "modes/pipeline.md",
     "modes/scan.md",
+    "modes/tracker.md",
+    "modes/weekly.md",
     "update-system.mjs",
     ".local-overrides.json",
     ".github/",

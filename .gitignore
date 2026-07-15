@@ -1,5 +1,6 @@
 # Personal data (user fills these)
 data/applications.md
+data/search-ops.md
 data/pipeline.md
 data/scan-history.tsv
 reports/*.md
