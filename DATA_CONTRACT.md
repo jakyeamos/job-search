@@ -10,6 +10,7 @@ These files contain your personal data, customizations, and work product. Update
 |------|---------|
 | `cv.md` | Your CV in markdown |
 | `config/profile.yml` | Your identity, targets, comp range |
+| `config/google-sheets.json` | The user-owned Google Sheet target and tab mapping for tracker sync |
 | `modes/_profile.md` | Your archetypes, narrative, negotiation scripts |
 | `modes/_brief.md` | Your compact triage brief (regenerated from cv.md/profile.yml/_profile.md, never overwritten by updates) |
 | `article-digest.md` | Your proof points from portfolio |
@@ -45,10 +46,12 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/project.md` | Project evaluation instructions |
 | `modes/tracker.md` | Tracker instructions |
 | `modes/weekly.md` | Weekly job-search scoreboard and funnel review |
+| `modes/sheets.md` | Google Sheets refresh and non-destructive sync rules |
 | `modes/training.md` | Training evaluation instructions |
 | `modes/de/*` | German language modes |
 | `CLAUDE.md` | Agent instructions |
 | `*.mjs` | Utility scripts |
+| `sheets-export.mjs` | Builds the non-destructive Career Ops queue and weekly-board export packet |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `dashboard/*` | Go TUI dashboard |

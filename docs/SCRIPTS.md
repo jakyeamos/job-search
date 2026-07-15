@@ -24,6 +24,7 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `npm run scan:full` | `scan-ats-full.mjs` | Reverse ATS discovery scanner |
 | `npm run validate:portals` | `validate-portals.mjs` | Validate portals.yml shape before scanning |
 | `npm run tracker` | `tracker.mjs` | SQLite derived index over applications.md — sync/query/history/export |
+| `pnpm sheets:export` | `sheets-export.mjs` | Build the Career Ops Queue and Weekly Ops packet for the configured Google Sheet |
 | `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 
 ---

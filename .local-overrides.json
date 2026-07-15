@@ -3,6 +3,7 @@
   "paths": [
     "CLAUDE.md",
     "DATA_CONTRACT.md",
+    "package.json",
     ".gitignore",
     "modes/INDEX.md",
     "modes/_shared.md",
@@ -10,6 +11,10 @@
     "modes/scan.md",
     "modes/tracker.md",
     "modes/weekly.md",
+    "modes/sheets.md",
+    "sheets-export.mjs",
+    "config/google-sheets.example.json",
+    "docs/SCRIPTS.md",
     "update-system.mjs",
     ".local-overrides.json",
     ".github/",

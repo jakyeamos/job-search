@@ -21,6 +21,7 @@ Modes are System Layer except `_profile.md` (User Layer personalization). See
 | [project.md](project.md) | evaluates a project idea | Portfolio project evaluation |
 | [tracker.md](tracker.md) | "application status?" | Applications tracker overview |
 | [weekly.md](weekly.md) | "what should I do now?" / weekly review | Current job-search scoreboard, funnel diagnosis, and next actions |
+| [sheets.md](sheets.md) | refresh or sync the career tracker spreadsheet | Export and connector-backed Google Sheets refresh with non-destructive tab rules |
 
 ## Context files (read as dependencies, not triggered directly)
 

@@ -1,0 +1,15 @@
+{
+  "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit",
+  "tabs": {
+    "applications": "Applications",
+    "careerOpsQueue": "Career Ops Queue",
+    "weeklyOps": "Weekly Ops",
+    "outreach": "Outreach",
+    "dashboard": "Dashboard"
+  },
+  "syncPolicy": {
+    "evaluationsAreNotApplications": true,
+    "applicationStageIsManual": true,
+    "preserveManualApplicationsAndOutreach": true
+  }
+}

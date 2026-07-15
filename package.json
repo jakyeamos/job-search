@@ -31,6 +31,7 @@
     "validate:portals": "node validate-portals.mjs",
     "verify:portals": "node verify-portals.mjs",
     "tracker": "node tracker.mjs",
+    "sheets:export": "node sheets-export.mjs",
     "find": "node find.mjs",
     "patterns": "node analyze-patterns.mjs",
     "add": "node add-entry.mjs",

@@ -7,6 +7,7 @@ reports/*.md
 !reports/.gitkeep
 output/*
 !output/.gitkeep
+output/sheets/
 batch/logs/*
 !batch/logs/.gitkeep
 batch/batch-state.tsv
@@ -19,6 +20,7 @@ jds/*
 # User config and customization (never auto-updated)
 config/profile.yml
 config/application-profile.json
+config/google-sheets.json
 portals.yml
 modes/_profile.md
 .update-dismissed
