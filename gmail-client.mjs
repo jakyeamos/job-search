@@ -8,6 +8,8 @@
 
 export const TARGET_GMAIL_ACCOUNT = 'jakyejobs@gmail.com';
 export const GMAIL_MODIFY_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+export const GMAIL_SETTINGS_SCOPE = 'https://www.googleapis.com/auth/gmail.settings.basic';
+export const GMAIL_REQUIRED_SCOPES = [GMAIL_MODIFY_SCOPE, GMAIL_SETTINGS_SCOPE];
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const API_ROOT = 'https://gmail.googleapis.com/gmail/v1/users/me';

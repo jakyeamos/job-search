@@ -19,8 +19,10 @@ emails, and returns them as leads. The engine writes them to the pipeline.
 Put `GMAIL_CLIENT_ID` + `GMAIL_CLIENT_SECRET` + `GMAIL_REFRESH_TOKEN` in `.env`
 (an OAuth Desktop client + a refresh token authorized for `jakyejobs@gmail.com`).
 The organizer requires the Gmail modify scope
-`https://www.googleapis.com/auth/gmail.modify`; the ingest hook itself remains
-read-only. Configure the account, label, and lookback in `config/plugins.yml`:
+`https://www.googleapis.com/auth/gmail.modify` plus the filter-management scope
+`https://www.googleapis.com/auth/gmail.settings.basic`; the ingest hook itself
+remains read-only. Configure the account, label, and lookback in
+`config/plugins.yml`:
 
 ```yaml
 plugins:

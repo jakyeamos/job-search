@@ -13,10 +13,9 @@ import {
 } from './gmail-client.mjs';
 import {
   companyFromUrl,
-  extractUrls,
+  extractJobUrls,
   getMessageBody,
   isAuthenticEmail,
-  isCleanUrl,
   parseRoleAtCompany,
 } from './plugins/gmail/_helpers.mjs';
 import { loadDotenvOnce } from './plugins/_engine.mjs';
@@ -28,8 +27,8 @@ export const ORGANIZER_STATE_PATH = 'data/gmail-organizer-state.json';
 /**
  * These rules are deliberately sender/domain + job-language based. They are
  * installed as Gmail filters, so new messages are organized before the daily
- * queue refresh runs. A source-specific label is always accompanied by the
- * parent `Job Leads` label consumed by the queue.
+ * queue refresh runs. Gmail permits one user label per filter action, so each
+ * source produces a parent-label filter and a source-label filter.
  */
 export const SOURCE_RULES = [
   {
@@ -112,7 +111,7 @@ export function classifyAlert(input) {
   const from = headerValue(headers, 'from');
   const domain = senderDomain(from);
   const body = input.body || '';
-  const urls = input.urls || extractUrls(body).filter(isCleanUrl);
+  const urls = input.urls || extractJobUrls(body);
   const combined = `${subject}\n${body}`;
   const known = SOURCE_RULES.find((rule) => domainMatches(domain, rule.domains));
 
@@ -230,15 +229,27 @@ async function ensureLabels(client, names, dryRun) {
 /** @param {Record<string, string>} labelIds */
 export function buildFilterPlan(labelIds) {
   const parentId = labelIds[JOB_LEADS_LABEL] || `DRY_RUN:${JOB_LEADS_LABEL}`;
-  return SOURCE_RULES.map((rule) => ({
-    source: rule.source,
-    label: rule.label,
-    criteria: { query: rule.query },
-    action: {
-      addLabelIds: [parentId, labelIds[`Job Leads/${rule.label}`] || `DRY_RUN:Job Leads/${rule.label}`],
-      removeLabelIds: ['INBOX', 'UNREAD'],
-    },
-  }));
+  return SOURCE_RULES.flatMap((rule) => {
+    const sourceId = labelIds[`Job Leads/${rule.label}`] || `DRY_RUN:Job Leads/${rule.label}`;
+    const criteria = { query: rule.query };
+    const removeLabelIds = ['INBOX', 'UNREAD'];
+    return [
+      {
+        source: rule.source,
+        label: rule.label,
+        labelRole: 'parent',
+        criteria,
+        action: { addLabelIds: [parentId], removeLabelIds },
+      },
+      {
+        source: rule.source,
+        label: rule.label,
+        labelRole: 'source',
+        criteria,
+        action: { addLabelIds: [sourceId], removeLabelIds },
+      },
+    ];
+  });
 }
 
 /** @param {Record<string, unknown>} filter @param {Record<string, unknown>} plan */
@@ -284,9 +295,9 @@ export async function setupFilters(options = {}) {
     if (matching) continue;
     if (!dryRun) {
       const createdFilter = await client.createFilter({ criteria: plan.criteria, action: plan.action });
-      created.push({ source: plan.source, id: createdFilter.id || null });
+      created.push({ source: plan.source, labelRole: plan.labelRole, id: createdFilter.id || null });
     } else {
-      created.push({ source: plan.source, id: null });
+      created.push({ source: plan.source, labelRole: plan.labelRole, id: null });
     }
   }
 
@@ -295,7 +306,7 @@ export async function setupFilters(options = {}) {
     writeState(root, {
       ...state,
       account_email: accountEmail,
-      filter_sources: plans.map((plan) => plan.source),
+      filter_sources: [...new Set(plans.map((plan) => plan.source))],
       updated_at: new Date().toISOString(),
     });
   }
@@ -354,7 +365,7 @@ export async function organizeGmail(options = {}) {
       continue;
     }
     const body = getMessageBody(payload);
-    const urls = extractUrls(body).filter(isCleanUrl).slice(0, 20);
+    const urls = extractJobUrls(body).slice(0, 20);
     const classification = classifyAlert({ headers, subject, body, urls });
     if (classification.confidence !== 'high') {
       skipped++;

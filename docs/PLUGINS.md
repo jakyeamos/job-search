@@ -32,8 +32,9 @@ node plugins.mjs run gmail
 
 The organizer verifies `jakyejobs@gmail.com`, applies `Job Leads` plus a
 source label, marks high-confidence alerts read, and archives them. It leaves
-uncertain messages untouched. The Gmail modify scope is required only for the
-organizer; the ingest plugin never changes messages.
+uncertain messages untouched. The organizer requires both the Gmail modify and
+Gmail settings-basic scopes for persistent filters; the ingest plugin never
+changes messages.
 
 Two gates must both be satisfied for a plugin to run: it must be **enabled**
 (`node plugins.mjs enable <id> --confirm`, which records your consent) **and** its

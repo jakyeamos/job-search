@@ -9,6 +9,7 @@ import {
   scoreCandidate,
   stableQueueId,
 } from '../queue-lib.mjs';
+import { extractJobUrls } from '../plugins/gmail/_helpers.mjs';
 
 test('known TeamWork Online alert is high confidence and source labeled', () => {
   const result = classifyAlert({
@@ -32,6 +33,29 @@ test('uncertain email is not promoted to the queue label', () => {
   assert.equal(result.confidence, 'uncertain');
 });
 
+test('Gmail intake keeps job links and drops HTML assets and account links', () => {
+  const urls = extractJobUrls([
+    '<a href="https://www.linkedin.com/jobs/view/123">View job</a>',
+    '<a href="https://www.linkedin.com/comm/jobs/search?originToLandingJobPostings=123&otpToken=secret">Search jobs</a>',
+    '<img src="https://scontent.cdninstagram.com/image.jpg">',
+    '<a href="https://accounts.google.com/AccountChooser?Email=jakyejobs@gmail.com">Manage account</a>',
+    '<a href="https://www.teamworkonline.com/">TeamWork Online</a>',
+    '<a href="https://www.teamworkonline.com/jobs-in-sports">Jobs in Sports</a>',
+    '<a href="https://www.teamworkonline.com/jobs/2179445">View job</a>',
+    '<a href="https://www.linkedin.com/comm/feed/">Open LinkedIn</a>',
+    '<a href="https://www.teamworkonline.com/dashboard">Dashboard</a>',
+    '<a href="https://www.glassdoor.com/partner/jobListing.htm?jobListingId=123&src=GD_JOB_AD&utm_campaign=jobs">Apply</a>',
+    '<a href="https://www.glassdoor.com/Job/new-york-ny-software-engineer-jobs-SRCH.htm">Search jobs</a>',
+    '<a href="https://email.supabase.com/e/c/encoded-tracking-id">View jobs</a>',
+    '<a href="https://career41.sapsf.com/careers?company=example">Careers</a>',
+  ].join(' '));
+  assert.deepEqual(urls, [
+    'https://www.linkedin.com/jobs/view/123',
+    'https://www.teamworkonline.com/jobs/2179445',
+    'https://www.glassdoor.com/partner/jobListing.htm?jobListingId=123',
+  ]);
+});
+
 test('Gmail organizer rejects a different configured account', () => {
   assert.throws(() => assertTargetAccount('someone-else@example.com'), /jakyejobs@gmail\.com/);
   assert.doesNotThrow(() => assertTargetAccount('jakyejobs@gmail.com'));
@@ -46,9 +70,10 @@ test('filter plan applies parent/source labels and archives alerts', () => {
     'Job Leads/Built In': 'builtin',
     'Job Leads/TeamWork Online': 'teamwork',
   });
-  assert.equal(plan.length, 5);
+  assert.equal(plan.length, 10);
   assert.deepEqual(plan[0].action.removeLabelIds, ['INBOX', 'UNREAD']);
-  assert.deepEqual(plan[0].action.addLabelIds, ['parent', 'linkedin']);
+  assert.deepEqual(plan[0].action.addLabelIds, ['parent']);
+  assert.deepEqual(plan[1].action.addLabelIds, ['linkedin']);
 });
 
 test('source filter queries use Gmail OR braces for multi-domain senders', () => {

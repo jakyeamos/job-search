@@ -9,7 +9,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
-import { discoverPlugins, pluginRoots, pluginStatus } from './plugins/_engine.mjs';
+import { discoverPlugins, loadDotenvOnce, pluginRoots, pluginStatus } from './plugins/_engine.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -302,6 +302,7 @@ function checkPlugins(root) {
 }
 
 async function main() {
+  await loadDotenvOnce();
   console.log('\ncareer-ops doctor');
   console.log('================\n');
 

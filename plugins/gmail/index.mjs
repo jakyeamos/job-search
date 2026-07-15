@@ -1,6 +1,6 @@
 // @ts-check
 // Gmail ingest remains read-only. Label creation/message organization lives in
-// gmail.mjs and requires the explicit Gmail modify scope.
+// gmail.mjs and requires the explicit Gmail modify and settings-basic scopes.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 
@@ -8,10 +8,9 @@ import { createGmailClient, TARGET_GMAIL_ACCOUNT } from '../../gmail-client.mjs'
 import { assertTargetAccount, classifyAlert } from '../../gmail.mjs';
 import {
   companyFromUrl,
-  extractUrls,
+  extractJobUrls,
   getMessageBody,
   isAuthenticEmail,
-  isCleanUrl,
   parseRoleAtCompany,
 } from './_helpers.mjs';
 
@@ -92,7 +91,7 @@ const plugin = {
         continue;
       }
       const body = getMessageBody(payload);
-      const urls = extractUrls(body).filter(isCleanUrl);
+      const urls = extractJobUrls(body);
       const classification = classifyAlert({ headers, subject, body, urls });
       if (classification.confidence !== 'high') {
         log(`gmail: skipping unclassified labeled email "${subject}"`);

@@ -216,15 +216,11 @@ chmod 600 "$ENV_FILE"
 step "Close the Google Cloud credentials tab before continuing."
 
 stage "Authorize exactly jakyejobs@gmail.com" 5
-say "Generate a refresh token with the Gmail modify scope for the target account only."
-open_url "https://developers.google.com/oauthplayground"
-step "Enable Use your own OAuth credentials and paste the client ID and secret saved in .env."
-step "Use this scope: https://www.googleapis.com/auth/gmail.modify"
-step "Authorize jakyejobs@gmail.com, exchange the authorization code, and copy the refresh token."
-ask_secret GMAIL_REFRESH_TOKEN "Paste the refresh token:"
-write_env GMAIL_REFRESH_TOKEN "$GMAIL_REFRESH_TOKEN"
-chmod 600 "$ENV_FILE"
-step "Close the OAuth Playground and Google Cloud tabs before continuing."
+say "Generate a refresh token with Gmail message and filter-management scopes for the target account only."
+step "The Desktop OAuth client will use a temporary local callback and PKCE; OAuth Playground is not used."
+step "Run node scripts/gmail-oauth.mjs and open its authorization URL in Chrome Beta while signed into jakyejobs@gmail.com."
+node scripts/gmail-oauth.mjs
+step "Close the authorization tab before continuing."
 
 stage "Verify account and install Gmail filters" 2
 if [[ ! -f config/plugins.yml ]]; then
