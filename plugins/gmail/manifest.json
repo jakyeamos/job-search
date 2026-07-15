@@ -3,7 +3,7 @@
   "name": "Gmail ingest",
   "version": "1.0.0",
   "apiVersion": 1,
-  "description": "Pull job leads from a Gmail label into your pipeline (read-only, your OAuth token).",
+  "description": "Pull job leads from the verified target Gmail label into the pipeline (read-only ingest).",
   "hooks": ["ingest"],
   "requiredEnv": ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"],
   "allowedHosts": ["oauth2.googleapis.com", "gmail.googleapis.com"],

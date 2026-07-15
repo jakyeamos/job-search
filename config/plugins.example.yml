@@ -1,0 +1,7 @@
+plugins:
+  gmail:
+    enabled: true
+    account_email: "jakyejobs@gmail.com"
+    label: "Job Leads"
+    days_back: 7
+    max_messages: 200

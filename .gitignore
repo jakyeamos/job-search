@@ -1,8 +1,15 @@
 # Personal data (user fills these)
+.env
+config/plugins.yml
 data/applications.md
 data/search-ops.md
 data/pipeline.md
 data/scan-history.tsv
+data/job-queue.json
+data/job-queue.md
+data/gmail-state.json
+data/gmail-organizer-state.json
+data/.job-queue.lock
 reports/*.md
 !reports/.gitkeep
 output/*

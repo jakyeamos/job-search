@@ -6,7 +6,8 @@ license: MIT
 
 # gmail plugin
 
-Reads a Gmail label, extracts clean job URLs from authentic (DMARC-passing)
+Reads the `Job Leads` label for the verified target account
+`jakyejobs@gmail.com`, extracts clean job URLs from authentic (DMARC-passing)
 emails, and returns them as leads. The engine writes them to the pipeline.
 
 ## Command
@@ -16,12 +17,19 @@ emails, and returns them as leads. The engine writes them to the pipeline.
 ## Setup
 
 Put `GMAIL_CLIENT_ID` + `GMAIL_CLIENT_SECRET` + `GMAIL_REFRESH_TOKEN` in `.env`
-(an OAuth Desktop client + a refresh token from the consent flow). Configure the
-label + lookback in `config/plugins.yml`:
+(an OAuth Desktop client + a refresh token authorized for `jakyejobs@gmail.com`).
+The organizer requires the Gmail modify scope
+`https://www.googleapis.com/auth/gmail.modify`; the ingest hook itself remains
+read-only. Configure the account, label, and lookback in `config/plugins.yml`:
 
 ```yaml
 plugins:
-  gmail: { enabled: true, label: "Job Leads", days_back: 7 }
+  gmail:
+    enabled: true
+    account_email: "jakyejobs@gmail.com"
+    label: "Job Leads"
+    days_back: 7
+    max_messages: 200
 ```
 
 ## Data it produces

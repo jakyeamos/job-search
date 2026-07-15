@@ -18,6 +18,23 @@ node plugins.mjs enable <id>   # show the capability card (then add --confirm)
 node plugins.mjs skill <id>    # print a plugin's how-to (if it ships one)
 ```
 
+For the bundled Gmail job-alert flow, use the local account-bound organizer
+before ingesting:
+
+```bash
+node gmail.mjs status
+node gmail.mjs setup-filters --dry-run
+node gmail.mjs setup-filters
+node gmail.mjs organize --dry-run
+node plugins.mjs run gmail --dry-run
+node plugins.mjs run gmail
+```
+
+The organizer verifies `jakyejobs@gmail.com`, applies `Job Leads` plus a
+source label, marks high-confidence alerts read, and archives them. It leaves
+uncertain messages untouched. The Gmail modify scope is required only for the
+organizer; the ingest plugin never changes messages.
+
 Two gates must both be satisfied for a plugin to run: it must be **enabled**
 (`node plugins.mjs enable <id> --confirm`, which records your consent) **and** its
 keys must be in your `.env`. `node doctor.mjs` shows what's missing.

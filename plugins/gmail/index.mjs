@@ -1,145 +1,129 @@
 // @ts-check
-// ── Reference seed ── This bundled plugin is a stable, reviewed example. To
-// extend it, publish career-ops-plugin-<id> with "supersedesBundled": true and
-// your version takes precedence once installed (see docs/PLUGINS.md). Bundled
-// seeds take only security/compat fixes — feature work happens in the successor repo.
-//
-// Gmail ingest plugin — pulls job leads from a Gmail label into your pipeline.
-//
-// Ported from the email-driven ingestion contributed by @SparshGarg999 in #1203
-// (with thanks), reshaped to the plugin contract: OAuth credentials come from
-// the scoped ctx.env (not credential files), the label/days_back come from
-// ctx.settings (config/plugins.yml), and the hook RETURNS Job[] — the engine
-// (plugins.mjs), not this plugin, writes them to pipeline.md canonically. No
-// `search://` rows are emitted (they aren't real URLs the pipeline can open).
-//
-// Enable in config/plugins.yml:
-//   gmail: { enabled: true, label: "Job Leads", days_back: 7 }
-// Add to .env: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN.
-// Run:  node plugins.mjs run gmail
+// Gmail ingest remains read-only. Label creation/message organization lives in
+// gmail.mjs and requires the explicit Gmail modify scope.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+
+import { createGmailClient, TARGET_GMAIL_ACCOUNT } from '../../gmail-client.mjs';
+import { assertTargetAccount, classifyAlert } from '../../gmail.mjs';
 import {
-  extractUrls, isCleanUrl, isAuthenticEmail, parseRoleAtCompany,
-  getMessageBody, companyFromUrl,
+  companyFromUrl,
+  extractUrls,
+  getMessageBody,
+  isAuthenticEmail,
+  isCleanUrl,
+  parseRoleAtCompany,
 } from './_helpers.mjs';
 
-const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me';
-const STATE_PATH = 'data/gmail-state.json'; // the plugin's own processed-id cursor
+const STATE_PATH = 'data/gmail-state.json';
 
-/** Exchange the long-lived refresh token for a short-lived access token. */
-async function getAccessToken({ clientId, clientSecret, refreshToken }, fetchFn = globalThis.fetch) {
-  const res = await fetchFn(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Gmail token refresh failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
-  }
-  const data = await res.json();
-  if (!data.access_token) throw new Error('Gmail token refresh returned no access_token');
-  return data.access_token;
-}
-
+/** @returns {Set<string>} */
 function loadProcessedIds() {
   if (!existsSync(STATE_PATH)) return new Set();
   try {
-    const state = JSON.parse(readFileSync(STATE_PATH, 'utf-8'));
-    return new Set(state.processed_message_ids || []);
-  } catch {
-    return new Set();
-  }
+    const state = JSON.parse(readFileSync(STATE_PATH, 'utf8'));
+    return new Set(Array.isArray(state.processed_message_ids)
+      ? state.processed_message_ids.filter((id) => typeof id === 'string')
+      : []);
+  } catch { return new Set(); }
 }
 
-function saveProcessedIds(ids) {
-  try {
-    mkdirSync('data', { recursive: true });
-    writeFileSync(STATE_PATH, JSON.stringify({ processed_message_ids: [...ids] }, null, 2), 'utf-8');
-  } catch (err) {
-    console.warn(`gmail: could not persist processed-id state — ${err.message}`);
-  }
+/** @param {Set<string>} ids @param {boolean} dryRun */
+function saveProcessedIds(ids, dryRun) {
+  if (dryRun) return;
+  mkdirSync('data', { recursive: true });
+  writeFileSync(STATE_PATH, JSON.stringify({
+    account_email: TARGET_GMAIL_ACCOUNT,
+    processed_message_ids: [...ids].slice(-5000),
+    updated_at: new Date().toISOString(),
+  }, null, 2) + '\n', 'utf8');
 }
 
-/** @type {{ ingest: (ctx: any) => Promise<object[]> }} */
-export default {
+/** @param {Array<{name?: string, value?: string}>} headers @param {string} name */
+function headerValue(headers, name) {
+  const wanted = name.toLowerCase();
+  return headers.find((header) => (header.name || '').toLowerCase() === wanted)?.value || '';
+}
+
+/** @type {{ ingest: (ctx: Record<string, unknown>) => Promise<Array<Record<string, unknown>>> }} */
+const plugin = {
   async ingest(ctx) {
-    const clientId = ctx?.env?.GMAIL_CLIENT_ID;
-    const clientSecret = ctx?.env?.GMAIL_CLIENT_SECRET;
-    const refreshToken = ctx?.env?.GMAIL_REFRESH_TOKEN;
-    if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error('gmail: missing GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET / GMAIL_REFRESH_TOKEN in .env');
-    }
+    const env = /** @type {Record<string, string | undefined>} */ (ctx.env || {});
+    const settings = /** @type {Record<string, unknown>} */ (ctx.settings || {});
+    const label = typeof settings.label === 'string' ? settings.label : 'Job Leads';
+    const daysBack = Number(settings.days_back || 7);
+    const expectedAccount = typeof settings.account_email === 'string'
+      ? settings.account_email
+      : TARGET_GMAIL_ACCOUNT;
+    assertTargetAccount(expectedAccount);
+    const dryRun = ctx.dryRun === true;
+    const log = typeof ctx.log === 'function' ? ctx.log : console.log;
+    const fetchFn = /** @type {(input: string, init?: RequestInit) => Promise<Response>} */ (ctx.fetch);
 
-    const label = ctx?.settings?.label || 'Job Leads';
-    const daysBack = Number(ctx?.settings?.days_back ?? 7);
-    if (!Number.isInteger(daysBack) || daysBack <= 0) {
-      throw new Error(`gmail: invalid days_back "${ctx?.settings?.days_back}" (must be a positive integer)`);
-    }
-
-    const token = await getAccessToken({ clientId, clientSecret, refreshToken }, ctx.fetch);
-    const auth = { Authorization: `Bearer ${token}` };
-    const query = `label:"${label}" newer_than:${daysBack}d`;
-    ctx.log(`gmail: querying ${query}`);
-
-    // List message ids (paginated). ctx.fetch throws on a non-2xx (with the body
-    // in the message), so a failed page surfaces a clear error.
-    const messages = [];
-    let pageToken = null;
-    do {
-      let url = `${GMAIL_API}/messages?q=${encodeURIComponent(query)}`;
-      if (pageToken) url += `&pageToken=${pageToken}`;
-      const data = await (await ctx.fetch(url, { headers: auth })).json();
-      if (data.messages) messages.push(...data.messages);
-      pageToken = data.nextPageToken;
-    } while (pageToken);
-
+    const client = await createGmailClient({
+      env,
+      fetchFn,
+      expectedAccount,
+    });
+    const accountEmail = await client.verifyAccount();
+    const query = `label:"${label}" newer_than:${Number.isInteger(daysBack) && daysBack > 0 ? daysBack : 7}d`;
+    log(`gmail: account ${accountEmail}; querying ${query}`);
+    const messages = await client.listMessages(query, { limit: Number(settings.max_messages || 200) });
     const processedIds = loadProcessedIds();
     const seenUrls = new Set();
     const jobs = [];
 
-    for (const m of messages) {
-      if (processedIds.has(m.id)) continue;
-      // Per-message resilience: a single bad detail fetch is skipped, not fatal.
-      let msg;
+    for (const message of messages) {
+      const id = message.id;
+      if (!id || processedIds.has(id)) continue;
+      let full;
       try {
-        msg = await (await ctx.fetch(`${GMAIL_API}/messages/${m.id}?format=full`, { headers: auth })).json();
-      } catch (err) {
-        console.warn(`gmail: failed to fetch message ${m.id} — ${err.message}`);
+        full = await client.getMessage(id, 'full');
+      } catch (error) {
+        log(`gmail: failed to fetch message ${id} — ${error instanceof Error ? error.message : String(error)}`);
         continue;
       }
-      const headers = msg.payload?.headers || [];
-      const subject = headers.find(h => h.name?.toLowerCase() === 'subject')?.value || '';
-
-      // Fail-closed on spoofed mail (DMARC).
+      const payload = full.payload && typeof full.payload === 'object' ? full.payload : {};
+      const headers = Array.isArray(payload.headers) ? payload.headers : [];
+      const subject = headerValue(headers, 'subject');
       if (!isAuthenticEmail(headers)) {
-        console.warn(`gmail: skipping spoofed/unauthenticated email "${subject}"`);
-        processedIds.add(m.id);
+        log(`gmail: skipping unauthenticated email "${subject}"`);
+        processedIds.add(id);
         continue;
       }
-
+      const body = getMessageBody(payload);
+      const urls = extractUrls(body).filter(isCleanUrl);
+      const classification = classifyAlert({ headers, subject, body, urls });
+      if (classification.confidence !== 'high') {
+        log(`gmail: skipping unclassified labeled email "${subject}"`);
+        processedIds.add(id);
+        continue;
+      }
       const seed = parseRoleAtCompany(subject);
-      const cleanUrls = extractUrls(getMessageBody(msg.payload)).filter(isCleanUrl);
-      for (const url of cleanUrls) {
+      for (const url of urls) {
         if (seenUrls.has(url)) continue;
         seenUrls.add(url);
         jobs.push({
           title: seed?.role || 'Job lead (email)',
           url,
+          canonicalUrl: url,
+          sourceUrl: url,
           company: companyFromUrl(url) || seed?.company || '',
           location: '',
+          source: `gmail:${classification.source}`,
+          sourceLabel: classification.label,
+          sourceMessageId: id,
+          liveness: 'source-alert',
+          fitConfidence: classification.confidence,
         });
       }
-      processedIds.add(m.id);
+      processedIds.add(id);
     }
 
-    saveProcessedIds(processedIds);
+    saveProcessedIds(processedIds, dryRun);
+    log(`gmail: ${jobs.length} lead(s) returned${dryRun ? ' (dry run)' : ''}`);
     return jobs;
   },
 };
+
+export default plugin;

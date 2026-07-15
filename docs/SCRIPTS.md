@@ -27,6 +27,25 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `pnpm sheets:export` | `sheets-export.mjs` | Build the Career Ops Queue and Weekly Ops packet for the configured Google Sheet |
 | `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 
+## Daily application queue
+
+The queue is intentionally human-in-the-loop. It discovers and ranks roles but
+never submits an application or sends outreach automatically.
+
+```bash
+node queue.mjs refresh --limit 10
+node queue.mjs list
+node queue.mjs clear
+node queue.mjs status
+node queue.mjs verify
+node queue.mjs install-schedule --dry-run
+node queue.mjs install-schedule
+```
+
+The scheduled refresh runs at 8:00 AM local time after Gmail OAuth has been
+verified for `jakyejobs@gmail.com`. Queue state is kept in the local ignored
+files `data/job-queue.json` and `data/job-queue.md`.
+
 ---
 
 ## doctor
