@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { assertTargetAccount, buildFilterPlan, classifyAlert } from '../gmail.mjs';
-import { buildLaunchdPlist, checkPublicLiveness } from '../queue.mjs';
+import { buildLaunchdPlist, buildUiServerPlist, checkPublicLiveness } from '../queue.mjs';
 import {
   buildQueue,
   parsePipeline,
@@ -86,8 +86,17 @@ test('launchd schedule is local 8 AM and never auto-submits', () => {
   const plist = buildLaunchdPlist('/tmp/career-ops', '/tmp/career-ops-logs');
   assert.match(plist, /<key>Hour<\/key><integer>8<\/integer>/);
   assert.match(plist, /<key>Minute<\/key><integer>0<\/integer>/);
-  assert.match(plist, /<string>refresh<\/string>/);
+  assert.match(plist, /queue-ui-launch\.mjs/);
+  assert.match(plist, /<key>RunAtLoad<\/key><true\/>/);
   assert.doesNotMatch(plist, /submit|apply --auto|captcha/i);
+});
+
+test('queue UI server plist stays local and persistent', () => {
+  const plist = buildUiServerPlist('/tmp/career-ops', '/tmp/career-ops-logs');
+  assert.match(plist, /queue-ui\.mjs/);
+  assert.match(plist, /<key>RunAtLoad<\/key><true\/>/);
+  assert.match(plist, /<key>KeepAlive<\/key><true\/>/);
+  assert.match(plist, /queue-ui\.log/);
 });
 
 test('public liveness treats redirects as active without following them', async () => {

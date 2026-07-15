@@ -7,6 +7,7 @@ data/pipeline.md
 data/scan-history.tsv
 data/job-queue.json
 data/job-queue.md
+data/queue-ui-launch-state.json
 data/gmail-state.json
 data/gmail-organizer-state.json
 data/.job-queue.lock

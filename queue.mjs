@@ -36,6 +36,7 @@ const QUEUE_JSON = path.join(ROOT, 'data', 'job-queue.json');
 const QUEUE_MD = path.join(ROOT, 'data', 'job-queue.md');
 const LOCK_FILE = path.join(ROOT, 'data', '.job-queue.lock');
 const SCHEDULE_LABEL = 'com.jakyeamos.career-ops.queue';
+const UI_SERVER_LABEL = 'com.jakyeamos.career-ops.queue-ui';
 
 /** @param {string} value */
 function flagValue(value, fallback) {
@@ -221,7 +222,7 @@ function dedupCandidates(input) {
 function escapeTable(value) { return String(value || '').replace(/[|\r\n]/g, ' '); }
 
 /** @param {string} root @param {Record<string, unknown>} item */
-function recordApplication(root, item) {
+export function recordApplication(root, item) {
   const file = path.join(root, 'data', 'applications.md');
   if (!existsSync(file)) return { recorded: false, reason: 'data/applications.md is missing' };
   const existing = loadApplications(root);
@@ -243,7 +244,7 @@ function openUrl(url) {
 }
 
 /** @param {string} root @param {Record<string, unknown>} state */
-function saveQueue(root, state) {
+export function saveQueue(root, state) {
   writeQueueState(path.join(root, 'data', 'job-queue.json'), state);
   writeFileSync(path.join(root, 'data', 'job-queue.md'), renderQueueMarkdown(state), 'utf8');
 }
@@ -394,7 +395,12 @@ function xmlEscape(value) {
 
 /** @param {string} root @param {string} logs */
 export function buildLaunchdPlist(root, logs) {
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${SCHEDULE_LABEL}</string>\n<key>ProgramArguments</key><array><string>${xmlEscape(process.execPath)}</string><string>${xmlEscape(path.join(root, 'queue.mjs'))}</string><string>refresh</string><string>--scheduled</string><string>--limit</string><string>10</string></array>\n<key>WorkingDirectory</key><string>${xmlEscape(root)}</string>\n<key>StandardOutPath</key><string>${xmlEscape(path.join(logs, 'queue.log'))}</string>\n<key>StandardErrorPath</key><string>${xmlEscape(path.join(logs, 'queue.err.log'))}</string>\n<key>StartCalendarInterval</key><dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>\n<key>RunAtLoad</key><false/>\n</dict></plist>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${SCHEDULE_LABEL}</string>\n<key>ProgramArguments</key><array><string>${xmlEscape(process.execPath)}</string><string>${xmlEscape(path.join(root, 'scripts', 'queue-ui-launch.mjs'))}</string></array>\n<key>WorkingDirectory</key><string>${xmlEscape(root)}</string>\n<key>StandardOutPath</key><string>${xmlEscape(path.join(logs, 'queue.log'))}</string>\n<key>StandardErrorPath</key><string>${xmlEscape(path.join(logs, 'queue.err.log'))}</string>\n<key>StartCalendarInterval</key><dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>\n<key>RunAtLoad</key><true/>\n</dict></plist>\n`;
+}
+
+/** @param {string} root @param {string} logs */
+export function buildUiServerPlist(root, logs) {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${UI_SERVER_LABEL}</string>\n<key>ProgramArguments</key><array><string>${xmlEscape(process.execPath)}</string><string>${xmlEscape(path.join(root, 'queue-ui.mjs'))}</string><string>--serve</string></array>\n<key>WorkingDirectory</key><string>${xmlEscape(root)}</string>\n<key>StandardOutPath</key><string>${xmlEscape(path.join(logs, 'queue-ui.log'))}</string>\n<key>StandardErrorPath</key><string>${xmlEscape(path.join(logs, 'queue-ui.err.log'))}</string>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><true/>\n</dict></plist>\n`;
 }
 
 /** @param {string} root @param {boolean} dryRun */
@@ -410,17 +416,23 @@ async function installSchedule(root, dryRun) {
   const launchAgents = path.join(os.homedir(), 'Library', 'LaunchAgents');
   const logs = path.join(os.homedir(), 'Library', 'Logs', 'career-ops');
   const plistPath = path.join(launchAgents, `${SCHEDULE_LABEL}.plist`);
+  const uiPlistPath = path.join(launchAgents, `${UI_SERVER_LABEL}.plist`);
   const plist = buildLaunchdPlist(root, logs);
+  const uiPlist = buildUiServerPlist(root, logs);
   console.log(`Verified Gmail account: ${account}`);
-  console.log(`Schedule: 8:00 AM local time; plist: ${plistPath}`);
-  if (dryRun) { console.log(plist); return; }
+  console.log(`Schedule: 8:00 AM local time or first login after 8:00; plist: ${plistPath}`);
+  console.log(`Queue UI server: http://127.0.0.1:47831/; plist: ${uiPlistPath}`);
+  if (dryRun) { console.log(plist); console.log(uiPlist); return; }
   mkdirSync(launchAgents, { recursive: true });
   mkdirSync(logs, { recursive: true });
   writeFileSync(plistPath, plist, 'utf8');
+  writeFileSync(uiPlistPath, uiPlist, 'utf8');
   const domain = `gui/${process.getuid?.() || process.env.UID}`;
   try { execFileSync('launchctl', ['bootout', `${domain}/${SCHEDULE_LABEL}`], { stdio: 'ignore' }); } catch { /* not loaded yet */ }
+  try { execFileSync('launchctl', ['bootout', `${domain}/${UI_SERVER_LABEL}`], { stdio: 'ignore' }); } catch { /* not loaded yet */ }
+  execFileSync('launchctl', ['bootstrap', domain, uiPlistPath], { stdio: 'inherit' });
   execFileSync('launchctl', ['bootstrap', domain, plistPath], { stdio: 'inherit' });
-  console.log(`Installed ${SCHEDULE_LABEL}.`);
+  console.log(`Installed ${SCHEDULE_LABEL} and ${UI_SERVER_LABEL}.`);
 }
 
 async function main() {

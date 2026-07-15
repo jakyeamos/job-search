@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#eef3f0">
+    <title>Daily queue · career-ops</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="wordmark" href="/" aria-label="Career operations daily queue">
+          <span>career-ops</span><span class="wordmark-slash">/</span><span class="wordmark-current">daily queue</span>
+        </a>
+        <div class="topbar-actions">
+          <span class="connection-status" id="connectionStatus"><span class="status-dot" aria-hidden="true"></span>Local queue</span>
+          <button class="button button-quiet" id="refreshButton" type="button">Refresh sources</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="pageTitle">
+          <div class="intro-copy">
+            <p class="kicker">Morning review</p>
+            <h1 id="pageTitle">Make the next move.</h1>
+            <p class="intro-lede">A short list of roles worth your attention. Open the role, decide, and leave the queue cleaner than you found it.</p>
+          </div>
+          <div class="summary-strip" aria-label="Queue summary">
+            <div class="summary-item summary-item-primary">
+              <span class="summary-value" id="selectedCount">—</span>
+              <span class="summary-label">to review today</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value" id="retainedCount">—</span>
+              <span class="summary-label">retained overall</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value" id="lastRefresh">—</span>
+              <span class="summary-label">last refresh</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="queue-toolbar" aria-label="Queue filters">
+          <div class="filter-group" role="group" aria-label="Status filter">
+            <button class="filter-button is-active" type="button" data-filter="all">All <span id="allCount">—</span></button>
+            <button class="filter-button" type="button" data-filter="ready">Ready <span id="readyCount">—</span></button>
+            <button class="filter-button" type="button" data-filter="review">Needs review <span id="reviewCount">—</span></button>
+          </div>
+          <label class="lane-filter">
+            <span>Lane</span>
+            <select id="laneSelect">
+              <option value="all">All lanes</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="queue-section" aria-labelledby="queueHeading">
+          <div class="section-heading">
+            <div>
+              <h2 id="queueHeading">Today’s queue</h2>
+              <p id="queueSubheading">Loading your selected roles…</p>
+            </div>
+            <span class="account-label">jakyejobs@gmail.com</span>
+          </div>
+          <div class="queue-list" id="queueList" aria-live="polite" aria-busy="true"></div>
+        </section>
+
+        <section class="quiet-note" aria-label="Queue boundary">
+          <span class="quiet-note-mark" aria-hidden="true">↳</span>
+          <p><strong>You stay in control.</strong> Opening a role never marks it applied. The tracker changes only when you choose Applied, Skip, or Snooze.</p>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="snooze-dialog" id="snoozeDialog" aria-labelledby="snoozeTitle">
+      <form method="dialog" id="snoozeForm">
+        <div class="dialog-heading">
+          <div>
+            <p class="kicker">Come back to it</p>
+            <h2 id="snoozeTitle">Snooze this role</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close snooze dialog">×</button>
+        </div>
+        <p class="dialog-copy" id="snoozeRoleName">Choose a date to return this role to the queue.</p>
+        <label class="date-field">
+          <span>Return on</span>
+          <input id="snoozeDate" type="date" required>
+        </label>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel" type="submit">Cancel</button>
+          <button class="button button-primary" value="confirm" type="submit">Snooze role</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

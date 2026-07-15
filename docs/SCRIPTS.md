@@ -40,11 +40,18 @@ node queue.mjs status
 node queue.mjs verify
 node queue.mjs install-schedule --dry-run
 node queue.mjs install-schedule
+node queue-ui.mjs
 ```
 
-The scheduled refresh runs at 8:00 AM local time after Gmail OAuth has been
-verified for `jakyejobs@gmail.com`. Queue state is kept in the local ignored
-files `data/job-queue.json` and `data/job-queue.md`.
+The local queue UI runs at `http://127.0.0.1:47831/`. It reads the existing
+queue state and keeps application actions human-in-the-loop. `Applied` also
+records the role in `data/applications.md`; opening a role does not change its
+status. `node queue.mjs install-schedule` installs both the local UI server and
+the launcher: the queue refreshes and opens at 8:00 AM Eastern, or at the
+first login after 8:00 if the laptop was asleep or off.
+
+Queue state is kept in the local ignored files `data/job-queue.json` and
+`data/job-queue.md`.
 
 ---
 
