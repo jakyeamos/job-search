@@ -50,6 +50,11 @@ status. `node queue.mjs install-schedule` installs both the local UI server and
 the launcher: the queue refreshes and opens at 8:00 AM Eastern, or at the
 first login after 8:00 if the laptop was asleep or off.
 
+The UI can filter by inferred company field and role lane, and sort by queue
+priority, company field, company name, or posting date. Unknown company fields
+remain `Unclassified`; posting dates that a source does not provide stay
+undated rather than being guessed.
+
 Queue state is kept in the local ignored files `data/job-queue.json` and
 `data/job-queue.md`.
 

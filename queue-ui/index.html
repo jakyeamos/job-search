@@ -43,18 +43,37 @@
           </div>
         </section>
 
-        <section class="queue-toolbar" aria-label="Queue filters">
+        <section class="queue-toolbar" aria-label="Queue filters and sorting">
           <div class="filter-group" role="group" aria-label="Status filter">
             <button class="filter-button is-active" type="button" data-filter="all">All <span id="allCount">—</span></button>
             <button class="filter-button" type="button" data-filter="ready">Ready <span id="readyCount">—</span></button>
             <button class="filter-button" type="button" data-filter="review">Needs review <span id="reviewCount">—</span></button>
           </div>
-          <label class="lane-filter">
-            <span>Lane</span>
-            <select id="laneSelect">
-              <option value="all">All lanes</option>
-            </select>
-          </label>
+          <div class="toolbar-controls">
+            <label class="toolbar-select">
+              <span>Field</span>
+              <select id="fieldSelect">
+                <option value="all">All fields</option>
+              </select>
+            </label>
+            <label class="toolbar-select">
+              <span>Role lane</span>
+              <select id="laneSelect">
+                <option value="all">All lanes</option>
+              </select>
+            </label>
+            <label class="toolbar-select">
+              <span>Sort</span>
+              <select id="sortSelect">
+                <option value="priority">Queue priority</option>
+                <option value="field">Company field</option>
+                <option value="posted-newest">Posting date · newest</option>
+                <option value="posted-oldest">Posting date · oldest</option>
+                <option value="company">Company name</option>
+              </select>
+            </label>
+          </div>
+          <p class="toolbar-note">Fields are inferred from company names when a source does not provide one.</p>
         </section>
 
         <section class="queue-section" aria-labelledby="queueHeading">

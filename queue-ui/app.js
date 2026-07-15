@@ -1,6 +1,7 @@
 const elements = {
   allCount: document.querySelector('#allCount'),
   connectionStatus: document.querySelector('#connectionStatus'),
+  fieldSelect: document.querySelector('#fieldSelect'),
   lastRefresh: document.querySelector('#lastRefresh'),
   laneSelect: document.querySelector('#laneSelect'),
   queueList: document.querySelector('#queueList'),
@@ -14,16 +15,36 @@ const elements = {
   snoozeDialog: document.querySelector('#snoozeDialog'),
   snoozeForm: document.querySelector('#snoozeForm'),
   snoozeRoleName: document.querySelector('#snoozeRoleName'),
+  sortSelect: document.querySelector('#sortSelect'),
   toast: document.querySelector('#toast'),
 };
 
 const ui = {
+  field: 'all',
   filter: 'all',
   lane: 'all',
+  sort: 'priority',
   state: null,
   snoozeItemId: null,
   toastTimer: null,
 };
+
+const COMPANY_FIELD_RULES = [
+  { label: 'AI & machine learning', terms: ['anthropic', 'cohere', 'deepgram', 'elevenlabs', 'hugging face', 'langchain', 'lovable', 'physicsx'] },
+  { label: 'AI infrastructure & ML tools', terms: ['coreweave', 'weights & biases'] },
+  { label: 'Robotics & autonomous systems', terms: ['nuro', 'wayve'] },
+  { label: 'Developer tools & cloud', terms: ['n8n', 'sentry', 'temporal', 'vercel', 'zapier'] },
+  { label: 'Data platforms & analytics', terms: ['glean', 'palantir', 'sigma computing', 'tinybird'] },
+  { label: 'Productivity & collaboration', terms: ['airtable', 'attio', 'intercom'] },
+  { label: 'Content & digital experience', terms: ['contentful'] },
+  { label: 'Fintech & payments', terms: ['n26', 'ramp', 'sumup'] },
+  { label: 'Travel & marketplaces', terms: ['airbnb'] },
+  { label: 'Audio & media', terms: ['spotify', 'twitch'] },
+  { label: 'Sports & ticketing', terms: ['seatgeek'] },
+  { label: 'Legal technology', terms: ['legora'] },
+  { label: 'Process intelligence', terms: ['celonis'] },
+  { label: 'Cloud & consumer technology', terms: ['amazon', 'aws', 'adci', 'evi technologies', 'annapurna labs'] },
+];
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -46,15 +67,32 @@ function humanize(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function companyField(item) {
+  const explicit = item.companyField || item.industry || item.field;
+  if (explicit) return String(explicit);
+  const company = String(item.company || '').toLowerCase();
+  const match = COMPANY_FIELD_RULES.find((rule) => rule.terms.some((term) => company.includes(term)));
+  return match?.label || 'Unclassified';
+}
+
 function statusLabel(status) {
   return status === 'ready' ? 'Ready' : 'Needs review';
 }
 
 function formatDate(value) {
   if (!value) return '—';
-  const date = new Date(value);
+  const raw = String(value);
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : value);
   if (Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
+}
+
+function dateValue(value) {
+  if (!value) return null;
+  const raw = String(value);
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : value);
+  const timestamp = date.getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 function formatDateTime(value) {
@@ -78,13 +116,44 @@ function selectedItems() {
 }
 
 function filteredItems() {
-  return selectedItems().filter((item) => {
+  const items = selectedItems().filter((item) => {
     const matchesFilter = ui.filter === 'all'
       || (ui.filter === 'ready' && item.status === 'ready')
       || (ui.filter === 'review' && item.status === 'in_review');
     const matchesLane = ui.lane === 'all' || item.lane === ui.lane;
-    return matchesFilter && matchesLane;
+    const matchesField = ui.field === 'all' || companyField(item) === ui.field;
+    return matchesFilter && matchesLane && matchesField;
   });
+  return items.sort((left, right) => {
+    if (ui.sort === 'field') {
+      return companyField(left).localeCompare(companyField(right))
+        || String(left.company || '').localeCompare(String(right.company || ''))
+        || Number(left.queueRank || 999) - Number(right.queueRank || 999);
+    }
+    if (ui.sort === 'company') {
+      return String(left.company || 'Unclassified').localeCompare(String(right.company || 'Unclassified'))
+        || Number(left.queueRank || 999) - Number(right.queueRank || 999);
+    }
+    if (ui.sort === 'posted-newest' || ui.sort === 'posted-oldest') {
+      const leftDate = dateValue(left.postedAt);
+      const rightDate = dateValue(right.postedAt);
+      if (leftDate === null && rightDate !== null) return 1;
+      if (leftDate !== null && rightDate === null) return -1;
+      if (leftDate !== null && rightDate !== null && leftDate !== rightDate) {
+        return ui.sort === 'posted-newest' ? rightDate - leftDate : leftDate - rightDate;
+      }
+    }
+    return Number(left.queueRank || 999) - Number(right.queueRank || 999);
+  });
+}
+
+function renderFieldOptions() {
+  const fields = [...new Set(selectedItems().map(companyField))].sort((left, right) => left.localeCompare(right));
+  const current = ui.field;
+  elements.fieldSelect.innerHTML = '<option value="all">All fields</option>'
+    + fields.map((field) => `<option value="${escapeHtml(field)}">${escapeHtml(field)}</option>`).join('');
+  elements.fieldSelect.value = fields.includes(current) ? current : 'all';
+  ui.field = elements.fieldSelect.value;
 }
 
 function renderLaneOptions() {
@@ -111,6 +180,7 @@ function renderItem(item) {
   const reasons = Array.isArray(item.fitReasons) ? item.fitReasons : [];
   const company = item.company || 'Company not parsed';
   const location = item.location || 'Location not listed';
+  const field = companyField(item);
   const score = Number(item.fitScore || 0).toFixed(1);
   const statusClass = item.status === 'ready' ? 'tag-status-ready' : 'tag-status-review';
   const reasonsMarkup = reasons.length
@@ -123,12 +193,13 @@ function renderItem(item) {
         <div class="queue-title-line">
           <div>
             <h3>${escapeHtml(item.title || 'Job lead')}</h3>
-            <p class="queue-company">${escapeHtml(company)} <span>·</span> ${escapeHtml(location)}</p>
+            <p class="queue-company">${escapeHtml(company)} <span>·</span> ${escapeHtml(location)} <span>·</span> Posted ${escapeHtml(formatDate(item.postedAt))}</p>
           </div>
           <span class="score-badge" title="Fit score">${escapeHtml(score)}/5</span>
         </div>
         <div class="queue-meta">
           <span class="tag ${statusClass}">${escapeHtml(statusLabel(item.status))}</span>
+          <span class="tag">${escapeHtml(field)}</span>
           <span class="tag">${escapeHtml(humanize(item.lane))}</span>
           <span class="tag">${escapeHtml(humanize(item.sourceLabel || item.source))}</span>
         </div>
@@ -168,6 +239,7 @@ function renderQueue() {
 function render() {
   if (!ui.state) return;
   renderSummary();
+  renderFieldOptions();
   renderLaneOptions();
   renderQueue();
   document.querySelectorAll('[data-filter]').forEach((button) => {
@@ -263,6 +335,16 @@ function openSnoozeDialog(id) {
 elements.refreshButton.addEventListener('click', refreshQueue);
 elements.laneSelect.addEventListener('change', () => {
   ui.lane = elements.laneSelect.value;
+  renderQueue();
+});
+
+elements.fieldSelect.addEventListener('change', () => {
+  ui.field = elements.fieldSelect.value;
+  renderQueue();
+});
+
+elements.sortSelect.addEventListener('change', () => {
+  ui.sort = elements.sortSelect.value;
   renderQueue();
 });
 document.querySelectorAll('[data-filter]').forEach((button) => {
