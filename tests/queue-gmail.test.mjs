@@ -171,12 +171,14 @@ test('queue scoring excludes senior and defense roles', () => {
   const legitimateAgi = scoreCandidate({ company: 'Amazon', title: 'ML Data Associate, Artificial General Intelligence', location: 'Remote US', liveness: 'active' }, {});
   const abroad = scoreCandidate({ company: 'Example AI', title: 'Software Engineer', location: 'Dubai, United Arab Emirates', liveness: 'active' }, {});
   const stockholm = scoreCandidate({ company: 'Example AI', title: 'Data Platform Engineer', location: 'Stockholm', liveness: 'active' }, {});
+  const london = scoreCandidate({ company: 'Example AI', title: 'Backend Engineer', location: 'London, UK', liveness: 'active' }, {});
   assert.equal(senior.eligible, false);
   assert.equal(defense.eligible, false);
   assert.equal(defenseEmployer.eligible, false);
   assert.equal(legitimateAgi.blockers.some((blocker) => blocker.includes('defense')), false);
   assert.equal(abroad.eligible, false);
-  assert.equal(stockholm.eligible, false);
+  assert.equal(stockholm.eligible, true);
+  assert.equal(london.eligible, true);
 });
 
 test('queue selection is capped and preserves applied state', () => {

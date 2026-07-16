@@ -53,6 +53,7 @@ const EXPERIENCE_DQ_RE = /(?:\b[3-9]\+?\s*years?|\b(?:three|four|five|six|seven|
 const DEFENSE_DQ_RE = /\b(defense|defence|military|clearance|cleared|government|national security|classified|dod|department of defense|armed forces|army|navy|air force|space force|intelligence community)\b/i;
 const DEFENSE_CONTRACTOR_RE = /\b(palantir|anduril|lockheed martin|northrop grumman|raytheon|rtx|general dynamics|bae systems|l3harris|leidos|caci|saic|peraton|booz allen|mitre|gdit|amentum|kratos|aerovironment|shield ai|epirus|saronic)\b/i;
 const NON_US_LOCATION_RE = /\b(london|uk|united kingdom|berlin|germany|paris|france|madrid|spain|tokyo|japan|amsterdam|netherlands|singapore|dublin|ireland|toronto|vancouver|montreal|canada|australia|sydney|melbourne|canberra|middle east|dubai|united arab emirates|uae|abu dhabi|saudi arabia|riyadh|india|chennai|hyderabad|bangalore|bengaluru|tamil nadu|telangana|\bind\b|\bare\b|\bsau\b|norway|oslo|south korea|seoul|mexico|brazil|argentina|chile|switzerland|israel|italy|poland|romania|portugal|sweden|stockholm|finland|denmark|belgium|austria|czech|prague|hong kong|taiwan|china|beijing|shenzhen|south africa|nigeria|kenya|egypt|philippines|thailand|vietnam|indonesia|new zealand)\b/i;
+const EUROPE_LOCATION_RE = /\b(europe|european union|emea|eu|uk|united kingdom|england|scotland|wales|ireland|france|germany|spain|netherlands|belgium|luxembourg|switzerland|italy|austria|czech(?:ia)?|poland|romania|hungary|slovakia|slovenia|croatia|serbia|bosnia|montenegro|albania|greece|bulgaria|moldova|ukraine|belarus|lithuania|latvia|estonia|sweden|norway|denmark|finland|iceland|portugal|malta|cyprus|turkey|london|berlin|paris|madrid|amsterdam|dublin|stockholm|oslo|prague|vienna|lisbon|barcelona|munich|zurich|milan|copenhagen|helsinki|warsaw|budapest|bucharest)\b/i;
 const POSITIVE_ROLE_RE = /\b(software|backend|back-end|full[- ]?stack|data|analytics|ai|ml|machine learning|platform|developer tools|product engineer|solutions|forward[- ]deployed|implementation)\b/i;
 
 /** @param {string} value */
@@ -216,8 +217,10 @@ export function scoreCandidate(candidate, profile = {}) {
   if (EXPERIENCE_DQ_RE.test(`${title} ${description}`)) blockers.push('posting states a 3+ year experience floor');
   if (DEFENSE_DQ_RE.test(text)) blockers.push('defense, intelligence, clearance, or government-mission role');
   if (DEFENSE_CONTRACTOR_RE.test(company)) blockers.push('defense-contractor employer is outside the target search');
-  if (NON_US_LOCATION_RE.test(location) && !/remote\s*(us|united states)/i.test(location)) {
-    blockers.push('location appears outside the US work-authorization target');
+  if (NON_US_LOCATION_RE.test(location)
+    && !/remote\s*(us|united states)/i.test(location)
+    && !EUROPE_LOCATION_RE.test(location)) {
+    blockers.push('location appears outside the US/Europe target search');
   }
   if (blockers.length > 0) {
     return { score: 0, eligible: false, status: 'excluded', confidence: 'low', reasons: [], blockers, lane: selectLane(title, description) };
@@ -236,7 +239,8 @@ export function scoreCandidate(candidate, profile = {}) {
   if (/\b(ai|ml|machine learning|llm|genai|data|analytics|sql|pipeline)\b/i.test(text)) {
     score += 0.35; reasons.push('AI/data signal');
   }
-  if (/\b(remote|united states|us|new york|nyc|chicago|seattle|buffalo|san francisco|austin|boston)\b/i.test(location)) {
+  if (/\b(remote|united states|us|new york|nyc|chicago|seattle|buffalo|san francisco|austin|boston)\b/i.test(location)
+    || EUROPE_LOCATION_RE.test(location)) {
     score += 0.2; reasons.push('location appears compatible');
   }
   if (candidate.liveness === 'active') { score += 0.25; reasons.push('public URL passed liveness'); }
