@@ -328,6 +328,15 @@ function sortScore(item) {
   return readiness + Number(item.fitScore || 0) * weight + freshness;
 }
 
+/** @param {Record<string, unknown>} item */
+function selectionIdentity(item) {
+  const company = normalizeKey(String(item.company || ''));
+  const title = normalizeKey(String(item.title || ''));
+  const location = normalizeKey(String(item.location || ''));
+  if (!company || !title) return `item:${String(item.id || '')}`;
+  return `role:${company}|${title}|${location}`;
+}
+
 /**
  * @param {Array<Record<string, unknown>>} candidates
  * @param {Record<string, unknown>} previous
@@ -359,9 +368,16 @@ export function buildQueue(candidates, previous = {}, options = {}) {
     if (!merged.has(old.id) && ['applied', 'skipped', 'snoozed'].includes(old.status)) merged.set(old.id, old);
   }
 
+  const selectedIdentities = new Set();
   const selected = [...merged.values()]
     .filter(eligibleForSelection)
     .sort((a, b) => sortScore(b) - sortScore(a))
+    .filter((item) => {
+      const identity = selectionIdentity(item);
+      if (selectedIdentities.has(identity)) return false;
+      selectedIdentities.add(identity);
+      return true;
+    })
     .slice(0, limit);
   const selectedIds = new Set(selected.map((item) => item.id));
   const items = [...merged.values()].map((item) => ({

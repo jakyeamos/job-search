@@ -204,6 +204,40 @@ test('queue selection is capped and preserves applied state', () => {
   assert.equal(state.items.find((item) => item.id === candidates[0].id).status, 'applied');
 });
 
+test('daily selection collapses repeated company-role recommendations', () => {
+  const repeated = Array.from({ length: 3 }, (_, index) => ({
+    id: stableQueueId({ url: `https://www.linkedin.com/comm/jobs/view/${index + 1}`, company: 'Anthropic', title: 'Software Engineer, Research Data Platform' }),
+    source: 'gmail:linkedin',
+    title: 'Software Engineer, Research Data Platform',
+    company: 'Anthropic',
+    location: '',
+    canonicalUrl: `https://www.linkedin.com/comm/jobs/view/${index + 1}`,
+    applyUrl: `https://www.linkedin.com/comm/jobs/view/${index + 1}`,
+    status: 'in_review',
+    fitScore: 4.4,
+    fitConfidence: 'low',
+    liveness: 'source-alert',
+  }));
+  const distinct = {
+    id: stableQueueId({ url: 'https://jobs.example.com/role/1', company: 'Example AI', title: 'Backend Engineer' }),
+    source: 'greenhouse',
+    title: 'Backend Engineer',
+    company: 'Example AI',
+    location: 'Remote US',
+    canonicalUrl: 'https://jobs.example.com/role/1',
+    applyUrl: 'https://jobs.example.com/role/1',
+    status: 'in_review',
+    fitScore: 4.3,
+    fitConfidence: 'medium',
+    liveness: 'active',
+  };
+  const state = buildQueue([...repeated, distinct], {}, { limit: 3 });
+  const selected = state.items.filter((item) => item.selectedForToday);
+  assert.equal(state.items.length, 4);
+  assert.equal(selected.length, 2);
+  assert.equal(selected.filter((item) => item.company === 'Anthropic').length, 1);
+});
+
 test('pipeline parser preserves URL and source note', () => {
   const [job] = parsePipeline('- [ ] https://jobs.lever.co/acme/123 | Acme | Backend Engineer | Remote US | note: source: teamwork-online; alert\n');
   assert.equal(job.company, 'Acme');
