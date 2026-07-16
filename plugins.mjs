@@ -15,6 +15,7 @@ import { pathToFileURL, fileURLToPath } from 'url';
 import path from 'path';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const GMAIL_INGEST_TIMEOUT_MS = 120_000;
 
 /** @param {string} value */
 function cleanUrl(value) {
@@ -82,7 +83,11 @@ async function runIngest(id, dryRun, noPipeline) {
   const status = pluginStatus(manifest, config);
   if (!status.enabled) throw new Error(`plugin "${id}" cannot run: missing ${status.missingEnv.join(', ')}`);
 
-  const results = await runHook('ingest', null, { root: ROOT, dryRun });
+  const results = await runHook('ingest', null, {
+    root: ROOT,
+    dryRun,
+    timeoutMs: id === 'gmail' ? GMAIL_INGEST_TIMEOUT_MS : undefined,
+  });
   const selected = results.find((result) => result.id === id);
   if (!selected) throw new Error(`plugin "${id}" was skipped by the plugin engine`);
   if (!selected.ok) throw new Error(selected.error || `plugin "${id}" failed`);

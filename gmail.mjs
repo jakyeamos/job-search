@@ -35,7 +35,7 @@ export const SOURCE_RULES = [
     source: 'linkedin',
     label: 'LinkedIn',
     domains: ['linkedin.com'],
-    query: 'from:linkedin.com {job jobs alert opportunity hiring career}',
+    query: 'from:{jobalerts-noreply@linkedin.com jobs-listings@linkedin.com} {job jobs alert opportunity hiring career engineer developer apply position role opening}',
   },
   {
     source: 'handshake',
@@ -59,11 +59,18 @@ export const SOURCE_RULES = [
     source: 'teamwork-online',
     label: 'TeamWork Online',
     domains: ['teamworkonline.com'],
-    query: 'from:teamworkonline.com {job jobs alert opportunity hiring career}',
+    query: 'from:{notifiers@teamworkonline.com employment@teamworkonline.com services@teamworkonline.com alerts@teamworkonline.com} {job jobs alert opportunity hiring career engineer developer apply position role opening}',
   },
 ];
 
 const JOB_LANGUAGE_RE = /\b(job|jobs|role|roles|opportunity|opportunities|career|careers|hiring|position|positions|engineer|developer|apply|alert|opening|openings)\b/i;
+const LINKEDIN_JOB_SENDER_RE = /\b(?:jobalerts-noreply|jobs-listings)@(?:em\.)?linkedin\.com\b/i;
+const TEAMWORK_JOB_SENDER_RE = /\b(?:notifiers|employment|services|alerts)@(?:em\.)?teamworkonline\.com\b/i;
+const NON_LEAD_SUBJECT_RE = /\b(?:application received|thanks for being|unsubscribe|update your profile|update your notification preferences|get hired faster|top candidate)\b/i;
+const LEGACY_SOURCE_QUERIES = new Map([
+  ['linkedin', ['from:linkedin.com {job jobs alert opportunity hiring career}']],
+  ['teamwork-online', ['from:teamworkonline.com {job jobs alert opportunity hiring career}']],
+]);
 const REVIEW_SIGNALS = [
   /unsubscribe/i,
   /view\s+(?:job|role|opportunity)/i,
@@ -99,6 +106,15 @@ function domainMatches(domain, allowed) {
   return allowed.some((candidate) => domain === candidate || domain.endsWith(`.${candidate}`));
 }
 
+/** @param {string} source @param {string} from @param {string} subject @param {string[]} urls @param {string} combined */
+function isKnownJobAlert(source, from, subject, urls, combined) {
+  if (NON_LEAD_SUBJECT_RE.test(subject)) return false;
+  if (source === 'linkedin' && !LINKEDIN_JOB_SENDER_RE.test(from)) return false;
+  if (source === 'teamwork-online' && !TEAMWORK_JOB_SENDER_RE.test(from)) return false;
+  const signalText = source === 'linkedin' || source === 'teamwork-online' ? subject : combined;
+  return JOB_LANGUAGE_RE.test(signalText) || urls.length > 0;
+}
+
 /**
  * Classify only metadata/body signals. The body is never persisted; callers
  * can use this result to decide whether a message is safe to label/archive.
@@ -115,12 +131,21 @@ export function classifyAlert(input) {
   const combined = `${subject}\n${body}`;
   const known = SOURCE_RULES.find((rule) => domainMatches(domain, rule.domains));
 
-  if (known && (JOB_LANGUAGE_RE.test(combined) || urls.length > 0)) {
+  if (known && isKnownJobAlert(known.source, from, subject, urls, combined)) {
     return {
       source: known.source,
       label: `Job Leads/${known.label}`,
       confidence: 'high',
       reason: `known job-alert source ${domain}`,
+    };
+  }
+
+  if (known && (known.source === 'linkedin' || known.source === 'teamwork-online')) {
+    return {
+      source: 'unknown',
+      label: REVIEW_LABEL,
+      confidence: 'uncertain',
+      reason: `known ${known.source} sender did not match a job-alert pattern`,
     };
   }
 
@@ -132,7 +157,7 @@ export function classifyAlert(input) {
     domain && !domain.includes('gmail.com') ? 1 : 0,
   ].reduce((total, value) => total + value, 0);
 
-  if (score >= 4) {
+  if (score >= 4 && JOB_LANGUAGE_RE.test(subject) && urls.length > 0) {
     return {
       source: 'review',
       label: REVIEW_LABEL,
@@ -155,8 +180,8 @@ export function loadGmailSettings(root = process.cwd()) {
     enabled: true,
     account_email: TARGET_GMAIL_ACCOUNT,
     label: JOB_LEADS_LABEL,
-    days_back: 7,
-    max_messages: 200,
+    days_back: 30,
+    max_messages: 1000,
   };
   const file = path.join(root, 'config', 'plugins.yml');
   if (!existsSync(file)) return defaults;
@@ -265,6 +290,17 @@ function filterMatches(filter, plan) {
     && JSON.stringify(remove) === JSON.stringify(expectedRemove);
 }
 
+/** @param {Record<string, unknown>} filter @param {Record<string, unknown>} plan */
+function isLegacySourceFilter(filter, plan) {
+  const criteria = filter.criteria && typeof filter.criteria === 'object' ? filter.criteria : {};
+  const action = filter.action && typeof filter.action === 'object' ? filter.action : {};
+  const query = typeof criteria.query === 'string' ? criteria.query : '';
+  const legacyQueries = LEGACY_SOURCE_QUERIES.get(plan.source) || [];
+  const addLabelIds = Array.isArray(action.addLabelIds) ? action.addLabelIds : [];
+  const expectedLabelId = Array.isArray(plan.action?.addLabelIds) ? plan.action.addLabelIds[0] : '';
+  return legacyQueries.includes(query) && typeof filter.id === 'string' && addLabelIds.includes(expectedLabelId);
+}
+
 /**
  * @param {{ root?: string, dryRun?: boolean, client?: Awaited<ReturnType<typeof createGmailClient>>, logger?: (...args: unknown[]) => void }} [options]
  */
@@ -289,9 +325,16 @@ export async function setupFilters(options = {}) {
   const labelIds = await ensureLabels(client, names, dryRun);
   const plans = buildFilterPlan(labelIds);
   const existing = await client.listFilters();
+  const stale = existing.filter((filter) => plans.some((plan) => isLegacySourceFilter(filter, plan)));
+  const active = existing.filter((filter) => !stale.includes(filter));
+  const deleted = [];
+  for (const filter of stale) {
+    if (!dryRun) await client.deleteFilter(String(filter.id));
+    deleted.push({ id: filter.id || null });
+  }
   const created = [];
   for (const plan of plans) {
-    const matching = existing.find((filter) => filterMatches(filter, plan));
+    const matching = active.find((filter) => filterMatches(filter, plan));
     if (matching) continue;
     if (!dryRun) {
       const createdFilter = await client.createFilter({ criteria: plan.criteria, action: plan.action });
@@ -313,8 +356,9 @@ export async function setupFilters(options = {}) {
 
   logger(`Gmail account verified: ${accountEmail}`);
   logger(`Labels ready: ${names.length}`);
+  logger(`${dryRun ? 'Stale filters to delete' : 'Stale filters deleted'}: ${deleted.length}`);
   logger(`${dryRun ? 'Filters to create' : 'Filters created'}: ${created.length}`);
-  return { accountEmail, authenticated: true, dryRun, created, existing: existing.length, plans };
+  return { accountEmail, authenticated: true, dryRun, created, deleted, existing: existing.length, plans };
 }
 
 /**
@@ -343,10 +387,15 @@ export async function organizeGmail(options = {}) {
     [JOB_LEADS_LABEL, REVIEW_LABEL, ...SOURCE_RULES.map((rule) => `Job Leads/${rule.label}`)],
     dryRun,
   );
-  const daysBack = Number(settings.days_back) > 0 ? Number(settings.days_back) : 7;
+  const daysBack = Number(settings.days_back) > 0 ? Number(settings.days_back) : 30;
   const limit = Number(options.limit || settings.max_messages) > 0 ? Number(options.limit || settings.max_messages) : 200;
-  const query = `in:anywhere newer_than:${daysBack}d -label:"${JOB_LEADS_LABEL}"`;
-  const messages = await client.listMessages(query, { limit });
+  const baseQuery = `in:anywhere newer_than:${daysBack}d -label:"${JOB_LEADS_LABEL}"`;
+  const knownSourceQuery = `${baseQuery} {${SOURCE_RULES.flatMap((rule) => rule.domains.map((domain) => `from:${domain}`)).join(' ')}}`;
+  const [knownSourceMessages, genericMessages] = await Promise.all([
+    client.listMessages(knownSourceQuery, { limit: Math.max(1000, limit) }),
+    client.listMessages(baseQuery, { limit: Math.min(limit, 250) }),
+  ]);
+  const messages = [...new Map([...knownSourceMessages, ...genericMessages].map((message) => [message.id, message])).values()];
   const items = [];
   let skipped = 0;
   const processedIds = new Set(Array.isArray(readState(root).processed_message_ids)

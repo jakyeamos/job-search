@@ -181,14 +181,18 @@ async function ingestGmail(options) {
   const errors = [];
   const candidates = [];
   try {
-    const organized = await organizeGmail({ root: ROOT, dryRun: options.dryRun, limit: Math.max(100, options.limit * 20) });
+    const organized = await organizeGmail({ root: ROOT, dryRun: options.dryRun, limit: Math.max(1000, options.limit * 20) });
     if (!organized.authenticated) errors.push('Gmail organizer skipped: OAuth credentials are not configured');
   } catch (error) {
     errors.push(`Gmail organizer failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {
-    const results = await runHook('ingest', null, { root: ROOT, dryRun: options.dryRun });
+    const results = await runHook('ingest', null, {
+      root: ROOT,
+      dryRun: options.dryRun,
+      timeoutMs: 120_000,
+    });
     for (const result of results) {
       if (result.id !== 'gmail') continue;
       if (!result.ok) {

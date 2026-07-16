@@ -63,13 +63,15 @@ const ATS_HOST_RE = /(?:greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|smar
 const JOB_DETAIL_PATH_RE = /(?:^|\/)(?:jobs?|careers?|roles?|positions?|opportunities?|apply|view)(?:\/|$)|(?:^|\/)[^/]+-jobs?(?:\/|$)/i;
 const LINKEDIN_HOST_RE = /(?:^|\.)linkedin\.com$/i;
 const TEAMWORK_HOST_RE = /(?:^|\.)teamworkonline\.com$/i;
+const TEAMWORK_TRACKER_HOST_RE = /^(?:[^.]+\.)?teamworkonline\.com$/i;
+const TEAMWORK_JOB_PATH_RE = /(?:^|\/)(?:jobs?|[^/]+-jobs?)(?:\/|$)/i;
 const GLASSDOOR_HOST_RE = /(?:^|\.)glassdoor\./i;
-const TRACKING_PARAM_RE = /^(?:utm_[a-z0-9_]+|fbclid|gclid|mc_cid|mc_eid|trk|trkid|trks|lipi|midtoken|midsig|eid|otptoken|twclid|guid|jrtk|tgt|origin|origintolandingjobpostings|src)$/i;
+const TRACKING_PARAM_RE = /^(?:utm_[a-z0-9_]+|fbclid|gclid|mc_cid|mc_eid|trk|trkid|trks|trackingid|trkemail|refid|lipi|midtoken|midsig|eid|otptoken|twclid|guid|jrtk|tgt|origin|origintolandingjobpostings|src)$/i;
 
 /** @param {string} value */
 function stripTags(value) {
-  return value.replace(/<[^>]*>/g, ' ').replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => ({
-    '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'",
+  return value.replace(/<[^>]*>/g, ' ').replace(/&(?:amp|lt|gt|quot|#39|nbsp);|&#160;/g, (entity) => ({
+    '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&nbsp;': ' ', '&#160;': ' ',
   }[entity] || ' ')).replace(/\s+/g, ' ').trim();
 }
 
@@ -101,10 +103,10 @@ function looksLikeJobUrl(url, anchorText = '') {
     const host = parsed.hostname.toLowerCase();
     if (TRACKER_HOST_RE.test(host) || TRACKER_PATH_RE.test(path)) return false;
     if (LINKEDIN_HOST_RE.test(host)) {
-      return /^\/jobs\/view\/\d+(?:\/|$)/i.test(path);
+      return /^\/(?:comm\/)?jobs\/view\/\d+(?:\/|$)/i.test(path);
     }
     if (TEAMWORK_HOST_RE.test(host)) {
-      return /^\/jobs(?:\/|$)/i.test(path) && /(?:^|\/)\d{5,}(?:\/|$)/.test(path);
+      return TEAMWORK_JOB_PATH_RE.test(path) && /(?:^|[-\/])\d{5,}(?:\/|$)/.test(path);
     }
     if (GLASSDOOR_HOST_RE.test(host)) {
       return /\/partner\/joblisting\.htm$/i.test(path) && parsed.searchParams.has('jobListingId');
@@ -113,6 +115,33 @@ function looksLikeJobUrl(url, anchorText = '') {
     if (JOB_DETAIL_PATH_RE.test(path) && path.split('/').filter(Boolean).length >= 2) return true;
     if (KNOWN_JOB_HOST_RE.test(host)) return false;
     return Boolean(anchorText) && JOB_LINK_TEXT_RE.test(anchorText) && !KNOWN_JOB_HOST_RE.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/** @param {string} url @param {string} anchorText */
+function isTrustedTeamworkTracker(url, anchorText = '') {
+  try {
+    const parsed = new URL(url);
+    const text = anchorText.trim();
+    const nonJobText = /\b(?:unsubscribe|preferences|notification|profile|part\s+time|see\s+more\s+jobs|teamwork\s+online|mvp\s+access|teamworku|teamwork\s+consulting)\b/i;
+    const jobText = /\b(?:view\s+job|hiring|engineer|developer|analyst|analytics|associate|manager|director|coordinator|producer|designer|software|data|product|operations?|marketing|sales|finance|accounting|consultant|research|scout|coach|trainer|intern|writer|editor|content|technology|technical|business)\b/i;
+    return TEAMWORK_TRACKER_HOST_RE.test(parsed.hostname)
+      && /^\/ls\/click\/?$/i.test(parsed.pathname)
+      && !nonJobText.test(text)
+      && jobText.test(text);
+  } catch {
+    return false;
+  }
+}
+
+/** @param {string} url */
+function isTrustedLinkedInJobUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return LINKEDIN_HOST_RE.test(parsed.hostname)
+      && /^\/(?:comm\/)?jobs\/view\/\d+(?:\/|$)/i.test(parsed.pathname);
   } catch {
     return false;
   }
@@ -133,8 +162,14 @@ export function extractJobUrls(body) {
   while ((match = anchorRe.exec(body)) !== null) {
     const url = match[1].replace(/&amp;/g, '&');
     const text = stripTags(match[2]);
-    if (isCleanUrl(url) && looksLikeJobUrl(url, text)) {
-      const sanitized = sanitizeJobUrl(url);
+    const trustedLinkedIn = isTrustedLinkedInJobUrl(url);
+    const trustedTeamwork = isTrustedTeamworkTracker(url, text);
+    const directTextUrl = extractUrls(text).find((candidate) => isCleanUrl(candidate) && looksLikeJobUrl(candidate, text));
+    if (directTextUrl) {
+      const sanitized = sanitizeJobUrl(directTextUrl);
+      if (sanitized) candidates.push(sanitized);
+    } else if (trustedLinkedIn || trustedTeamwork || (isCleanUrl(url) && looksLikeJobUrl(url, text))) {
+      const sanitized = sanitizeJobUrl(url).replace(/^http:/i, 'https:');
       if (sanitized) candidates.push(sanitized);
     }
   }

@@ -33,15 +33,64 @@ test('uncertain email is not promoted to the queue label', () => {
   assert.equal(result.confidence, 'uncertain');
 });
 
+test('LinkedIn social mail is excluded while job-alert senders are retained', () => {
+  const social = classifyAlert({
+    headers: [
+      { name: 'From', value: 'LinkedIn <messages-noreply@linkedin.com>' },
+      { name: 'Subject', value: '61 people noticed your profile' },
+    ],
+  });
+  const socialWithJobLink = classifyAlert({
+    headers: [
+      { name: 'From', value: 'LinkedIn <messages-noreply@linkedin.com>' },
+      { name: 'Subject', value: 'Lead Software Engineer insights: $225K/yr+' },
+    ],
+    urls: ['https://www.linkedin.com/comm/jobs/view/4435109522'],
+  });
+  const job = classifyAlert({
+    headers: [
+      { name: 'From', value: 'LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>' },
+      { name: 'Subject', value: 'Software Developer at Acme' },
+    ],
+  });
+  assert.equal(social.confidence, 'uncertain');
+  assert.equal(socialWithJobLink.confidence, 'uncertain');
+  assert.equal(job.source, 'linkedin');
+  assert.equal(job.confidence, 'high');
+});
+
+test('generic review requires a job-like subject and a clean job URL', () => {
+  const alert = classifyAlert({
+    headers: [
+      { name: 'From', value: 'alerts@example.com' },
+      { name: 'Subject', value: 'Software Engineer at Acme' },
+    ],
+    urls: ['https://jobs.example.com/roles/123'],
+  });
+  const unrelated = classifyAlert({
+    headers: [
+      { name: 'From', value: 'alerts@example.com' },
+      { name: 'Subject', value: 'JAVASCRIPT-NEXTJS-B - Error: ReferenceError' },
+    ],
+    urls: ['https://sentry.example.com/issues/123'],
+  });
+  assert.equal(alert.confidence, 'high');
+  assert.equal(unrelated.confidence, 'uncertain');
+});
+
 test('Gmail intake keeps job links and drops HTML assets and account links', () => {
   const urls = extractJobUrls([
     '<a href="https://www.linkedin.com/jobs/view/123">View job</a>',
+    '<a href="https://www.linkedin.com/comm/jobs/view/4438828948/?trackingId=secret&refId=secret&lipi=secret">Applied AI Software Engineer</a>',
     '<a href="https://www.linkedin.com/comm/jobs/search?originToLandingJobPostings=123&otpToken=secret">Search jobs</a>',
     '<img src="https://scontent.cdninstagram.com/image.jpg">',
     '<a href="https://accounts.google.com/AccountChooser?Email=jakyejobs@gmail.com">Manage account</a>',
     '<a href="https://www.teamworkonline.com/">TeamWork Online</a>',
     '<a href="https://www.teamworkonline.com/jobs-in-sports">Jobs in Sports</a>',
     '<a href="https://www.teamworkonline.com/jobs/2179445">View job</a>',
+    '<a href="http://em.teamworkonline.com/ls/click?upn=test">Software Engineer - iOS Development View Job</a>',
+    '<a href="http://em.teamworkonline.com/ls/click?upn=test">Accounting Associate (Temp) - United Football League (UFL)</a>',
+    '<a href="http://em.teamworkonline.com/ls/click?upn=test">https://www.teamworkonline.com/sports-technology-jobs/Trajektory-jobs/trajektory-jobs/head-of-analytics-2178051</a>',
     '<a href="https://www.linkedin.com/comm/feed/">Open LinkedIn</a>',
     '<a href="https://www.teamworkonline.com/dashboard">Dashboard</a>',
     '<a href="https://www.glassdoor.com/partner/jobListing.htm?jobListingId=123&src=GD_JOB_AD&utm_campaign=jobs">Apply</a>',
@@ -51,7 +100,10 @@ test('Gmail intake keeps job links and drops HTML assets and account links', () 
   ].join(' '));
   assert.deepEqual(urls, [
     'https://www.linkedin.com/jobs/view/123',
+    'https://www.linkedin.com/comm/jobs/view/4438828948/',
     'https://www.teamworkonline.com/jobs/2179445',
+    'https://em.teamworkonline.com/ls/click?upn=test',
+    'https://www.teamworkonline.com/sports-technology-jobs/Trajektory-jobs/trajektory-jobs/head-of-analytics-2178051',
     'https://www.glassdoor.com/partner/jobListing.htm?jobListingId=123',
   ]);
 });
@@ -80,6 +132,8 @@ test('source filter queries use Gmail OR braces for multi-domain senders', () =>
   const plan = buildFilterPlan({ 'Job Leads': 'parent' });
   assert.match(plan.find((item) => item.source === 'handshake').criteria.query, /from:\{joinhandshake\.com handshake\.com\}/);
   assert.match(plan.find((item) => item.source === 'wellfound').criteria.query, /from:\{wellfound\.com angel\.co angellist\.com\}/);
+  assert.match(plan.find((item) => item.source === 'linkedin').criteria.query, /jobalerts-noreply@linkedin\.com/);
+  assert.match(plan.find((item) => item.source === 'teamwork-online').criteria.query, /notifiers@teamworkonline\.com/);
 });
 
 test('launchd schedule is local 8 AM and never auto-submits', () => {
