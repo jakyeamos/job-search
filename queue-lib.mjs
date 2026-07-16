@@ -50,8 +50,9 @@ const LANE_RULES = [
 
 const HARD_TITLE_RE = /\b(senior|sr\.?|staff|principal|lead|director|manager|architect|head of|founding)\b/i;
 const EXPERIENCE_DQ_RE = /(?:\b[3-9]\+?\s*years?|\b(?:three|four|five|six|seven|eight|nine)\s+years?|minimum\s+(?:of\s+)?[3-9]\s+years?)/i;
-const DEFENSE_DQ_RE = /\b(defense|defence|military|intelligence|clearance|cleared|us government|federal government|national security)\b/i;
-const NON_US_LOCATION_RE = /\b(london|uk|united kingdom|berlin|germany|paris|france|madrid|spain|tokyo|japan|amsterdam|netherlands|singapore|dublin|ireland|toronto|vancouver|montreal|canada|australia|sydney|melbourne)\b/i;
+const DEFENSE_DQ_RE = /\b(defense|defence|military|clearance|cleared|government|national security|classified|dod|department of defense|armed forces|army|navy|air force|space force|intelligence community)\b/i;
+const DEFENSE_CONTRACTOR_RE = /\b(palantir|anduril|lockheed martin|northrop grumman|raytheon|rtx|general dynamics|bae systems|l3harris|leidos|caci|saic|peraton|booz allen|mitre|gdit|amentum|kratos|aerovironment|shield ai|epirus|saronic)\b/i;
+const NON_US_LOCATION_RE = /\b(london|uk|united kingdom|berlin|germany|paris|france|madrid|spain|tokyo|japan|amsterdam|netherlands|singapore|dublin|ireland|toronto|vancouver|montreal|canada|australia|sydney|melbourne|canberra|middle east|dubai|united arab emirates|uae|abu dhabi|saudi arabia|riyadh|india|chennai|hyderabad|bangalore|bengaluru|tamil nadu|telangana|\bind\b|\bare\b|\bsau\b|norway|oslo|south korea|seoul|mexico|brazil|argentina|chile|switzerland|israel|italy|poland|romania|portugal|sweden|stockholm|finland|denmark|belgium|austria|czech|prague|hong kong|taiwan|china|beijing|shenzhen|south africa|nigeria|kenya|egypt|philippines|thailand|vietnam|indonesia|new zealand)\b/i;
 const POSITIVE_ROLE_RE = /\b(software|backend|back-end|full[- ]?stack|data|analytics|ai|ml|machine learning|platform|developer tools|product engineer|solutions|forward[- ]deployed|implementation)\b/i;
 
 /** @param {string} value */
@@ -117,12 +118,14 @@ export function parsePipeline(text) {
     const noteIndex = cells.findIndex((cell) => /^note:/i.test(cell));
     const note = noteIndex >= 0 ? cells[noteIndex].replace(/^note:\s*/i, '') : '';
     const history = note.match(/source:\s*([^;]+)/i)?.[1] || '';
+    const rawLocation = cells[2] || '';
+    const location = /^\d+(?:\.\d+)?\/5$/.test(rawLocation) ? '' : rawLocation;
     jobs.push({
       url,
       canonicalUrl: url,
       company: cells[0] || '',
       title: cells[1] || 'Job lead',
-      location: cells[2] || '',
+      location,
       compensation: cells[3] || '',
       note,
       source: history || inferSourceFromUrl(url),
@@ -206,11 +209,13 @@ export function scoreCandidate(candidate, profile = {}) {
   const title = normalizeText(candidate.title);
   const description = normalizeText(candidate.description);
   const location = normalizeText(candidate.location);
-  const text = `${title} ${description} ${location}`;
+  const company = normalizeText(candidate.company);
+  const text = `${title} ${description} ${location} ${company}`;
   const blockers = [];
   if (HARD_TITLE_RE.test(title)) blockers.push('seniority title suggests a role above the target level');
   if (EXPERIENCE_DQ_RE.test(`${title} ${description}`)) blockers.push('posting states a 3+ year experience floor');
   if (DEFENSE_DQ_RE.test(text)) blockers.push('defense, intelligence, clearance, or government-mission role');
+  if (DEFENSE_CONTRACTOR_RE.test(company)) blockers.push('defense-contractor employer is outside the target search');
   if (NON_US_LOCATION_RE.test(location) && !/remote\s*(us|united states)/i.test(location)) {
     blockers.push('location appears outside the US work-authorization target');
   }

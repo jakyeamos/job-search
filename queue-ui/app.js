@@ -4,6 +4,7 @@ const elements = {
   fieldSelect: document.querySelector('#fieldSelect'),
   lastRefresh: document.querySelector('#lastRefresh'),
   laneSelect: document.querySelector('#laneSelect'),
+  locationSelect: document.querySelector('#locationSelect'),
   queueList: document.querySelector('#queueList'),
   queueSubheading: document.querySelector('#queueSubheading'),
   readyCount: document.querySelector('#readyCount'),
@@ -23,6 +24,7 @@ const ui = {
   field: 'all',
   filter: 'all',
   lane: 'all',
+  location: 'all',
   sort: 'priority',
   state: null,
   snoozeItemId: null,
@@ -75,6 +77,10 @@ function companyField(item) {
   return match?.label || 'Unclassified';
 }
 
+function locationLabel(item) {
+  return String(item.location || '').trim() || 'Location not listed';
+}
+
 function statusLabel(status) {
   return status === 'ready' ? 'Ready' : 'Needs review';
 }
@@ -122,7 +128,8 @@ function filteredItems() {
       || (ui.filter === 'review' && item.status === 'in_review');
     const matchesLane = ui.lane === 'all' || item.lane === ui.lane;
     const matchesField = ui.field === 'all' || companyField(item) === ui.field;
-    return matchesFilter && matchesLane && matchesField;
+    const matchesLocation = ui.location === 'all' || locationLabel(item) === ui.location;
+    return matchesFilter && matchesLane && matchesField && matchesLocation;
   });
   return items.sort((left, right) => {
     if (ui.sort === 'field') {
@@ -132,6 +139,14 @@ function filteredItems() {
     }
     if (ui.sort === 'company') {
       return String(left.company || 'Unclassified').localeCompare(String(right.company || 'Unclassified'))
+        || Number(left.queueRank || 999) - Number(right.queueRank || 999);
+    }
+    if (ui.sort === 'location') {
+      const leftLocation = locationLabel(left);
+      const rightLocation = locationLabel(right);
+      if (leftLocation === 'Location not listed' && rightLocation !== 'Location not listed') return 1;
+      if (leftLocation !== 'Location not listed' && rightLocation === 'Location not listed') return -1;
+      return leftLocation.localeCompare(rightLocation)
         || Number(left.queueRank || 999) - Number(right.queueRank || 999);
     }
     if (ui.sort === 'posted-newest' || ui.sort === 'posted-oldest') {
@@ -154,6 +169,16 @@ function renderFieldOptions() {
     + fields.map((field) => `<option value="${escapeHtml(field)}">${escapeHtml(field)}</option>`).join('');
   elements.fieldSelect.value = fields.includes(current) ? current : 'all';
   ui.field = elements.fieldSelect.value;
+}
+
+function renderLocationOptions() {
+  const locations = [...new Set(selectedItems().map(locationLabel))]
+    .sort((left, right) => left.localeCompare(right));
+  const current = ui.location;
+  elements.locationSelect.innerHTML = '<option value="all">All locations</option>'
+    + locations.map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('');
+  elements.locationSelect.value = locations.includes(current) ? current : 'all';
+  ui.location = elements.locationSelect.value;
 }
 
 function renderLaneOptions() {
@@ -240,6 +265,7 @@ function render() {
   if (!ui.state) return;
   renderSummary();
   renderFieldOptions();
+  renderLocationOptions();
   renderLaneOptions();
   renderQueue();
   document.querySelectorAll('[data-filter]').forEach((button) => {
@@ -340,6 +366,11 @@ elements.laneSelect.addEventListener('change', () => {
 
 elements.fieldSelect.addEventListener('change', () => {
   ui.field = elements.fieldSelect.value;
+  renderQueue();
+});
+
+elements.locationSelect.addEventListener('change', () => {
+  ui.location = elements.locationSelect.value;
   renderQueue();
 });
 

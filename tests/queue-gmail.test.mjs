@@ -113,8 +113,16 @@ test('public liveness treats redirects as active without following them', async 
 test('queue scoring excludes senior and defense roles', () => {
   const senior = scoreCandidate({ title: 'Senior Backend Engineer', location: 'Remote US', liveness: 'active' }, {});
   const defense = scoreCandidate({ title: 'Software Engineer', description: 'Requires active security clearance', location: 'Remote US', liveness: 'active' }, {});
+  const defenseEmployer = scoreCandidate({ company: 'Palantir', title: 'Software Engineer - Apollo Platform', location: 'Seattle, WA', liveness: 'active' }, {});
+  const legitimateAgi = scoreCandidate({ company: 'Amazon', title: 'ML Data Associate, Artificial General Intelligence', location: 'Remote US', liveness: 'active' }, {});
+  const abroad = scoreCandidate({ company: 'Example AI', title: 'Software Engineer', location: 'Dubai, United Arab Emirates', liveness: 'active' }, {});
+  const stockholm = scoreCandidate({ company: 'Example AI', title: 'Data Platform Engineer', location: 'Stockholm', liveness: 'active' }, {});
   assert.equal(senior.eligible, false);
   assert.equal(defense.eligible, false);
+  assert.equal(defenseEmployer.eligible, false);
+  assert.equal(legitimateAgi.blockers.some((blocker) => blocker.includes('defense')), false);
+  assert.equal(abroad.eligible, false);
+  assert.equal(stockholm.eligible, false);
 });
 
 test('queue selection is capped and preserves applied state', () => {
@@ -145,4 +153,9 @@ test('pipeline parser preserves URL and source note', () => {
   assert.equal(job.company, 'Acme');
   assert.equal(job.title, 'Backend Engineer');
   assert.equal(job.source, 'teamwork-online');
+});
+
+test('pipeline parser does not treat evaluation scores as locations', () => {
+  const [job] = parsePipeline('- [x] https://nuro.ai/careersitem?gh_jid=7351066 | Nuro | Software Engineer, AI Platform - New Grad (Mountain View) | 3.7/5 | Evaluated\n');
+  assert.equal(job.location, '');
 });
