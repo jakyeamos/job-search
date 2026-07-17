@@ -104,6 +104,7 @@ Built by someone who used it to evaluate 740+ job offers, generate 100+ tailored
 | **Interview Story Bank** | Accumulates STAR+Reflection stories across evaluations -- 5-10 master stories that answer any behavioral question                        |
 | **Negotiation Scripts**  | Salary negotiation frameworks, geographic discount pushback, competing offer leverage                                                    |
 | **ATS PDF Generation**   | Keyword-injected CVs with Space Grotesk + DM Sans design                                                                                 |
+| **Resume Quality Gate**  | Audits canonical CVs and generated HTML/PDFs for structure, placeholders, contact links, layout risks, and page-tier limits                 |
 | **Cover Letter Generator** | Research-backed cover letters with keyword mirroring, four interactive angle prompts (why/problems/approach/tone), draft-in-chat approval gate, and A4 PDF via the same HTML + Playwright pipeline as CVs. Auto-drafts on every evaluation; complete and generate on demand via `/career-ops cover` |
 | **Portal Scanner**       | 45+ companies pre-configured (Anthropic, OpenAI, ElevenLabs, Retool, n8n...) + custom queries across Ashby, Greenhouse, Lever, Wellfound |
 | **Batch Processing**     | Parallel evaluation with headless CLI workers (`claude -p` / `opencode run`)                                                             |
@@ -289,6 +290,10 @@ Career-ops uses a shared command router. In CLIs that register slash commands, i
 /career-ops project        → Evaluate a portfolio project
 ```
 
+For a deterministic resume quality check, run `node resume-audit.mjs --cv cv.md`.
+Add `--html` and `--pdf` to audit generated artifacts, and use
+`--tier=evidence` for the two-page evidence master.
+
 Or just paste a job URL or description directly -- career-ops auto-detects it and runs the full pipeline.
 
 In Codex, slash commands are not guaranteed. Use the same mode names in a prompt instead, or call them from `codex exec`.
@@ -362,6 +367,7 @@ career-ops/
 ├── GEMINI.md                    # Legacy no-op guard to avoid Antigravity duplicate context
 ├── cv.md                        # Your CV (create this)
 ├── article-digest.md            # Your proof points (optional)
+├── resume-audit.mjs             # ATS-safe source and artifact audit
 ├── config/
 │   └── profile.example.yml      # Template for your profile
 ├── modes/                       # 15 skill modes

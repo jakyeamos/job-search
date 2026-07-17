@@ -2,6 +2,8 @@
 
 ## Full pipeline
 
+0. Read `modes/resume-standard.md` before drafting. It is the adapted Career
+   Ops resume policy and overrides generic resume advice when the two differ.
 1. Read `cv.md` as the source of truth
 2. Ask the user for the JD if it is not in context (text or URL)
 3. Extract 15-20 keywords from the JD

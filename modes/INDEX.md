@@ -31,6 +31,7 @@ Modes are System Layer except `_profile.md` (User Layer personalization). See
 | [_profile.md](_profile.md) | **User Layer.** Personalization: narrative, proof points, negotiation, comp. Write customizations HERE |
 | [_profile.template.md](_profile.template.md) | Template copied to `_profile.md` on first run |
 | [_brief.md](_brief.md) | Compact context block for first-pass/triage scoring |
+| [resume-standard.md](resume-standard.md) | ATS-safe, lane-aware resume quality policy and audit gate |
 
 ## Language variants
 
