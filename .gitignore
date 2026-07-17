@@ -60,4 +60,5 @@ career-dashboard
 .turbo/
 .firecrawl/
 .pytest_cache/
+.agents/
 __pycache__/
