@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const UI_URL = 'http://127.0.0.1:47831/';
 const STATE_PATH = path.join(ROOT, 'data', 'queue-ui-launch-state.json');
+const BROWSER_APPS = ['Google Chrome Beta', 'Google Chrome'];
 
 function localDateKey(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -53,6 +54,63 @@ async function waitForUi(timeoutMs = 5000) {
   return false;
 }
 
+export function buildChromeRefreshScript(applicationName, queueUrl = UI_URL) {
+  const escapedUrl = queueUrl.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return [
+    `tell application "${applicationName}"`,
+    '  set foundQueueTab to false',
+    '  repeat with currentWindow in windows',
+    '    set currentTabIndex to 1',
+    '    repeat with currentTab in tabs of currentWindow',
+    `      if (URL of currentTab starts with "${escapedUrl}") then`,
+    '        set foundQueueTab to true',
+    '        set active tab index of currentWindow to currentTabIndex',
+    '        reload currentTab',
+    '        exit repeat',
+    '      end if',
+    '      set currentTabIndex to currentTabIndex + 1',
+    '    end repeat',
+    '    if foundQueueTab then exit repeat',
+    '  end repeat',
+    '  if foundQueueTab then',
+    '    activate',
+    '    return "refreshed"',
+    '  end if',
+    'end tell',
+    'return "missing"',
+  ].join('\n');
+}
+
+function runAppleScript(applicationName, script) {
+  const result = spawnSync('/usr/bin/osascript', ['-e', script], { encoding: 'utf8' });
+  if (result.status !== 0) return 'unavailable';
+  return String(result.stdout || '').trim() === 'refreshed' ? 'refreshed' : 'missing';
+}
+
+function browserProcessIsRunning(applicationName) {
+  return spawnSync('/usr/bin/pgrep', ['-x', applicationName], { stdio: 'ignore' }).status === 0;
+}
+
+export function refreshExistingQueueTab(
+  runScript = runAppleScript,
+  isBrowserRunning = browserProcessIsRunning,
+) {
+  let inspectionUnavailable = false;
+  for (const applicationName of BROWSER_APPS) {
+    if (!isBrowserRunning(applicationName)) continue;
+    const result = runScript(applicationName, buildChromeRefreshScript(applicationName));
+    if (result === 'refreshed') return { status: 'refreshed', applicationName };
+    if (result === 'unavailable') inspectionUnavailable = true;
+  }
+  return inspectionUnavailable ? { status: 'unknown', applicationName: '' } : { status: 'missing', applicationName: '' };
+}
+
+export function decideLaunchAction({ tabStatus, alreadyOpenedToday }) {
+  if (tabStatus === 'refreshed') return 'refresh';
+  if (tabStatus === 'unknown' || alreadyOpenedToday) return 'skip';
+  return 'open';
+}
+
 async function main() {
   const date = localDateKey();
   if (localHour() < 8) {
@@ -60,10 +118,6 @@ async function main() {
     return;
   }
   const state = readState();
-  if (state.lastOpenedDate === date) {
-    console.log(`Queue UI already opened for ${date}.`);
-    return;
-  }
 
   const refresh = spawnSync(process.execPath, [path.join(ROOT, 'queue.mjs'), 'refresh', '--scheduled', '--limit', '10'], {
     cwd: ROOT,
@@ -74,17 +128,40 @@ async function main() {
   }
 
   const ready = await waitForUi();
-  const opened = spawnSync('/usr/bin/open', [UI_URL], { stdio: 'inherit' });
-  if (opened.status !== 0) throw new Error(`could not open ${UI_URL}`);
+  const tab = refreshExistingQueueTab();
+  const action = decideLaunchAction({
+    tabStatus: tab.status,
+    alreadyOpenedToday: state.lastOpenedDate === date,
+  });
+
+  if (action === 'open') {
+    const opened = spawnSync('/usr/bin/open', [UI_URL], { stdio: 'inherit' });
+    if (opened.status !== 0) throw new Error(`could not open ${UI_URL}`);
+    console.log(`Queue UI opened for ${date}: ${UI_URL}`);
+  } else if (action === 'refresh') {
+    console.log(`Queue UI refreshed in ${tab.applicationName} for ${date}: ${UI_URL}`);
+  } else if (tab.status === 'unknown') {
+    console.warn(`Queue UI refresh could not inspect the running browser; skipped opening a tab to avoid a duplicate: ${UI_URL}`);
+  } else {
+    console.log(`Queue UI already opened for ${date}; refreshed data without opening another tab.`);
+  }
+
   writeState({
-    lastOpenedDate: date,
-    openedAt: new Date().toISOString(),
+    ...state,
+    lastOpenedDate: action === 'open' ? date : state.lastOpenedDate,
+    openedAt: action === 'open' ? new Date().toISOString() : state.openedAt,
+    lastRefreshedDate: date,
+    refreshedAt: new Date().toISOString(),
+    lastAction: action,
+    browserApplication: tab.applicationName || state.browserApplication || '',
     serverReady: ready,
   });
-  console.log(`Queue UI opened for ${date}: ${UI_URL}`);
 }
 
-main().catch((error) => {
-  console.error(`queue-ui-launch: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMain) {
+  main().catch((error) => {
+    console.error(`queue-ui-launch: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}
