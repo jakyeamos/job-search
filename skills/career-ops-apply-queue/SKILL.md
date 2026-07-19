@@ -9,14 +9,21 @@ description: Run Career Ops' authorized, human-accountable application queue. Us
 
 1. Read the current queue and policy. If the policy is disabled, stop and show
    the exact authorize/disable controls instead of guessing authorization.
-2. Run `node application-queue.mjs dry-run --limit N` and inspect the selected
-   roles, ATS adapter, liveness, score, and resume artifact.
+2. Run `node resume.mjs plan --limit N` and
+   `node application-queue.mjs dry-run --limit N`. Inspect the selected roles,
+   ATS adapter, liveness, score, resume lane, selected projects, evidence
+   sources, manifest status, and artifact path. A dry run may report
+   `would-generate-and-submit`; the actual worker creates and audits the
+   tailored resume and cover letter immediately before the adapter run.
 3. Run `node application-queue.mjs run --limit N` only after the candidate's
    explicit authorization is current. The worker submits only supported ATS
    forms and records an idempotent run result.
 4. Review `data/application-question-ledger.json` after blocked runs. Answer a
    question only from the exact form wording and choose a narrow scope for
-   sensitive answers.
+   sensitive answers. For accomplishment prompts, the adapters also consult
+   `config/project-accomplishment-ledger.json` and select a verified project from
+   the posting lane and description; an explicit scoped answer remains the
+   override.
 5. Treat `submitted` and `submission_unknown` as terminal until the external
    state is verified. Never retry an unknown submission automatically.
 
@@ -29,13 +36,19 @@ description: Run Career Ops' authorized, human-accountable application queue. Us
 - Do not expose private repositories, credentials, customer data, or raw form
   data in logs or generated content.
 - Unsupported or ambiguous forms remain blocked for manual handling.
-- The worker uses the queue item's verified `resumeArtifact`; generate or review
-  a lane-specific PDF through the existing resume/PDF modes before re-running if
-  the artifact is missing or stale.
+- The worker generates contract-managed resume and cover-letter artifacts from
+  canonical evidence and the queue posting. Existing resume/PDF renderers
+  remain available, and their approved output can still be registered with
+  `node resume.mjs register ...`.
+- Legacy existing PDFs may be used during migration, but they are labeled
+  `legacy-existing`; the worker never presents them as tailored evidence.
 
 ## Local surfaces
 
 - `data/application-policy.json` — revocable local submission authorization.
 - `data/application-question-ledger.json` — explicit reusable answers.
 - `data/application-runs.json` — idempotency and outcome audit trail.
+- `resume-contract.mjs` — single queue-facing request, manifest, and artifact
+  validation contract.
+- `resume.mjs` — plan and register commands for all resume renderers.
 - `modes/auto-apply.md` — Career Ops command reference.

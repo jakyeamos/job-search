@@ -7,6 +7,9 @@ import { parseArgs } from 'util';
 import { readFile } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
+import { DEFAULT_POLICY_PATH, loadPolicy, submissionGate } from '../application-policy.mjs';
+import { DEFAULT_LEDGER_PATH, answerTable, loadLedger, recordQuestion } from '../question-ledger.mjs';
+import { projectAccomplishmentAnswerTable } from '../../project-accomplishment-ledger.mjs';
 
 const DEFAULT_PROFILE = fileURLToPath(
   new URL('../../config/application-profile.json', import.meta.url),
@@ -25,6 +28,17 @@ export function parseCliArgs() {
       'cover-text': { type: 'string' },
       answers: { type: 'string' },
       profile: { type: 'string' },
+      ledger: { type: 'string' },
+      policy: { type: 'string' },
+      submit: { type: 'boolean', default: false },
+      'application-key': { type: 'string' },
+      company: { type: 'string' },
+      title: { type: 'string' },
+      lane: { type: 'string' },
+      'job-description': { type: 'string' },
+      'fit-score': { type: 'string' },
+      liveness: { type: 'string' },
+      browser: { type: 'string' },
       headless: { type: 'boolean', default: false },
     },
   });
@@ -42,6 +56,17 @@ export function parseCliArgs() {
     coverText: values['cover-text'] || '',
     answersPath: values.answers ? absPath(values.answers) : '',
     profilePath: values.profile ? absPath(values.profile) : DEFAULT_PROFILE,
+    ledgerPath: values.ledger ? absPath(values.ledger) : DEFAULT_LEDGER_PATH,
+    policyPath: values.policy ? absPath(values.policy) : DEFAULT_POLICY_PATH,
+    submit: !!values.submit,
+    applicationKey: values['application-key'] || '',
+    company: values.company || '',
+    title: values.title || '',
+    lane: values.lane || '',
+    jobDescription: values['job-description'] || '',
+    fitScore: values['fit-score'] === undefined ? null : Number(values['fit-score']),
+    liveness: values.liveness || '',
+    browser: values.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
     headless: !!values.headless,
   };
 }
@@ -72,6 +97,29 @@ export async function loadAnswers(path) {
     value: String(value),
     source: 'answers',
   }));
+}
+
+/** @param {string} path @param {{ company?: string, role?: string, url?: string, description?: string, lane?: string }} [context] */
+export async function loadLedgerAnswers(path, context = {}) {
+  return [
+    ...answerTable(loadLedger(path), context),
+    ...projectAccomplishmentAnswerTable(context),
+  ];
+}
+
+/** @param {import('playwright').ChromiumType} chromium @param {{ headless: boolean, channel?: string }} options */
+export async function launchBrowser(chromium, options) {
+  const requested = options.channel || 'chrome-beta';
+  const channels = [requested, requested === 'chrome-beta' ? 'chrome' : null, null].filter((value, index, all) => value !== null ? all.indexOf(value) === index : all.indexOf(value) === index);
+  let lastError = null;
+  for (const channel of channels) {
+    try {
+      return await chromium.launch(channel ? { headless: options.headless, channel } : { headless: options.headless });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('unable to launch a browser');
 }
 
 function toRegex(pattern) {
@@ -210,6 +258,7 @@ export async function selectNative(page, selector, value, label, tools) {
 
 export const EEO_LABEL_RE = /gender|race|ethnic|hispanic|latino|veteran|disabilit|self[-\s]?identif|voluntary self/i;
 export const MARKETING_RE = /marketing|newsletter|updates|promotional|subscribe|keep me (posted|informed)|receive (emails|communications)/i;
+export const LEGAL_LABEL_RE = /attest|certif|background|criminal|conviction|terms (?:and|of)|agree.*(?:accurate|truth|conditions|terms)/i;
 
 // ---------------------------------------------------------------------------
 // Required-field detection (page.evaluate). Group-aware; skips reCAPTCHA.
@@ -336,7 +385,19 @@ export function reconcile(tools, stillEmpty) {
 // Final report + browser hold-open
 // ---------------------------------------------------------------------------
 
-export async function finish(browser, tools, { headless, url }) {
+export async function finish(page, browser, tools, {
+  headless,
+  url,
+  submit = false,
+  policy = loadPolicy(),
+  ledgerPath = DEFAULT_LEDGER_PATH,
+  adapter = 'unknown',
+  applicationKey = '',
+  company = '',
+  title = '',
+  fitScore = null,
+  liveness = '',
+}) {
   const { filled, skipped, needsReview } = tools.summary;
   const line = '─'.repeat(60);
   console.log(`\n${line}`);
@@ -353,13 +414,93 @@ export async function finish(browser, tools, { headless, url }) {
   for (const r of needsReview) console.log(`   • ${r.label}${r.reason ? ` — ${r.reason}` : ''}`);
 
   console.log(`\n${line}`);
-  console.log('  Adapter never clicks Submit. Review the flagged items, then submit yourself.');
+  if (!submit) console.log('  Fill-only mode: the adapter will not click Submit.');
   console.log(line + '\n');
 
-  if (headless) {
+  for (const review of needsReview) {
+    const label = String(review.label || '').replace(/^EEO:\s*/i, '').trim();
+    if (!label || /^EEO:/i.test(String(review.label || '')) || /captcha|recaptcha|hcaptcha|multi-factor|verification code/i.test(label)) continue;
+    recordQuestion(ledgerPath, label, { company, role: title, source: `adapter:${adapter}` });
+  }
+
+  let submission = { state: submit ? 'blocked' : 'not_requested', reason: submit ? 'submission was not attempted' : 'fill-only mode' };
+  if (submit) {
+    const effectiveLiveness = liveness === 'active' || liveness === 'expired'
+      ? liveness
+      : await hasActiveFormEvidence(page) ? 'active' : liveness;
+    const gate = submissionGate(policy, adapter, { fitScore, liveness: effectiveLiveness, needsReview: needsReview.length });
+    if (!gate.ok) {
+      submission = { state: 'blocked', reason: gate.reason };
+      console.log(`\n⚠️  Submission blocked: ${gate.reason}`);
+    } else {
+      submission = await submitApplication(page, policy, { adapter, url });
+      console.log(`\n${submission.state === 'submitted' ? '✅' : '⚠️'} Submission ${submission.state}: ${submission.reason}`);
+    }
+  }
+
+  const result = {
+    state: submission.state,
+    reason: submission.reason,
+    url,
+    adapter,
+    applicationKey,
+    company,
+    title,
+    fitScore,
+    filled,
+    skipped,
+    needsReview,
+  };
+  if (submit || headless) console.log(`CAREER_OPS_APPLICATION_RESULT ${JSON.stringify(result)}`);
+
+  if (headless || submission.state === 'submitted') {
     await browser.close();
-    return;
+    return result;
   }
   console.log('Browser left open for review. Press Ctrl+C when done.\n');
   await new Promise(() => {});
+}
+
+/** @param {import('playwright').Page} page @param {Record<string, unknown>} policy @param {{ adapter: string, url: string }} context */
+async function submitApplication(page, policy, context) {
+  const visibleText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+  const captchaVisible = await page.locator('iframe[src*="captcha" i]:visible, [class*="captcha" i]:visible, [id*="captcha" i]:visible').count().catch(() => 0);
+  if (policy.stopOnCaptcha && (captchaVisible > 0 || /\bcaptcha\b|recaptcha|hcaptcha/i.test(visibleText))) {
+    return { state: 'blocked', reason: 'captcha or anti-bot challenge is present; human action is required' };
+  }
+  if (policy.stopOnMfa && /multi[- ]factor|one[- ]time password|verification code|sign in to continue/i.test(visibleText)) {
+    return { state: 'blocked', reason: 'sign-in, MFA, or verification step is present; human action is required' };
+  }
+
+  const controls = page.locator('button, input[type="submit"]');
+  const candidates = [];
+  for (let index = 0; index < await controls.count(); index += 1) {
+    const control = controls.nth(index);
+    if (!(await control.isVisible().catch(() => false)) || !(await control.isEnabled().catch(() => false))) continue;
+    const label = `${await control.innerText().catch(() => '')} ${await control.getAttribute('value').catch(() => '')}`.replace(/\s+/g, ' ').trim();
+    if (/submit(?: application)?|apply(?: now)?|send application/i.test(label) && !/save|next|continue|preview/i.test(label)) candidates.push(control);
+  }
+  if (candidates.length !== 1) return { state: 'blocked', reason: candidates.length ? `found ${candidates.length} possible submit controls; refusing to guess` : 'no unambiguous submit control found' };
+
+  try {
+    await candidates[0].click({ timeout: 5000 });
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(1000);
+  } catch (error) {
+    return { state: 'failed', reason: `submit control could not be clicked: ${error instanceof Error ? error.message : String(error)}` };
+  }
+
+  const afterUrl = page.url();
+  const afterText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+  const confirmed = /thank you|application (?:was )?submitted|application received|successfully applied|we['’]?ve received|thanks for applying/i.test(afterText)
+    || /thank[-_ ]?you|success|confirmation|submitted/i.test(afterUrl);
+  if (confirmed) return { state: 'submitted', reason: `success confirmation detected for ${context.adapter}` };
+  return { state: 'submission_unknown', reason: 'submit was clicked but no success confirmation was detected; automatic retry is disabled' };
+}
+
+/** @param {import('playwright').Page} page */
+async function hasActiveFormEvidence(page) {
+  const forms = await page.locator('form').count().catch(() => 0);
+  const controls = await page.locator('button, input[type="submit"]').count().catch(() => 0);
+  return forms > 0 && controls > 0;
 }

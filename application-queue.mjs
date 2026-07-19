@@ -132,6 +132,8 @@ function adapterCommand(item, adapter, options, resume, artifacts = {}) {
     '--application-key', roleKey(item),
     '--company', String(item.company || ''),
     '--title', String(item.title || ''),
+    '--lane', String(item.lane || ''),
+    '--job-description', String(item.description || ''),
     '--fit-score', String(item.fitScore || 0),
     '--liveness', String(item.liveness || ''),
   );

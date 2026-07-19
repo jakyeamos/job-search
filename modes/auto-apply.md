@@ -32,6 +32,10 @@ node apply/application-policy.mjs disable
 - The supported automatic adapters are Greenhouse, Ashby, and Lever.
 - Required fields must be resolved from the verified application profile or an
   explicit question-ledger answer.
+- Accomplishment prompts can be answered from the verified project ledger at
+  `config/project-accomplishment-ledger.json`. The worker selects the strongest
+  approved project for the job's lane and description; an explicit scoped answer
+  in `data/application-question-ledger.json` takes precedence.
 - EEO, demographic, marketing-consent, CAPTCHA, MFA, legal-attestation, and
   ambiguous controls stop the run.
 - A successful confirmation is recorded as `submitted`. A click without a

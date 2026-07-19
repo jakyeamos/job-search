@@ -27,7 +27,13 @@ async function main() {
   const args = parseCliArgs();
   const profile = await loadProfile(args.profilePath);
   const answers = await loadAnswers(args.answersPath);
-  const ledgerAnswers = await loadLedgerAnswers(args.ledgerPath, { company: args.company, role: args.title, url: args.url });
+  const ledgerAnswers = await loadLedgerAnswers(args.ledgerPath, {
+    company: args.company,
+    role: args.title,
+    url: args.url,
+    description: args.jobDescription,
+    lane: args.lane,
+  });
   const tables = [answers, ledgerAnswers, commonQuestions(profile)];
 
   const resumePath = args.resume || profile.defaults?.resume_path || '';
