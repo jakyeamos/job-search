@@ -6,6 +6,7 @@
 - Queue `Applied`, local confirmed application runs, and matched Gmail confirmation messages feed one idempotent outreach record per company and role.
 - Email is fail-closed to `jakyejobs@gmail.com`; LinkedIn output remains a manual draft.
 - Initial live-email ramp is capped at two messages per day until explicitly completed.
+- Gmail setup wizard is terminal-safe and currently paused at Stage 1 for Gmail API confirmation.
 - `config/profile.yml` locally permits the outreach policy, while `data/outreach-state.json` remains disabled until the user enables the verified Gmail account.
 
 ## Current Position
