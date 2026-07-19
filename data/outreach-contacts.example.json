@@ -1,0 +1,21 @@
+{
+  "applications": [
+    {
+      "applicationKey": "examplecompany::backendengineer",
+      "contacts": [
+        {
+          "name": "Taylor Example",
+          "title": "Engineering Manager",
+          "company": "Example Company",
+          "email": "taylor@examplecompany.com",
+          "emailVerified": true,
+          "publicProfessional": true,
+          "sourceType": "company-site",
+          "sourceUrl": "https://www.examplecompany.com/team/taylor-example",
+          "profileUrl": "https://www.linkedin.com/in/taylor-example",
+          "roleRelevance": "high"
+        }
+      ]
+    }
+  ]
+}

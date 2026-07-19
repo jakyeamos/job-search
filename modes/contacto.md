@@ -69,6 +69,42 @@ short message; otherwise run the LinkedIn power move below.
 - NEVER share phone number
 - The contact type changes the EMPHASIS, not the structure
 
+## Career Ops outreach handoff
+
+When this mode is run for an application already marked `Applied`, it may
+write public professional contact candidates to the local ignored file
+`data/outreach-contacts.json` using the shape below. This is an input manifest
+for the outreach processor, not a permission to send.
+
+```json
+{
+  "applications": [
+    {
+      "applicationKey": "company::rolewithnospaces",
+      "contacts": [
+        {
+          "name": "Public professional name",
+          "title": "Engineering Manager",
+          "company": "Company",
+          "email": "name@company.com",
+          "emailVerified": true,
+          "publicProfessional": true,
+          "sourceType": "company-site",
+          "sourceUrl": "https://company.example/team/name",
+          "profileUrl": "https://www.linkedin.com/in/name",
+          "roleRelevance": "high"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Only public company/job/profile sources qualify an email for automatic sending.
+Never guess an address, use a personal mailbox, scrape LinkedIn, or include a
+contact whose identity or role relevance is uncertain. LinkedIn output remains
+a manual draft.
+
 ---
 
 ## Greeting variant

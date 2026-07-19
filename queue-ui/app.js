@@ -7,6 +7,8 @@ const elements = {
   locationSelect: document.querySelector('#locationSelect'),
   queueList: document.querySelector('#queueList'),
   queueSubheading: document.querySelector('#queueSubheading'),
+  outreachList: document.querySelector('#outreachList'),
+  outreachSubheading: document.querySelector('#outreachSubheading'),
   readyCount: document.querySelector('#readyCount'),
   refreshButton: document.querySelector('#refreshButton'),
   retainedCount: document.querySelector('#retainedCount'),
@@ -243,6 +245,46 @@ function renderItem(item) {
     </article>`;
 }
 
+function renderOutreach() {
+  const records = Array.isArray(ui.state?.outreach) ? ui.state.outreach : [];
+  elements.outreachSubheading.textContent = records.length
+    ? `${records.length} application${records.length === 1 ? '' : 's'} in the outreach workflow.`
+    : 'Your application signals and contact drafts will appear here.';
+  if (!records.length) {
+    elements.outreachList.innerHTML = '<div class="outreach-empty">No submitted applications are waiting for outreach.</div>';
+    return;
+  }
+  elements.outreachList.innerHTML = records.map((record) => {
+    const contacts = Array.isArray(record.contacts) ? record.contacts : [];
+    const contactsMarkup = contacts.length
+      ? contacts.map((contact) => `
+          <div class="outreach-contact">
+            <div>
+              <strong>${escapeHtml(contact.name || 'Unnamed contact')}</strong>
+              <span>${escapeHtml(contact.title || humanize(contact.type))}</span>
+            </div>
+            <div class="outreach-contact-meta">
+              <span class="tag">${escapeHtml(humanize(contact.initialStatus || 'pending'))}</span>
+              ${contact.emailVerified ? '<span class="tag tag-status-ready">Verified email</span>' : '<span class="tag">LinkedIn/manual</span>'}
+              ${contact.followUpDueAt ? `<span class="outreach-due">Follow-up ${escapeHtml(formatDate(contact.followUpDueAt))}</span>` : ''}
+            </div>
+            ${contact.linkedinDraft ? `<details class="outreach-draft"><summary>LinkedIn draft</summary><p>${escapeHtml(contact.linkedinDraft)}</p></details>` : ''}
+          </div>`).join('')
+      : `<p class="outreach-empty">No eligible contacts yet. Search: ${escapeHtml(record.searchQuery || 'company hiring manager recruiter team')}</p>`;
+    return `
+      <article class="outreach-card">
+        <div class="outreach-card-heading">
+          <div>
+            <h3>${escapeHtml(record.title || 'Job lead')}</h3>
+            <p>${escapeHtml(record.company || 'Company not parsed')}</p>
+          </div>
+          <span class="tag tag-status-ready">${escapeHtml(humanize(record.status || 'pending'))}</span>
+        </div>
+        <div class="outreach-contacts">${contactsMarkup}</div>
+      </article>`;
+  }).join('');
+}
+
 function renderQueue() {
   const items = filteredItems();
   elements.queueList.setAttribute('aria-busy', 'false');
@@ -268,6 +310,7 @@ function render() {
   renderLocationOptions();
   renderLaneOptions();
   renderQueue();
+  renderOutreach();
   document.querySelectorAll('[data-filter]').forEach((button) => {
     button.classList.toggle('is-active', button.dataset.filter === ui.filter);
   });
@@ -339,8 +382,19 @@ async function mutateItem(id, action, extra = {}) {
     ui.state = payload.state;
     setConnection(true);
     render();
+    let outreachMessage = '';
+    if (action === 'applied') {
+      try {
+        const outreach = await requestJson('/api/outreach/process', { method: 'POST' });
+        ui.state.outreach = outreach.outreach || ui.state.outreach || [];
+        render();
+        outreachMessage = ' Outreach was queued and processed.';
+      } catch {
+        outreachMessage = ' Outreach was queued for the next scheduled run.';
+      }
+    }
     const messages = { applied: 'Marked applied and recorded in the tracker.', skipped: 'Skipped for now.', snoozed: `Snoozed until ${extra.snoozeUntil}.` };
-    showToast(messages[action] || 'Queue updated.');
+    showToast(`${messages[action] || 'Queue updated.'}${outreachMessage}`);
   } catch (error) {
     row?.querySelectorAll('button').forEach((button) => { button.disabled = false; });
     showToast(error instanceof Error ? error.message : String(error), true);

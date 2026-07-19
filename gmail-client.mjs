@@ -9,7 +9,8 @@
 export const TARGET_GMAIL_ACCOUNT = 'jakyejobs@gmail.com';
 export const GMAIL_MODIFY_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
 export const GMAIL_SETTINGS_SCOPE = 'https://www.googleapis.com/auth/gmail.settings.basic';
-export const GMAIL_REQUIRED_SCOPES = [GMAIL_MODIFY_SCOPE, GMAIL_SETTINGS_SCOPE];
+export const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+export const GMAIL_REQUIRED_SCOPES = [GMAIL_MODIFY_SCOPE, GMAIL_SETTINGS_SCOPE, GMAIL_SEND_SCOPE];
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const API_ROOT = 'https://gmail.googleapis.com/gmail/v1/users/me';
@@ -79,7 +80,8 @@ function normalizeEmail(value) {
  *  deleteFilter: (id: string) => Promise<void>,
  *  listMessages: (query: string, options?: { limit?: number }) => Promise<Array<{ id: string, threadId?: string }>>,
  *  getMessage: (id: string, format?: string) => Promise<Record<string, unknown>>,
- *  modifyMessage: (id: string, addLabelIds?: string[], removeLabelIds?: string[]) => Promise<Record<string, unknown>>
+ *  modifyMessage: (id: string, addLabelIds?: string[], removeLabelIds?: string[]) => Promise<Record<string, unknown>>,
+ *  sendMessage: (message: { to: string, subject: string, body: string, threadId?: string }) => Promise<Record<string, unknown>>
  * }>}
  */
 export async function createGmailClient(options = {}) {
@@ -202,6 +204,34 @@ export async function createGmailClient(options = {}) {
     });
   }
 
+  /** @param {string} value @param {string} label */
+  function safeHeader(value, label) {
+    if (!value || /[\r\n]/.test(value)) throw new GmailClientError(`Gmail ${label} is empty or contains a line break`);
+    return value.trim();
+  }
+
+  /** @param {{ to: string, subject: string, body: string, threadId?: string }} message */
+  async function sendMessage(message) {
+    const account = await verifyAccount();
+    const to = safeHeader(message.to, 'recipient');
+    const subject = safeHeader(message.subject, 'subject');
+    const body = String(message.body || '').replace(/\r?\n/g, '\r\n');
+    const raw = [
+      `From: ${account}`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      body,
+    ].join('\r\n');
+    const encoded = Buffer.from(raw, 'utf8').toString('base64url');
+    const payload = { raw: encoded };
+    if (message.threadId) payload.threadId = safeHeader(message.threadId, 'thread ID');
+    return request(`${API_ROOT}/messages/send`, { method: 'POST', body: payload });
+  }
+
   return {
     getProfile,
     verifyAccount,
@@ -213,5 +243,6 @@ export async function createGmailClient(options = {}) {
     listMessages,
     getMessage,
     modifyMessage,
+    sendMessage,
   };
 }

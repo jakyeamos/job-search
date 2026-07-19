@@ -10,6 +10,8 @@ data/job-queue.md
 data/queue-ui-launch-state.json
 data/gmail-state.json
 data/gmail-organizer-state.json
+data/outreach-state.json
+data/outreach-contacts.json
 data/.job-queue.lock
 reports/*.md
 !reports/.gitkeep

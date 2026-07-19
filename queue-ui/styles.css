@@ -223,6 +223,32 @@ h1 {
 
 .queue-section { padding-top: 42px; }
 
+.outreach-section { padding-top: 52px; }
+
+.outreach-list { display: grid; gap: 12px; }
+
+.outreach-card {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.outreach-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.outreach-card-heading h3 { margin: 0 0 4px; font-size: 16px; }
+.outreach-card-heading p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+.outreach-contacts { display: grid; gap: 10px; margin-top: 16px; }
+.outreach-contact { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.outreach-contact strong { margin-right: 8px; font-size: 14px; }
+.outreach-contact span { color: var(--ink-soft); font-size: 13px; }
+.outreach-contact-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.outreach-contact-meta .tag { color: var(--ink-soft); }
+.outreach-due { color: var(--ink-faint) !important; }
+.outreach-draft { color: var(--ink-soft); font-size: 13px; }
+.outreach-draft summary { width: fit-content; color: var(--accent-strong); cursor: pointer; font-weight: 700; }
+.outreach-draft p { max-width: 70ch; margin: 8px 0 0; white-space: pre-wrap; }
+.outreach-empty { margin: 0; padding: 20px 0; color: var(--ink-faint); font-size: 13px; }
+
 .section-heading {
   display: flex;
   align-items: end;

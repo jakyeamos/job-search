@@ -190,8 +190,8 @@ finish() {
 # Replace the example below. Set the two totals to match the stages you write.
 # --------------------------------------------------------------------------
 
-TOTAL_STAGES=5
-TOTAL_MINUTES=15
+TOTAL_STAGES=6
+TOTAL_MINUTES=18
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -216,7 +216,7 @@ chmod 600 "$ENV_FILE"
 step "Close the Google Cloud credentials tab before continuing."
 
 stage "Authorize exactly jakyejobs@gmail.com" 5
-say "Generate a refresh token with Gmail message and filter-management scopes for the target account only."
+say "Generate a refresh token with Gmail message, filter-management, and send scopes for the target account only."
 step "The Desktop OAuth client will use a temporary local callback and PKCE; OAuth Playground is not used."
 step "Run node scripts/gmail-oauth.mjs and open its authorization URL in Chrome Beta while signed into jakyejobs@gmail.com."
 node scripts/gmail-oauth.mjs
@@ -234,6 +234,15 @@ if confirm "Create Job Leads labels and auto-archive high-confidence alerts now?
   node gmail.mjs setup-filters
 else
   warn "Filters were not created. Run node gmail.mjs setup-filters later."
+fi
+
+stage "Review and enable post-application email" 3
+say "The dry run prepares contact-specific follow-ups without sending anything. Live email stays disabled until you explicitly enable it."
+node outreach.mjs process --dry-run
+if confirm "Enable verified post-application emails from jakyejobs@gmail.com?"; then
+  node outreach.mjs enable-email
+else
+  warn "Post-application email remains disabled. Run node outreach.mjs enable-email after reviewing the dry run."
 fi
 
 stage "Install the daily queue schedule" 2

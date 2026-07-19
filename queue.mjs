@@ -15,6 +15,7 @@ import {
 } from './gmail-client.mjs';
 import { hasGmailCredentials, organizeGmail } from './gmail.mjs';
 import { loadDotenvOnce, runHook } from './plugins/_engine.mjs';
+import { OUTREACH_STATE_PATH, recordSubmissionSignal } from './outreach-lib.mjs';
 import {
   DEFAULT_QUEUE_LIMIT,
   applicationKey,
@@ -314,6 +315,15 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic) {
       errors: sourceErrors,
     };
     if (!dryRun) saveQueue(root, state);
+    const outreachArgs = ['process'];
+    if (dryRun) outreachArgs.push('--dry-run');
+    const outreach = await runNodeScript('outreach.mjs', outreachArgs, { timeoutMs: 180_000 });
+    if (!outreach.ok) sourceErrors.push(`outreach process failed: ${outreach.error}`);
+    state.lastRun.outreach = {
+      ok: outreach.ok,
+      output: `${outreach.stdout || ''}${outreach.stderr || ''}`.trim().slice(0, 4000),
+    };
+    if (!dryRun) saveQueue(root, state);
     const selected = state.items.filter((item) => item.selectedForToday);
     console.log(`Queue refresh${dryRun ? ' (dry run)' : ''}: ${selected.length} role(s) selected, ${state.items.length} total retained.`);
     if (sourceErrors.length) for (const error of sourceErrors) console.log(`  ⚠️ ${error}`);
@@ -339,10 +349,13 @@ async function clearQueue(root) {
       if (action === 'q') break;
       if (action === 'o') { openUrl(item.applyUrl); continue; }
       if (action === 'a') {
+        const appliedAt = new Date().toISOString();
         item.status = 'applied';
+        item.appliedAt = appliedAt;
         item.selectedForToday = false;
         item.queueRank = null;
         const recorded = recordApplication(root, item);
+        recordSubmissionSignal(path.join(root, OUTREACH_STATE_PATH), item, { source: 'queue_applied', at: appliedAt });
         item.actionNote = recorded.reason;
         console.log(`  Applied recorded (${recorded.reason}).`);
       } else if (action === 's') {

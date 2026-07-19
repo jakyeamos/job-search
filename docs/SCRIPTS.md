@@ -29,8 +29,10 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 
 ## Daily application queue
 
-The queue is intentionally human-in-the-loop. It discovers and ranks roles but
-never submits an application or sends outreach automatically.
+The queue is intentionally human-in-the-loop for applications. It discovers
+and ranks roles but never submits an application. Post-application email is a
+separate, opt-in workflow that only sends to verified public professional
+addresses after a confirmed application signal.
 
 ```bash
 node queue.mjs refresh --limit 10
@@ -41,6 +43,8 @@ node queue.mjs verify
 node queue.mjs install-schedule --dry-run
 node queue.mjs install-schedule
 node queue-ui.mjs
+node outreach.mjs process --dry-run
+node outreach.mjs status
 ```
 
 The local queue UI runs at `http://127.0.0.1:47831/`. It reads the existing
@@ -57,6 +61,25 @@ and posting dates stay separate rather than being guessed.
 
 Queue state is kept in the local ignored files `data/job-queue.json` and
 `data/job-queue.md`.
+
+### Post-application outreach
+
+The outreach processor uses `data/outreach-contacts.json` when available. Each
+contact must include a name, role, public source URL, and `emailVerified: true`
+before email can be sent. LinkedIn messages remain drafts for manual sending.
+
+```bash
+node outreach.mjs prepare --application <queue-id> --dry-run
+node outreach.mjs process --dry-run
+node outreach.mjs enable-email
+node outreach.mjs process
+node outreach.mjs pause --application <queue-id>
+```
+
+Email is sent only from the verified `jakyejobs@gmail.com` account. The first
+live run is capped at two initial emails per day; use
+`node outreach.mjs ramp-complete` after reviewing the initial sends to activate
+the configured ten-email daily ceiling.
 
 ---
 

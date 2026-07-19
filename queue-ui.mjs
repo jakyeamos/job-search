@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 
 import { recordApplication, saveQueue } from './queue.mjs';
 import { readQueueState } from './queue-lib.mjs';
+import { OUTREACH_STATE_PATH, recordSubmissionSignal, loadOutreachState } from './outreach-lib.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -79,6 +80,24 @@ function queuePayload(state) {
   return {
     ...state,
     selected,
+    outreach: loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH)).records.map((record) => ({
+      key: record.key,
+      company: record.company,
+      title: record.title,
+      status: record.status,
+      searchQuery: record.searchQuery || '',
+      contacts: (record.contacts || []).map((contact) => ({
+        name: contact.name,
+        title: contact.title,
+        type: contact.type,
+        email: contact.email,
+        emailVerified: contact.emailVerified === true,
+        initialStatus: contact.initial?.status || 'none',
+        followUpStatus: contact.followUp?.status || 'none',
+        followUpDueAt: contact.followUp?.dueAt || null,
+        linkedinDraft: contact.linkedinDraft || '',
+      })),
+    })),
     totals: {
       retained: items.length,
       selected: selected.length,
@@ -104,14 +123,17 @@ function applyQueueAction(payload) {
   if (!item) throw new Error('queue item not found; refresh the page and try again');
 
   if (action === 'applied') {
+    const appliedAt = new Date().toISOString();
     const recorded = recordApplication(ROOT, item);
     if (!recorded.recorded && !recorded.reason.includes('already exists')) {
       throw new Error(recorded.reason);
     }
     item.status = 'applied';
+    item.appliedAt = appliedAt;
     item.selectedForToday = false;
     item.queueRank = null;
     item.actionNote = recorded.reason;
+    recordSubmissionSignal(path.join(ROOT, OUTREACH_STATE_PATH), item, { source: 'queue_applied', at: appliedAt });
   } else if (action === 'skipped') {
     item.status = 'skipped';
     item.selectedForToday = false;
@@ -145,6 +167,18 @@ async function refreshQueue() {
   };
 }
 
+async function processOutreach() {
+  const result = await execFileAsync(process.execPath, [path.join(ROOT, 'outreach.mjs'), 'process'], {
+    cwd: ROOT,
+    timeout: 180_000,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  return {
+    outreach: loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH)).records,
+    output: `${result.stdout || ''}${result.stderr || ''}`.trim(),
+  };
+}
+
 /** @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */
 async function handleRequest(request, response) {
   const requestUrl = new URL(request.url || '/', `http://${HOST}:${PORT}`);
@@ -171,6 +205,14 @@ async function handleRequest(request, response) {
   if (request.method === 'POST' && requestUrl.pathname === '/api/refresh') {
     try {
       sendJson(response, 200, await refreshQueue());
+    } catch (error) {
+      sendError(response, 502, error instanceof Error ? error.message : String(error));
+    }
+    return;
+  }
+  if (request.method === 'POST' && requestUrl.pathname === '/api/outreach/process') {
+    try {
+      sendJson(response, 200, await processOutreach());
     } catch (error) {
       sendError(response, 502, error instanceof Error ? error.message : String(error));
     }

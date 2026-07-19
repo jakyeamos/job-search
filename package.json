@@ -42,6 +42,8 @@
     "star": "node match-star.mjs",
     "archive": "node archive-posting.mjs",
     "prepare:application": "node prepare-application.mjs",
+    "outreach": "node outreach.mjs",
+    "outreach:dry-run": "node outreach.mjs process --dry-run",
     "build:dashboard": "node build-dashboard.mjs",
     "serve:dashboard": "cd dashboard && go run . --path ..",
     "postinstall": "npx playwright install chromium --with-deps || npx playwright install chromium --with-deps"
