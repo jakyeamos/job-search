@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "enabled": false,
+  "authorized": false,
+  "dailyLimit": 6,
+  "minFitScore": 4,
+  "maxPerCompanyPerDay": 1,
+  "allowedAdapters": ["greenhouse", "ashby", "lever"],
+  "requireActivePosting": true,
+  "requireKnownRequiredAnswers": true,
+  "stopOnCaptcha": true,
+  "stopOnMfa": true,
+  "allowMarketingConsent": false
+}

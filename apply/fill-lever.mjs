@@ -22,20 +22,21 @@
 
 import { chromium } from 'playwright';
 import {
-  parseCliArgs, loadProfile, loadAnswers, commonQuestions, answerFor,
-  createSummary, fillBySelector, attachFile, detectRequired, reconcile, finish,
-  settle, EEO_LABEL_RE, MARKETING_RE,
+  parseCliArgs, loadProfile, loadAnswers, loadLedgerAnswers, commonQuestions, answerFor,
+  createSummary, fillBySelector, attachFile, detectRequired, launchBrowser, reconcile, finish,
+  settle, EEO_LABEL_RE, LEGAL_LABEL_RE, MARKETING_RE,
 } from './lib/adapter-core.mjs';
 
 async function main() {
   const args = parseCliArgs();
   const profile = await loadProfile(args.profilePath);
   const answers = await loadAnswers(args.answersPath);
-  const tables = [answers, commonQuestions(profile)];
+  const ledgerAnswers = await loadLedgerAnswers(args.ledgerPath, { company: args.company, role: args.title, url: args.url });
+  const tables = [answers, ledgerAnswers, commonQuestions(profile)];
 
   const resumePath = args.resume || profile.defaults?.resume_path || '';
 
-  const browser = await chromium.launch({ headless: args.headless });
+  const browser = await launchBrowser(chromium, { headless: args.headless, channel: args.browser });
   const page = await browser.newPage();
   await page.goto(args.url, { waitUntil: 'domcontentloaded' });
   await page.locator('input[name="name"]').waitFor({ timeout: 20000 }).catch(() => {});
@@ -78,6 +79,10 @@ async function main() {
       tools.skip(`Marketing consent: ${c.label}`, 'left unchecked (privacy default)');
       continue;
     }
+    if (LEGAL_LABEL_RE.test(c.label)) {
+      tools.review(`Legal: ${c.label}`, 'legal attestation or background question — answer manually');
+      continue;
+    }
 
     const value = resolveValue(c.label, id, profile, tables);
     if (value === null) {
@@ -98,14 +103,26 @@ async function main() {
   const stillEmpty = await detectRequired(page);
   reconcile(tools, stillEmpty);
   for (const e of stillEmpty) {
-    if (EEO_LABEL_RE.test(e.label) || /surveysResponses/.test(e.name || '')) continue;
+    if (EEO_LABEL_RE.test(e.label) || LEGAL_LABEL_RE.test(e.label) || /surveysResponses/.test(e.name || '')) continue;
     if (/^location$/.test(e.name || '')) continue; // already flagged
     if (!tools.summary.needsReview.some((r) => r.label === e.label)) {
       tools.review(e.label || e.name, 'required and still empty');
     }
   }
 
-  await finish(browser, tools, { headless: args.headless, url: args.url });
+  await finish(page, browser, tools, {
+    headless: args.headless,
+    url: args.url,
+    submit: args.submit,
+    policy: await import('./application-policy.mjs').then(({ loadPolicy }) => loadPolicy(args.policyPath)),
+    ledgerPath: args.ledgerPath,
+    adapter: 'lever',
+    applicationKey: args.applicationKey,
+    company: args.company,
+    title: args.title,
+    fitScore: args.fitScore,
+    liveness: args.liveness,
+  });
 }
 
 function currentEmployer(profile) {

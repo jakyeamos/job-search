@@ -20,6 +20,9 @@ These files contain your personal data, customizations, and work product. Update
 | `data/search-ops.md` | Your active weekly job-search scoreboard and funnel notes |
 | `data/pipeline.md` | Your URL inbox |
 | `data/scan-history.tsv` | Your scan history |
+| `data/application-policy.json` | Your revocable auto-apply authorization and limits |
+| `data/application-question-ledger.json` | Your explicit answers to recurring application questions |
+| `data/application-runs.json` | Idempotency and submission outcome audit trail |
 | `reports/*` | Your evaluation reports |
 | `output/*` | Your generated PDFs |
 | `jds/*` | Your saved job descriptions |
@@ -38,6 +41,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/scan.md` | Portal scanner instructions |
 | `modes/batch.md` | Batch processing instructions |
 | `modes/apply.md` | Application assistant instructions |
+| `modes/auto-apply.md` | Authorized queue application worker instructions |
 | `modes/auto-pipeline.md` | Auto-pipeline instructions |
 | `modes/contacto.md` | LinkedIn outreach instructions |
 | `modes/deep.md` | Research prompt instructions |

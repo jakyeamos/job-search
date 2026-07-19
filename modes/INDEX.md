@@ -14,6 +14,7 @@ Modes are System Layer except `_profile.md` (User Layer personalization). See
 | [deep.md](deep.md) | "research this company" | Deep company/market research prompt |
 | [pdf.md](pdf.md) | "make my CV/PDF" | ATS-optimized tailored CV generation |
 | [apply.md](apply.md) | filling an application form | Live application assistant (see also [../apply/README.md](../apply/README.md) for deterministic ATS auto-fill) |
+| [auto-apply.md](auto-apply.md) | explicitly authorized queue clearing | Policy-gated automatic submission for supported ATS forms with question-ledger and idempotency controls |
 | [scan.md](scan.md) | "find new offers" | Portal scanner / job discovery |
 | [pipeline.md](pipeline.md) | "process my inbox" | Work pending URLs from `data/pipeline.md` |
 | [batch.md](batch.md) | "batch process these" | Mass parallel job processing |

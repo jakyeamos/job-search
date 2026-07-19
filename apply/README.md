@@ -9,12 +9,12 @@ Adapters: **Greenhouse**, **Ashby**, **Lever**.
 
 ## Hard rules (non-negotiable, enforced in code)
 
-1. **Never clicks Submit/Apply.** Adapters fill to submit-ready and stop. You submit.
+1. **Fill-only by default.** Adapters click Submit/Apply only when invoked with `--submit` and the local application policy is enabled and authorized. The queue worker adds active-posting, fit-score, required-answer, anti-bot, and idempotency gates.
 2. **Never auto-fills EEO / voluntary self-identification** (gender, race, veteran,
    disability, LGBTQIA+, CC-305). The section is detected and flagged — it's your call,
    same tier as CAPTCHA and the Submit button.
 3. **Leaves marketing-consent checkboxes unchecked** (privacy-preserving default).
-4. **Never invents facts.** Every value comes from the profile. A required field with no
+4. **Never invents facts.** Every value comes from the profile or an explicit answer in the question ledger. A required field with no
    backing value is flagged for you, never guessed.
 
 ## Canonical profile
@@ -37,10 +37,17 @@ node apply/fill-ashby.mjs <job-url> --resume path/to/resume.pdf
 
 # Lever (jobs.lever.co) — no cover-letter upload; long text goes to "Additional info"
 node apply/fill-lever.mjs <application-url> --resume path/to/resume.pdf --cover-text "..."
+
+# Authorized submission is opt-in and policy-gated.
+node apply/application-policy.mjs authorize
+node application-queue.mjs dry-run --limit 6
+node application-queue.mjs run --limit 6
 ```
 
-The browser launches **headed** and stays open after filling so you can review the
-⚠ flagged items and submit. Press Ctrl+C when done.
+Fill-only runs launch **headed** and stay open after filling so you can review the
+⚠ flagged items and submit. Authorized queue runs use headless execution by default,
+close only after a result is recorded, and stop on unresolved fields, CAPTCHA/MFA, or
+missing confirmation.
 
 ### Flags
 
@@ -52,6 +59,9 @@ The browser launches **headed** and stays open after filling so you can review t
 | `--cover-text "..."` | Long-form text for Lever's "Additional information" textarea |
 | `--answers <file.json>` | Per-posting custom answers (see below) |
 | `--profile <path>` | Alternate profile file (default `config/application-profile.json`) |
+| `--browser <channel>` | System browser channel, default `chrome-beta`, with fallback to Chrome then bundled Chromium |
+| `--submit` | Request the final submit click; still requires the local policy and all safety gates |
+| `--ledger <path>` | Question-ledger file used for explicit recurring answers |
 | `--headless` | Close the browser after filling — **for automated testing only** |
 
 ### Per-posting answers file

@@ -65,7 +65,7 @@ After detecting archetype, read `modes/_profile.md` for the user's specific fram
 
 1. Invent experience or metrics
 2. Modify cv.md or portfolio files
-3. Submit applications on behalf of the candidate
+3. Submit applications on behalf of the candidate unless the candidate has explicitly enabled the revocable auto-apply policy; then submit only through the audited queue worker and supported ATS adapters
 4. Share phone number in generated messages
 5. Recommend comp below market rate
 6. Generate a PDF without reading the JD first
