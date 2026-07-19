@@ -95,7 +95,7 @@ function cleanLine(text) {
 
 /** @param {string} text */
 function linesOf(text) {
-  return normalizeText(text)
+  return String(text || '')
     .replace(/<[^>]+>/g, '\n')
     .replace(/&(?:amp|nbsp|lt|gt);/gi, ' ')
     .split(/\r?\n/)
@@ -305,6 +305,11 @@ async function scrapePublicPage(url, options = {}) {
 export function extractPublicContacts(results, item) {
   const contacts = [];
   for (const result of results) contacts.push(...contactsFromResult(result, item));
+  return dedupeContacts(contacts);
+}
+
+/** @param {Array<Record<string, unknown>>} contacts */
+function dedupeContacts(contacts) {
   const deduped = new Map();
   for (const contact of contacts) {
     const key = lower(contact.email || contact.profileUrl || contact.name);
@@ -341,7 +346,8 @@ export async function discoverContactsForApplication(item, options = {}) {
         sources.push(url);
         if (isSearchScrapeCandidate(url) && hydrated.length < MAX_SCRAPES_PER_QUERY) {
           try {
-            hydrated.push(await scrapePublicPage(url, { credentials, fetchFn }));
+            const scraped = await scrapePublicPage(url, { credentials, fetchFn });
+            hydrated.push({ ...result, ...scraped });
           } catch { /* search metadata remains useful when a page cannot be scraped */ }
         }
       }
@@ -351,7 +357,7 @@ export async function discoverContactsForApplication(item, options = {}) {
     }
   }
   const uniqueSources = [...new Set(sources)].slice(0, 20);
-  const uniqueContacts = extractPublicContacts(contacts, item);
+  const uniqueContacts = dedupeContacts(contacts);
   return {
     status: uniqueContacts.length ? 'found' : 'no_contacts',
     reason: uniqueContacts.length ? `found ${uniqueContacts.length} public contact candidate(s)` : 'no eligible public contact found',

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildDiscoveryQueries,
+  discoverContactsForApplication,
   extractPublicContacts,
   isDiscoverableApplication,
 } from '../contact-discovery.mjs';
@@ -64,4 +65,35 @@ test('LinkedIn search results produce manual-only contact drafts', () => {
   assert.equal(contacts[0].emailVerified, false);
   assert.equal(contacts[0].email, null);
   assert.equal(contacts[0].sourceType, 'public-profile');
+});
+
+test('live discovery preserves contacts collected from search and scrape results', async () => {
+  const calls = [];
+  const result = await discoverContactsForApplication(item, {
+    env: { FIRECRAWL_API_KEY: 'test-key', FIRECRAWL_API_URL: 'https://example.com' },
+    fetchFn: async (input) => {
+      calls.push(String(input));
+      if (String(input).endsWith('/v2/search')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            web: [{
+              url: 'https://example.ai/team',
+              title: 'Taylor Example | Engineering Manager | Example AI',
+              description: 'Example AI engineering leadership',
+            }],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        success: true,
+        data: { markdown: 'Example AI\nTaylor Example\nEngineering Manager\ntaylor@example.ai' },
+      }), { status: 200 });
+    },
+  });
+  assert.equal(result.status, 'found');
+  assert.equal(result.contacts.length, 1);
+  assert.equal(result.contacts[0].email, 'taylor@example.ai');
+  assert.equal(calls.filter((url) => url.endsWith('/v2/search')).length, 2);
+  assert.equal(calls.filter((url) => url.endsWith('/v2/scrape')).length, 2);
 });
