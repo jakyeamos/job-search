@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from 'child_process';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
@@ -16,6 +16,8 @@ import {
 import { loadPolicy, submissionGate } from './apply/application-policy.mjs';
 import { beginRun, countSubmitted, DEFAULT_RUNS_PATH, finishRun, roleKey } from './apply/application-runs.mjs';
 import { DEFAULT_LEDGER_PATH } from './apply/question-ledger.mjs';
+import { registerResumeArtifact, resolveResumeArtifact } from './resume-contract.mjs';
+import { generateApplicationArtifacts, inspectArtifactCache } from './apply/application-artifacts.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -86,11 +88,43 @@ export function parseAdapterResult(output) {
   catch { return { state: 'failed', reason: 'adapter returned malformed machine-readable result' }; }
 }
 
-/** @param {Record<string, unknown>} item @param {string} adapter @param {{ headless: boolean }} options */
-function adapterCommand(item, adapter, options) {
-  const resume = String(item.resumeArtifact || '');
+/** @param {number} submittedThisRun @param {boolean} dryRun */
+export function shouldRunPostApplicationOutreach(submittedThisRun, dryRun) {
+  return !dryRun && submittedThisRun > 0;
+}
+
+/** @returns {Promise<{ triggered: boolean, ok: boolean, output?: string, reason?: string }>} */
+async function runPostApplicationOutreach() {
+  try {
+    const result = await execFileAsync(process.execPath, [path.join(ROOT, 'outreach.mjs'), 'process'], {
+      cwd: ROOT,
+      timeout: 180_000,
+      maxBuffer: 12 * 1024 * 1024,
+    });
+    return {
+      triggered: true,
+      ok: true,
+      output: `${result.stdout || ''}\n${result.stderr || ''}`.trim(),
+    };
+  } catch (error) {
+    const typed = /** @type {Error & {stdout?: string, stderr?: string}} */ (error);
+    return {
+      triggered: true,
+      ok: false,
+      output: `${typed.stdout || ''}\n${typed.stderr || ''}`.trim(),
+      reason: typed.message || String(error),
+    };
+  }
+}
+
+/** @param {Record<string, unknown>} item @param {string} adapter @param {{ headless: boolean }} options @param {{ artifactPath: string }} resume @param {{ coverLetterPdf?: string, coverLetterText?: string }} [artifacts] */
+function adapterCommand(item, adapter, options, resume, artifacts = {}) {
   const command = [ADAPTERS[adapter], String(item.applyUrl || item.canonicalUrl || '')];
-  if (resume) command.push('--resume', resume);
+  if (resume.artifactPath) command.push('--resume', resume.artifactPath);
+  if (artifacts.coverLetterPdf) command.push('--cover', artifacts.coverLetterPdf);
+  if (artifacts.coverLetterText && existsFile(artifacts.coverLetterText)) {
+    command.push('--cover-text', readFileSync(artifacts.coverLetterText, 'utf8'));
+  }
   command.push(
     '--policy', path.join(ROOT, 'data', 'application-policy.json'),
     '--ledger', DEFAULT_LEDGER_PATH,
@@ -105,6 +139,11 @@ function adapterCommand(item, adapter, options) {
   return command;
 }
 
+/** @param {string} file */
+function existsFile(file) {
+  return Boolean(file && existsSync(file));
+}
+
 /** @param {{ dryRun: boolean, limit: number, headed: boolean }} options */
 export async function runApplicationQueue(options = { dryRun: false, limit: 6, headed: false }) {
   const policy = loadPolicy();
@@ -115,6 +154,7 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
   const dailyCap = Math.min(options.limit, policy.dailyLimit);
   const today = new Date().toISOString().slice(0, 10);
   let submittedToday = countSubmitted(DEFAULT_RUNS_PATH, today);
+  let submittedThisRun = 0;
   const report = [];
 
   if (!policy.enabled || !policy.authorized) {
@@ -124,7 +164,23 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
     for (const item of items.slice(0, dailyCap)) {
       const adapter = adapterForUrl(String(item.applyUrl || item.canonicalUrl || ''));
       const gate = queueApplicationGate(item, policy, adapter);
-      report.push({ id: item.id, company: item.company, title: item.title, adapter, action: gate.ok ? 'would-submit' : 'blocked', reason: gate.reason });
+      if (!gate.ok) {
+        report.push({ id: item.id, company: item.company, title: item.title, adapter, action: 'blocked', reason: gate.reason });
+        continue;
+      }
+      const resume = resolveResumeArtifact(item, ROOT);
+      const artifacts = inspectArtifactCache(item);
+      report.push({
+        id: item.id,
+        company: item.company,
+        title: item.title,
+        adapter,
+        resumeStatus: resume.status,
+        artifactStatus: artifacts.status,
+        artifactManifest: artifacts.manifestPath,
+        action: artifacts.status === 'ready' && resume.ok ? 'would-submit' : 'would-generate-and-submit',
+        reason: gate.reason,
+      });
     }
     return { ok: true, dryRun: true, report };
   }
@@ -137,10 +193,43 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
       report.push(updateBlockedItem(state, item, gate.reason));
       continue;
     }
-    if (!existsSync(String(item.resumeArtifact || ''))) {
-      report.push(updateBlockedItem(state, item, `resume artifact is missing: ${item.resumeArtifact || '(none)'}`));
+    let artifacts;
+    try {
+      artifacts = await generateApplicationArtifacts(item, {
+        includeCoverLetter: policy.generateCoverLetter !== false,
+      });
+    } catch (error) {
+      artifacts = { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+    if (!artifacts.ok) {
+      report.push(updateBlockedItem(state, item, `application artifact generation failed: ${artifacts.reason}`));
       continue;
     }
+    if (artifacts.jobDescription && String(artifacts.jobDescription).length > String(item.description || '').length) {
+      item.description = artifacts.jobDescription;
+    }
+    if (!item.lane && artifacts.lane) item.lane = artifacts.lane;
+    const registered = registerResumeArtifact(item, ROOT, {
+      artifactPath: artifacts.resumePdf,
+      htmlPath: artifacts.resumeHtml,
+      sourceMode: 'tailored-generated',
+      auditStatus: 'passed',
+    });
+    const resume = resolveResumeArtifact({ ...item, resumeManifest: registered.manifestPath }, ROOT);
+    if (!resume.ok) {
+      report.push(updateBlockedItem(state, item, resume.reason));
+      continue;
+    }
+    item.resumeContractVersion = resume.request.contractVersion;
+    item.resumeJobKey = resume.request.jobKey;
+    item.resumeManifest = resume.manifestPath;
+    item.resumeArtifact = resume.artifactPath;
+    item.resumeFormat = resume.request.paperFormat;
+    item.resumeProjects = resume.request.selectedProjects;
+    item.resumeStatus = `${resume.manifest.sourceMode}; audit ${resume.manifest.auditStatus}`;
+    item.coverLetterArtifact = artifacts.coverLetterPdf || null;
+    item.coverLetterText = artifacts.coverLetterText || null;
+    item.applicationArtifactManifest = artifacts.manifestPath;
     if (countSubmitted(DEFAULT_RUNS_PATH, today, String(item.company || '')) >= policy.maxPerCompanyPerDay) {
       report.push(updateBlockedItem(state, item, `daily company limit reached for ${item.company || 'this company'}`));
       continue;
@@ -153,7 +242,11 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
       location: item.location,
       adapter,
       url: item.applyUrl || item.canonicalUrl,
-      resumeArtifact: item.resumeArtifact || null,
+      resumeArtifact: resume.artifactPath,
+      resumeManifest: resume.manifestPath,
+      resumeStatus: resume.status,
+      coverLetterArtifact: item.coverLetterArtifact,
+      applicationArtifactManifest: item.applicationArtifactManifest,
       fitScore: item.fitScore || null,
       lane: item.lane || null,
     });
@@ -162,7 +255,10 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
       continue;
     }
 
-    const result = await runAdapter(adapterCommand(item, adapter, { headless: !options.headed }), 180_000)
+    const result = await runAdapter(adapterCommand(item, adapter, { headless: !options.headed }, resume, {
+      coverLetterPdf: item.coverLetterArtifact,
+      coverLetterText: item.coverLetterText,
+    }), 180_000)
       || { state: 'failed', reason: 'adapter did not return a machine-readable result' };
     finishRun(DEFAULT_RUNS_PATH, key, result);
     item.applicationState = result.state;
@@ -175,6 +271,7 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
       const recorded = recordApplication(ROOT, item);
       item.actionNote = recorded.reason;
       submittedToday += 1;
+      submittedThisRun += 1;
     } else {
       item.status = 'in_review';
       item.selectedForToday = false;
@@ -183,7 +280,14 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
     saveQueue(state);
     report.push({ id: item.id, company: item.company, title: item.title, adapter, action: result.state, reason: result.reason });
   }
-  return { ok: true, submittedToday, report };
+  const outreach = shouldRunPostApplicationOutreach(submittedThisRun, options.dryRun)
+    ? await runPostApplicationOutreach()
+    : {
+      triggered: false,
+      ok: true,
+      reason: options.dryRun ? 'dry run does not trigger outreach' : 'no confirmed submissions in this run',
+    };
+  return { ok: true, submittedToday, submittedThisRun, outreach, report };
 }
 
 /** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {string} reason */

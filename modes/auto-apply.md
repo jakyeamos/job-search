@@ -8,6 +8,7 @@ uses the verified profile plus the question ledger, and records every outcome.
 
 ```bash
 node apply/application-policy.mjs status
+node resume.mjs plan --limit 6
 node application-queue.mjs dry-run --limit 6
 node application-queue.mjs run --limit 6
 node apply/question-ledger.mjs list
@@ -39,9 +40,39 @@ node apply/application-policy.mjs disable
   normalized company, role, and location.
 - Unsupported forms remain in the queue with a precise blocker. The worker does
   not bypass sign-in, CAPTCHA, rate limits, or a site's application controls.
-- The worker consumes the queue item's `resumeArtifact`; use the existing
-  resume/PDF mode to create or review a lane-specific artifact before retrying
-  a role whose file is missing or stale.
+- Before an adapter run, the worker generates a job-specific one-page resume
+  and one-page cover letter from the canonical evidence sources and the queue's
+  posting description. It caches by job/evidence hash, fails closed on missing
+  job descriptions or thin evidence, registers the resume manifest, and verifies
+  the artifact hash, lane, selected projects, evidence sources, paper format,
+  and audit status before upload.
+- After a batch has at least one confirmed `submitted` result, the worker runs
+  one bounded post-application outreach pass. Dry runs, blocked applications,
+  failed submissions, and `submission_unknown` results never trigger it.
+
+## Resume contract
+
+Plan selected queue roles without changing state:
+
+```bash
+node resume.mjs plan --limit 6
+```
+
+For a manual or external renderer, register an approved artifact against the
+queue role:
+
+```bash
+node resume.mjs register \
+  --item-id <queue-id> \
+  --artifact output/applications/<role>/resume.pdf \
+  --html output/applications/<role>/resume.html \
+  --source-mode tailored \
+  --audit-status passed
+```
+
+The queue accepts legacy existing artifacts during migration, but records them
+as `legacy-existing` rather than pretending they are tailored. A changed or
+missing artifact fails closed.
 
 ## Question ledger
 

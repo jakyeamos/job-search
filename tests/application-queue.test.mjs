@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { adapterForUrl, parseAdapterResult, queueApplicationGate } from '../application-queue.mjs';
+import {
+  adapterForUrl,
+  parseAdapterResult,
+  queueApplicationGate,
+  shouldRunPostApplicationOutreach,
+} from '../application-queue.mjs';
 import { DEFAULT_POLICY } from '../apply/application-policy.mjs';
 
 test('queue maps supported ATS hosts and rejects unknown forms', () => {
@@ -23,4 +28,11 @@ test('worker consumes the adapter result marker', () => {
   const result = parseAdapterResult('log\nCAREER_OPS_APPLICATION_RESULT {"state":"submitted","reason":"confirmed"}\n');
   assert.deepEqual(result, { state: 'submitted', reason: 'confirmed' });
   assert.equal(parseAdapterResult('no marker'), null);
+});
+
+test('post-application outreach only runs after confirmed non-dry-run submissions', () => {
+  assert.equal(shouldRunPostApplicationOutreach(1, false), true);
+  assert.equal(shouldRunPostApplicationOutreach(6, false), true);
+  assert.equal(shouldRunPostApplicationOutreach(0, false), false);
+  assert.equal(shouldRunPostApplicationOutreach(1, true), false);
 });

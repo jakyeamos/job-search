@@ -72,6 +72,12 @@ source URLs and evidence locally. The existing `data/outreach-contacts.json`
 manifest remains a supported override/supplement for contacts you have already
 researched.
 
+The authorized `node application-queue.mjs run` worker invokes one outreach
+processing pass after a batch contains at least one confirmed submission. Dry
+runs, blocked applications, failed submissions, and `submission_unknown`
+results do not trigger outreach. The interactive queue uses the same processor
+after its `Applied` action.
+
 Automatic email still requires a named or explicitly generic professional
 contact, a public source URL, a company-domain address, and
 `emailVerified: true`. Guessed addresses, private mailboxes, LinkedIn scraping,
