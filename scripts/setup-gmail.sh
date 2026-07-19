@@ -34,7 +34,7 @@ SKIPPED=()        # things we couldn't do (e.g. gh missing)
 # output isn't a terminal, so piped logs stay readable.
 _clear() {
   [[ -t 1 ]] || return 0
-  if command -v tput >/dev/null 2>&1; then tput clear; else printf '\033[2J\033[3J\033[H'; fi
+  if command -v tput >/dev/null 2>&1; then tput clear 2>/dev/null || true; else printf '\033[2J\033[3J\033[H'; fi
 }
 
 # banner "Title" - opening frame: what this wizard does and how long it takes.
@@ -55,7 +55,7 @@ stage() {
   _clear
   _STAGE_INDEX=$((_STAGE_INDEX + 1))
   local remaining=$((TOTAL_MINUTES - _MINUTES_ELAPSED))
-  (( remaining < 0 )) && remaining=0
+  if (( remaining < 0 )); then remaining=0; fi
   _MINUTES_ELAPSED=$((_MINUTES_ELAPSED + ${2:-0}))
   printf '\n%s%s> Stage %s/%s * %s%s  %s(~%s min left)%s\n' \
     "$BOLD" "$BLUE" "$_STAGE_INDEX" "$TOTAL_STAGES" "$1" "$RESET" "$DIM" "$remaining" "$RESET"
@@ -176,8 +176,8 @@ set_var() {
 finish() {
   _clear
   printf '\n%s%s  OK Setup complete%s\n' "$BOLD" "$GREEN" "$RESET"
-  (( ${#WRITTEN_ENV[@]} ))    && note "wrote ${#WRITTEN_ENV[@]} value(s) to $ENV_FILE: ${WRITTEN_ENV[*]}"
-  (( ${#WRITTEN_SECRET[@]} )) && note "set ${#WRITTEN_SECRET[@]} GitHub secret(s): ${WRITTEN_SECRET[*]}"
+  if (( ${#WRITTEN_ENV[@]} )); then note "wrote ${#WRITTEN_ENV[@]} value(s) to $ENV_FILE: ${WRITTEN_ENV[*]}"; fi
+  if (( ${#WRITTEN_SECRET[@]} )); then note "set ${#WRITTEN_SECRET[@]} GitHub secret(s): ${WRITTEN_SECRET[*]}"; fi
   if (( ${#SKIPPED[@]} )); then
     printf '\n'; warn "still to do by hand:"
     for s in "${SKIPPED[@]}"; do note "  - $s"; done
