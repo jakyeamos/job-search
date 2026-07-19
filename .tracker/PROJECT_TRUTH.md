@@ -2,7 +2,7 @@
 
 ## Current State
 
-- Post-application outreach is implemented in commit `caf83bb`; public contact discovery is now integrated in the current working tree.
+- Post-application outreach and Firecrawl-backed public contact discovery are implemented in commits `0fabef4` and `cbb62fd`.
 - Queue `Applied`, local confirmed application runs, and matched Gmail confirmation messages feed one idempotent outreach record per company and role.
 - Email is fail-closed to `jakyejobs@gmail.com`; LinkedIn output remains a manual draft.
 - Initial live-email ramp is capped at two messages per day until explicitly completed.
@@ -14,6 +14,7 @@
 
 - Contact candidates are accepted only with public professional evidence; guessed, private, personal, unrelated, and duplicate contacts are rejected.
 - The processor searches for public recruiter, hiring-manager, and team evidence after application signals; `data/outreach-contacts.json` remains a supplement/correction manifest.
+- Dogfood found and fixed a result-preservation defect in `cbb62fd`: scraped/search contact candidates now survive deduplication and retain search-result identity metadata.
 - The queue UI exposes outreach status, verified-email state, follow-up dates, and LinkedIn drafts.
 - Follow-ups are scheduled five business days after a send and stop on replies, bounces, opt-outs, rejection, closed roles, or pause.
 
@@ -25,6 +26,7 @@
 
 ## Validation
 
-- 54 repository tests pass.
+- 55 repository tests pass, including a mocked search-plus-scrape discovery path.
+- Live discovery against the current valid Amazon record completed with 2 bounded searches, 10 sources, and 0 eligible public contacts; no email was sent.
 - JavaScript syntax checks, `git diff --check`, queue verification, doctor, and the no-network outreach dry run pass.
 - Doctor reports only the existing warning that Playwright MCP tools are not configured.
