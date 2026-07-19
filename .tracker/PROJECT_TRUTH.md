@@ -11,6 +11,7 @@
 - Discovery now adds a first-party Gmail relationship pass plus configured Amazon/CWRU public-network searches; public LinkedIn snippets may contribute an explicitly published employer email only when employer-domain evidence passes.
 - Current local outreach state has three records, zero sends, two blocked malformed aggregate-alert identities, and one valid Amazon application with eight candidates and two ranked LinkedIn drafts.
 - The verified project-accomplishment ledger is `config/project-accomplishment-ledger.json`: 31 researched entries, 29 approved answer atoms, and 2 intentionally excluded planning/superseded entries. All absolute source references resolve locally.
+- Job-aware accomplishment selection is implemented in `ef5390a`; the queue passes each role's lane and posting description into the ATS adapters.
 
 ## Current Position
 
