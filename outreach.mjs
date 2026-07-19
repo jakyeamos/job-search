@@ -10,6 +10,10 @@ import {
   TARGET_GMAIL_ACCOUNT,
   createGmailClient,
 } from './gmail-client.mjs';
+import {
+  discoverContactsForApplication,
+  isDiscoverableApplication,
+} from './contact-discovery.mjs';
 import { getMessageBody, isAuthenticEmail } from './plugins/gmail/_helpers.mjs';
 import { loadDotenvOnce } from './plugins/_engine.mjs';
 import {
@@ -84,14 +88,20 @@ function contactsForItem(item, manifest) {
   return Array.isArray(match?.contacts) ? match.contacts : embedded;
 }
 
-/** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {boolean} dryRun */
-function prepareRecord(state, item, dryRun) {
+/** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {boolean} dryRun @param {Array<Record<string, unknown>>} [discoveredContacts] */
+function prepareRecord(state, item, dryRun, discoveredContacts = []) {
   const record = upsertSubmissionSignal(state, item, {
     source: 'queue_applied',
     at: item.appliedAt || new Date().toISOString(),
   });
+  if (record.status === 'needs_application_identity') return record;
   const policy = loadOutreachPolicy(loadProfile(ROOT));
-  const contacts = selectContacts(rankContacts(contactsForItem(item, loadContactManifest()), item), policy.maxContactsPerApplication);
+  const persistedContacts = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
+  const contacts = selectContacts(rankContacts([
+    ...contactsForItem(item, loadContactManifest()),
+    ...persistedContacts,
+    ...discoveredContacts,
+  ], item), policy.maxContactsPerApplication);
   const existing = new Map((record.contacts || []).map((contact) => [contact.id, contact]));
   record.contacts = contacts.map((contact) => {
     const old = existing.get(contact.id);
@@ -118,6 +128,52 @@ function prepareRecord(state, item, dryRun) {
   record.updatedAt = new Date().toISOString();
   if (!dryRun) saveOutreachState(STATE_PATH, state);
   return record;
+}
+
+/** @param {Record<string, unknown>} record @param {Record<string, unknown>} item @param {boolean} dryRun */
+async function discoverForRecord(record, item, dryRun) {
+  if (record.status === 'paused' || record.status === 'suppressed' || record.status === 'needs_application_identity') {
+    return { status: 'skipped', reason: `record status is ${record.status}`, contacts: [], sources: [], queries: [], errors: [] };
+  }
+  if (!isDiscoverableApplication(item)) {
+    record.status = 'needs_application_identity';
+    record.suppressionReason = 'application evidence does not identify a specific employer';
+    record.discovery = {
+      status: 'blocked',
+      attemptedAt: new Date().toISOString(),
+      candidateCount: 0,
+      sourceCount: 0,
+      reason: 'application identity is not specific enough for contact discovery',
+    };
+    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', contacts: [], sources: [], queries: [], errors: [] };
+  }
+  const attemptedAt = String(record.discovery?.attemptedAt || '');
+  const age = attemptedAt ? Date.now() - new Date(attemptedAt).getTime() : Number.POSITIVE_INFINITY;
+  if (Number.isFinite(age) && age < 7 * 24 * 60 * 60 * 1000 && Array.isArray(record.discoveredContacts)) {
+    return {
+      status: String(record.discovery?.status || 'cached'),
+      reason: 'recent discovery result reused',
+      contacts: record.discoveredContacts,
+      sources: Array.isArray(record.discovery?.sources) ? record.discovery.sources : [],
+      queries: Array.isArray(record.discovery?.queries) ? record.discovery.queries : [],
+      errors: Array.isArray(record.discovery?.errors) ? record.discovery.errors : [],
+    };
+  }
+  const result = await discoverContactsForApplication(item, { dryRun });
+  if (!dryRun) {
+    record.discoveredContacts = result.contacts;
+    record.discovery = {
+      status: result.status,
+      attemptedAt: new Date().toISOString(),
+      candidateCount: result.contacts.length,
+      sourceCount: result.sources.length,
+      reason: result.reason,
+      queries: result.queries,
+      sources: result.sources,
+      errors: result.errors,
+    };
+  }
+  return result;
 }
 
 /** @param {Record<string, unknown>} item @param {Record<string, unknown>} record */
@@ -346,7 +402,7 @@ async function sendPending(state, item, record, policy, dryRun) {
 function updateStatuses(state, items) {
   const itemByKey = new Map(items.map((item) => [applicationKey(item), item]));
   for (const record of state.records || []) {
-    if (record.status === 'paused' || record.status === 'suppressed') continue;
+    if (record.status === 'paused' || record.status === 'suppressed' || record.status === 'needs_application_identity') continue;
     const item = itemByKey.get(record.key);
     if (item && ['skipped', 'rejected', 'closed', 'withdrawn', 'not_selected'].includes(item.status)) {
       record.status = 'suppressed';
@@ -395,9 +451,31 @@ async function processOutreach(dryRun) {
       confirmation = { scanned: false, matched: 0, reason: error instanceof Error ? error.message : String(error) };
     }
   }
+  const discoveries = [];
   for (const record of state.records || []) {
     const item = items.find((candidate) => applicationKey(candidate) === record.key);
-    if (item) prepareRecord(state, item, true);
+    if (!item) continue;
+    try {
+      const result = await discoverForRecord(record, item, dryRun);
+      discoveries.push({ company: item.company, title: item.title, ...result });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      record.discovery = {
+        status: 'error',
+        attemptedAt: new Date().toISOString(),
+        candidateCount: 0,
+        sourceCount: 0,
+        reason,
+        queries: [],
+        sources: [],
+        errors: [reason],
+      };
+      discoveries.push({ company: item.company, title: item.title, status: 'error', reason, contacts: [], sources: [], queries: [], errors: [reason] });
+    }
+  }
+  for (const record of state.records || []) {
+    const item = items.find((candidate) => applicationKey(candidate) === record.key);
+    if (item) prepareRecord(state, item, true, Array.isArray(record.discoveredContacts) ? record.discoveredContacts : []);
   }
   let responses = { checked: false, replies: 0, bounces: 0, reason: 'response scan unavailable' };
   if (!dryRun) {
@@ -431,10 +509,32 @@ async function processOutreach(dryRun) {
   console.log(`Outreach process${dryRun ? ' (dry run)' : ''}: ${state.records.length} record(s), ${sent} email(s) sent.`);
   console.log(`  Browser application scan: ${browser.reason}`);
   console.log(`  Confirmation scan: ${confirmation.reason}`);
+  for (const discovery of discoveries) {
+    console.log(`  Contact discovery: ${discovery.company || 'Unknown'} / ${discovery.title || 'Unknown'} — ${discovery.reason || discovery.status}`);
+  }
   console.log(`  Response scan: ${responses.reason}`);
   for (const record of state.records) printPrepared({ company: record.company, title: record.title }, record);
   for (const error of errors) console.log(`  ⚠️ ${error}`);
   return { state, confirmation, sent, errors };
+}
+
+/** @param {string} applicationId @param {boolean} dryRun */
+async function discover(applicationId, dryRun) {
+  const queue = readQueueState(QUEUE_PATH);
+  const items = Array.isArray(queue.items) ? queue.items : [];
+  const item = items.find((candidate) => candidate.id === applicationId || applicationKey(candidate) === applicationId);
+  if (!item) throw new Error(`application not found: ${applicationId}`);
+  const state = loadOutreachState(STATE_PATH);
+  const record = findOutreachRecord(state, applicationKey(item)) || upsertSubmissionSignal(state, item, {
+    source: 'manual_discovery',
+    at: new Date().toISOString(),
+  });
+  const result = await discoverForRecord(record, item, dryRun);
+  if (!dryRun) {
+    prepareRecord(state, item, true, Array.isArray(record.discoveredContacts) ? record.discoveredContacts : []);
+    saveOutreachState(STATE_PATH, state);
+  }
+  console.log(JSON.stringify({ application: applicationKey(item), ...result }, null, 2));
 }
 
 /** @param {string} applicationId */
@@ -473,6 +573,13 @@ function status() {
     company: record.company,
     title: record.title,
     status: record.status,
+    discovery: record.discovery ? {
+      status: record.discovery.status || 'unknown',
+      attemptedAt: record.discovery.attemptedAt || null,
+      candidateCount: record.discovery.candidateCount || 0,
+      sourceCount: record.discovery.sourceCount || 0,
+      reason: record.discovery.reason || '',
+    } : null,
     contacts: (record.contacts || []).map((contact) => ({
       name: contact.name,
       type: contact.type,
@@ -491,6 +598,7 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'status';
   if (command === 'prepare') { prepare(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
+  if (command === 'discover') { await discover(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
   if (command === 'process') { await processOutreach(hasFlag(args, '--dry-run')); return; }
   if (command === 'status') { status(); return; }
   if (command === 'pause') { pause(readFlag(args, '--application')); return; }
@@ -504,7 +612,7 @@ async function main() {
   }
   if (command === 'ramp-complete') { setRamp(true); return; }
   if (command === 'ramp-reset') { setRamp(false); return; }
-  throw new Error('Usage: node outreach.mjs prepare|process|status|pause|enable-email|disable-email|ramp-complete|ramp-reset');
+  throw new Error('Usage: node outreach.mjs prepare|discover|process|status|pause|enable-email|disable-email|ramp-complete|ramp-reset');
 }
 
 main().catch((error) => {

@@ -1,0 +1,67 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  buildDiscoveryQueries,
+  extractPublicContacts,
+  isDiscoverableApplication,
+} from '../contact-discovery.mjs';
+
+const item = {
+  company: 'Example AI',
+  title: 'Backend AI Engineer',
+  applyUrl: 'https://jobs.example.ai/roles/backend-ai',
+};
+
+test('contact discovery rejects aggregate alert identities', () => {
+  assert.equal(isDiscoverableApplication(item), true);
+  assert.equal(isDiscoverableApplication({
+    ...item,
+    company: 'F-ADA and 7 more jobs in New York, NY for you. Apply Now.',
+  }), false);
+  assert.equal(buildDiscoveryQueries(item).length, 2);
+  assert.equal(buildDiscoveryQueries({ ...item, company: 'F-ADA and 7 more jobs' }).length, 0);
+});
+
+test('contact extraction only marks public company evidence as email-eligible', () => {
+  const contacts = extractPublicContacts([
+    {
+      url: 'https://example.ai/team',
+      title: 'Taylor Example | Engineering Manager | Example AI',
+      markdown: 'Taylor Example\nEngineering Manager\n[taylor@example.ai](mailto:taylor@example.ai)',
+    },
+    {
+      url: 'https://example.ai/careers',
+      title: 'Example AI careers',
+      markdown: 'Recruiting team: recruiting@example.ai',
+    },
+    {
+      url: 'https://example.ai/about',
+      title: 'Example AI leadership',
+      markdown: 'Private mailbox: someone@gmail.com',
+    },
+    {
+      url: 'https://other.example/team',
+      title: 'Example AI team',
+      markdown: 'Taylor Example\nEngineering Manager\ntaylor@example.ai',
+    },
+  ], item);
+
+  assert.equal(contacts.length, 2);
+  assert.equal(contacts.find((contact) => contact.name === 'Taylor Example')?.emailVerified, true);
+  assert.equal(contacts.find((contact) => contact.name === 'Recruiting Team')?.email, 'recruiting@example.ai');
+  assert.equal(contacts.some((contact) => contact.email === 'someone@gmail.com'), false);
+  assert.equal(contacts.some((contact) => contact.sourceUrl === 'https://other.example/team'), false);
+});
+
+test('LinkedIn search results produce manual-only contact drafts', () => {
+  const contacts = extractPublicContacts([{
+    url: 'https://www.linkedin.com/in/taylor-example',
+    title: 'Taylor Example - Engineering Manager - Example AI | LinkedIn',
+    description: 'Engineering Manager at Example AI',
+  }], item);
+  assert.equal(contacts.length, 1);
+  assert.equal(contacts[0].emailVerified, false);
+  assert.equal(contacts[0].email, null);
+  assert.equal(contacts[0].sourceType, 'public-profile');
+});

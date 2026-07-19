@@ -34,6 +34,8 @@ const FREE_EMAIL_DOMAINS = new Set([
 ]);
 const CONFIRMATION_RE = /(?:application\s+(?:was\s+)?(?:received|submitted)|thank\s+you\s+for\s+applying|thanks\s+for\s+applying|we['’]?ve\s+received\s+your\s+application|successfully\s+applied)/i;
 const TITLE_STOPWORDS = new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'the', 'to', 'with', 'software', 'engineer', 'developer']);
+const COMPANY_STOPWORDS = new Set(['and', 'more', 'jobs', 'job', 'for', 'you', 'apply', 'now', 'new', 'york', 'your']);
+const AGGREGATE_COMPANY_RE = /\band\s+\d+\s+more\b|\b\d+\s+more\s+jobs?\b|\bfor\s+you\b|\bapply\s+now\b/i;
 const BLOCKED_MESSAGE_RE = /(?:\+?1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}|expected\s+(?:(?:may|spring|fall|summer|winter)\s+)?20\d{2}|(?:spring|fall|summer|winter)\s+20\d{2}|\btwo\s+courses?\s+remaining\b)/i;
 
 /** @param {string} value */
@@ -131,7 +133,7 @@ export function upsertSubmissionSignal(state, item, signal) {
         lastAt: at,
       };
     }
-    if (!['paused', 'complete', 'suppressed'].includes(existing.status)) existing.status = 'awaiting_contacts';
+    if (!['paused', 'complete', 'suppressed', 'needs_application_identity'].includes(existing.status)) existing.status = 'awaiting_contacts';
     return existing;
   }
   const record = {
@@ -399,11 +401,16 @@ export function matchesApplicationConfirmation(subject, from, body, item) {
   const combined = lower(`${subject} ${from} ${body}`);
   if (!CONFIRMATION_RE.test(combined)) return false;
   const company = lower(item.company);
-  const companyTokens = company.split(/[^a-z0-9]+/).filter((token) => token.length >= 4 && !['inc', 'llc', 'corp', 'company'].includes(token));
-  const companyMatch = companyTokens.length === 0 || companyTokens.some((token) => combined.includes(token));
+  if (!company || AGGREGATE_COMPANY_RE.test(company)) return false;
+  const companyPhrase = company.replace(/[^a-z0-9]+/g, ' ').trim();
+  const companyTokens = company.split(/[^a-z0-9]+/).filter((token) => token.length >= 4 && !['inc', 'llc', 'corp', 'company', ...COMPANY_STOPWORDS].includes(token));
+  const companyMatch = (companyPhrase && combined.includes(companyPhrase)) || companyTokens.some((token) => combined.includes(token));
   if (!companyMatch) return false;
-  const titleTokens = lower(item.title).split(/[^a-z0-9]+/).filter((token) => token.length >= 4 && !TITLE_STOPWORDS.has(token));
-  return titleTokens.length === 0 || titleTokens.some((token) => combined.includes(token));
+  const title = lower(item.title);
+  const titlePhrase = title.replace(/[^a-z0-9]+/g, ' ').trim();
+  if (titlePhrase && combined.includes(titlePhrase)) return true;
+  const titleTokens = title.split(/[^a-z0-9]+/).filter((token) => token.length >= 4 && !TITLE_STOPWORDS.has(token));
+  return titleTokens.length > 0 && titleTokens.every((token) => combined.includes(token));
 }
 
 /** @param {Record<string, unknown>} state @param {string} key */

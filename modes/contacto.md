@@ -71,10 +71,13 @@ short message; otherwise run the LinkedIn power move below.
 
 ## Career Ops outreach handoff
 
-When this mode is run for an application already marked `Applied`, it may
-write public professional contact candidates to the local ignored file
+When this mode is run for an application already marked `Applied`, it may write
+public professional contact candidates to the local ignored file
 `data/outreach-contacts.json` using the shape below. This is an input manifest
-for the outreach processor, not a permission to send.
+for the outreach processor, not a permission to send. The scheduled processor
+also runs its own bounded Firecrawl-backed public discovery pass after an
+application signal, so this manifest is a supplement or a correction path, not
+a manual prerequisite.
 
 ```json
 {
@@ -101,9 +104,11 @@ for the outreach processor, not a permission to send.
 ```
 
 Only public company/job/profile sources qualify an email for automatic sending.
-Never guess an address, use a personal mailbox, scrape LinkedIn, or include a
-contact whose identity or role relevance is uncertain. LinkedIn output remains
-a manual draft.
+Never guess an address, use a personal mailbox, scrape LinkedIn, crawl TeamWork
+Online, or include a contact whose identity or role relevance is uncertain.
+LinkedIn output remains a manual draft. If discovery cannot identify a specific
+employer from the application evidence, the record is held for correction and
+cannot send.
 
 ---
 

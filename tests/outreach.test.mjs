@@ -94,6 +94,12 @@ test('submission signals are idempotent and confirmation emails must match the r
     assert.equal(state.records[0].submission.signals.length, 3);
     assert.equal(matchesApplicationConfirmation('Thank you for applying to Backend AI Engineer', 'Recruiting <jobs@example.ai>', 'Example AI received your application.', item), true);
     assert.equal(matchesApplicationConfirmation('Thank you for applying', 'Recruiting <jobs@other.ai>', 'Other Co received your application.', item), false);
+    assert.equal(matchesApplicationConfirmation(
+      'Thank you for applying!',
+      'Utah Jazz <do-not-reply@mail.paylocity.com>',
+      'Thank you for your interest in the AI & Innovation Intern role with Utah Jazz.',
+      { ...item, company: 'Triplenet Pricing and 7 more jobs in New York, NY for you. Apply Now.', title: 'ASP.NET Developer' },
+    ), false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

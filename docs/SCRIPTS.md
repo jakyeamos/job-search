@@ -64,12 +64,24 @@ Queue state is kept in the local ignored files `data/job-queue.json` and
 
 ### Post-application outreach
 
-The outreach processor uses `data/outreach-contacts.json` when available. Each
-contact must include a name, role, public source URL, and `emailVerified: true`
-before email can be sent. LinkedIn messages remain drafts for manual sending.
+After an application signal, the outreach processor runs a bounded public
+contact-discovery pass through the authenticated Firecrawl CLI credentials when
+they are available. It searches for the assigned recruiter, hiring manager, or
+relevant team member, scrapes only non-LinkedIn public pages, and stores the
+source URLs and evidence locally. The existing `data/outreach-contacts.json`
+manifest remains a supported override/supplement for contacts you have already
+researched.
+
+Automatic email still requires a named or explicitly generic professional
+contact, a public source URL, a company-domain address, and
+`emailVerified: true`. Guessed addresses, private mailboxes, LinkedIn scraping,
+and TeamWork Online crawling are blocked. LinkedIn messages remain drafts for
+manual sending. Dry-run mode performs no web discovery and no network send.
 
 ```bash
 node outreach.mjs prepare --application <queue-id> --dry-run
+node outreach.mjs discover --application <queue-id> --dry-run
+node outreach.mjs discover --application <queue-id>
 node outreach.mjs process --dry-run
 node outreach.mjs enable-email
 node outreach.mjs process
