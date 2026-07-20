@@ -217,10 +217,16 @@ If the user says yes, run the full cover letter flow from `modes/cover.md` in sl
 4. Surface any gaps (Step 5)
 5. Ask the four prompts: why / problems / approach / tone (Step 6)
 6. Draft in chat, wait for approval (Steps 7-8)
-7. Generate cover letter PDF via `node generate-cover-letter.mjs` (Step 9)
+7. For a queue role, generate the evidence-bound resume and cover letter with
+   `node apply/application-artifacts.mjs build --queue-id <queue-id>` (or use
+   `pnpm cover-letter -- --queue-id <queue-id>`). The queue path is deterministic
+   and does not invent claims; an interactive rewrite remains optional.
 8. Report both PDF paths
 
-Do not auto-generate the cover letter PDF without going through the interactive steps above.
+For the authorized application queue, deterministic artifact generation may run
+without the interactive rewrite. The interactive flow is still required when
+you want a researched, manually approved letter beyond the canonical evidence
+template.
 
 ## Post-generation
 

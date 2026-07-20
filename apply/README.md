@@ -26,6 +26,69 @@ block is stored but never auto-filled. See the schema in that file.
 Résumé / cover-letter paths can be set once in `defaults.resume_path` /
 `defaults.cover_letter_path`, or passed per-run with `--resume` / `--cover`.
 
+## Queue-facing resume and cover-letter artifacts
+
+The queue generates a job-specific, evidence-bound resume and cover letter
+before a supported ATS run. The generator reads only the canonical Career Ops
+sources (`cv.md`, `article-digest.md`, `config/profile.yml`, and
+`modes/_profile.md`) plus the queue posting, then caches artifacts by the
+posting and evidence hashes. It refuses to generate when the job description
+is missing/too short or fewer than two verified lane projects are available.
+
+```bash
+node resume.mjs plan --limit 6
+node apply/application-artifacts.mjs build --queue-id <queue-id>
+node resume.mjs register \
+  --item-id <queue-id> \
+  --artifact output/applications/<role>/resume.pdf \
+  --html output/applications/<role>/resume.html \
+  --source-mode tailored \
+  --audit-status passed
+```
+
+The generated directory contains `resume.md`, `resume.html`, a one-page
+`resume.pdf`, `cover-letter.txt`, `cover-letter.html`, a one-page
+`cover-letter.pdf`, and an evidence manifest. Greenhouse and Ashby receive the
+cover-letter PDF when the form exposes a cover-letter field; Lever receives the
+approved cover-letter text in its Additional Information field. The queue then
+registers and verifies the generated resume manifest before the adapter runs.
+
+Manual `resume.mjs register` remains available for an approved external
+renderer or a human-edited artifact. Existing PDFs are labeled
+`legacy-existing`; missing, changed, or non-document artifacts are blocked.
+
+### Ashby field-shape notes
+
+Ashby custom fields are addressed by their enclosing `data-field-path` (or a
+temporary field-container marker when the tenant uses a `fieldset`), not by
+assuming that generated input names are stable. Required Yes/No questions may
+render visible buttons over hidden checkboxes, and sponsorship may render as a
+fieldset whose option names are `Yes` and `No`. The adapter groups by the field
+container, scopes option matching to that container, and treats a required
+container as required even when its hidden input has no `required` attribute.
+Some Ashby Yes/No controls mark the selected button with an active CSS class
+while leaving the backing checkbox unchecked; required reconciliation checks
+that active-button state as well as native checkbox state.
+
+Some tenants nest required text-message consent radios inside the phone field
+container. The adapter groups those radios by their own name, labels them as
+Text message consent, and never infers the candidate's consent choice.
+
+Ashby location is a role=`combobox`; text is only considered committed after a
+matching suggestion is selected. If the suggestion cannot be matched safely,
+the run records Location for manual review. EEO and voluntary self-
+identification fields remain human-only.
+
+For a new tenant or unfamiliar form, inspect its shape without filling it:
+
+```bash
+node apply/inspect-form-shape.mjs <application-url>
+```
+
+The report is JSON and intentionally excludes current field values. It is a
+read-only diagnostic; it does not log in, upload files, click options, or
+submit an application.
+
 ## Usage
 
 ```bash
@@ -42,12 +105,38 @@ node apply/fill-lever.mjs <application-url> --resume path/to/resume.pdf --cover-
 node apply/application-policy.mjs authorize
 node application-queue.mjs dry-run --limit 6
 node application-queue.mjs run --limit 6
+node application-queue.mjs clear --dry-run --limit 6
+node application-queue.mjs clear --limit 6
+node application-queue.mjs status
+node application-queue.mjs resume --queue-id <id>
+node application-queue.mjs handoff --queue-id <id> --timeout 600
 ```
+
+`clear` refreshes the queue, selects at most six active high-fit supported-ATS
+roles with one role per company, and processes them headlessly. Required
+questions appear in the daily queue UI as `blocked_by_question`; CAPTCHA, MFA,
+anti-spam, uncertain-submit, and ambiguous-control states use the single-window
+human-handoff flow. No outreach is sent unless confirmation evidence records a
+successful submission.
 
 Fill-only runs launch **headed** and stay open after filling so you can review the
 ⚠ flagged items and submit. Authorized queue runs use headless execution by default,
 close only after a result is recorded, and stop on unresolved fields, CAPTCHA/MFA, or
-missing confirmation.
+missing confirmation. After an authorized click, the adapter records bounded,
+sanitized post-submit evidence: confirmation markers, URL/title, accessible
+dialogs and live regions, frame summaries, form state, a redacted text preview,
+and document/fetch/XHR response status. It never stores response bodies or URL
+query strings. A confirmation is still required before the result becomes
+`submitted`; otherwise the result remains terminal `submission_unknown`. Explicit
+possible-spam or suspicious-activity responses become terminal
+`blocked_by_antispam` results and are never retried automatically.
+
+For a compliant last-mile handoff, use `--human-handoff` without `--submit`. The
+adapter opens a visible browser, fills the form, never clicks Submit, and watches
+for a human to complete CAPTCHA and submit. It records a confirmation when one is
+observed, or records a terminal anti-spam, timeout, or closed-browser result
+without retrying. The default observation window is ten minutes; override it with
+`--human-timeout <seconds>`.
 
 ### Flags
 
@@ -62,6 +151,8 @@ missing confirmation.
 | `--browser <channel>` | System browser channel, default `chrome-beta`, with fallback to Chrome then bundled Chromium |
 | `--submit` | Request the final submit click; still requires the local policy and all safety gates |
 | `--ledger <path>` | Question-ledger file used for explicit recurring answers |
+| `--human-handoff` | Fill in a visible browser and watch for a human CAPTCHA/Submit action; never clicks Submit |
+| `--human-timeout <seconds>` | Maximum time to watch a human handoff; defaults to 600 seconds |
 | `--headless` | Close the browser after filling — **for automated testing only** |
 
 ### Per-posting answers file

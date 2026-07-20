@@ -103,12 +103,15 @@ a manual prerequisite.
 }
 ```
 
-Only public company/job/profile sources qualify an email for automatic sending.
-Never guess an address, use a personal mailbox, scrape LinkedIn, crawl TeamWork
-Online, or include a contact whose identity or role relevance is uncertain.
-LinkedIn output remains a manual draft. If discovery cannot identify a specific
-employer from the application evidence, the record is held for correction and
-cannot send.
+Public company/job/profile sources qualify an email for automatic sending when
+the address is employer-domain verified. A first-party professional relationship
+from the authorized Gmail mailbox may also qualify when the address is observed
+in a Gmail header, the source message ID is retained, and the domain is
+professional. Never guess an address, use a personal mailbox, scrape LinkedIn,
+crawl TeamWork Online, or include a contact whose identity or role relevance is
+uncertain. LinkedIn output remains a manual draft. If discovery cannot identify
+a specific employer from the application evidence, the record is held for
+correction and cannot send.
 
 ---
 

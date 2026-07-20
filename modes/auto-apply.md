@@ -11,6 +11,11 @@ node apply/application-policy.mjs status
 node resume.mjs plan --limit 6
 node application-queue.mjs dry-run --limit 6
 node application-queue.mjs run --limit 6
+node application-queue.mjs clear --dry-run --limit 6
+node application-queue.mjs clear --limit 6
+node application-queue.mjs status
+node application-queue.mjs resume --queue-id <id>
+node application-queue.mjs handoff --queue-id <id> --timeout 600
 node apply/question-ledger.mjs list
 ```
 
@@ -38,12 +43,31 @@ node apply/application-policy.mjs disable
   in `data/application-question-ledger.json` takes precedence.
 - EEO, demographic, marketing-consent, CAPTCHA, MFA, legal-attestation, and
   ambiguous controls stop the run.
-- A successful confirmation is recorded as `submitted`. A click without a
+- A successful confirmation is recorded as `submitted`. After the click, the
+  adapter inspects the URL, title, accessible dialogs/live regions, same-page
+  frames, form state, and bounded document/fetch/XHR response metadata. A
+  sanitized evidence summary is stored with the run. A click without a
   confirmation is `submission_unknown` and is never retried automatically.
+  Explicit possible-spam or suspicious-activity responses are classified as
+  `blocked_by_antispam` and are also terminal.
 - The worker caps submissions per day and per company and deduplicates by
   normalized company, role, and location.
 - Unsupported forms remain in the queue with a precise blocker. The worker does
   not bypass sign-in, CAPTCHA, rate limits, or a site's application controls.
+- `clear` refreshes sources first, selects up to six active supported-ATS roles
+  with one role per company, and records progress in the daily queue UI. It
+  never reselects submitted, uncertain, anti-spam, CAPTCHA/MFA, or completed
+  human-handoff states.
+- A question blocker appears in the queue UI with the exact field, exposed
+  choices, source context, and any evidence-bound project suggestion. Saving a
+  role- or company-scoped answer resumes only that application.
+- CAPTCHA, anti-spam, MFA, ambiguous-submit, and other human-only blockers open
+  in one dedicated visible Chrome window as separate tabs. The handoff adapter
+  fills known fields but never clicks Submit or bypasses a challenge.
+- For an explicit recovery handoff, run the matching adapter with
+  `--human-handoff` and no `--submit`. It fills a visible browser, leaves CAPTCHA
+  and Submit to the user, watches for confirmation, and records the result
+  without retrying or spoofing browser/network identity.
 - Before an adapter run, the worker generates a job-specific one-page resume
   and one-page cover letter from the canonical evidence sources and the queue's
   posting description. It caches by job/evidence hash, fails closed on missing
@@ -95,6 +119,7 @@ every application.
 ## Recovery
 
 Inspect `data/application-runs.json` before retrying an interrupted run. A
-`submitted` or `submission_unknown` entry is terminal for automatic retry. Fix
-the blocker, answer the ledger question, or manually confirm the external state
-before re-queuing a role.
+`submitted`, `submission_unknown`, `blocked_by_antispam`, CAPTCHA/MFA blocks, and
+human-handoff timeouts are terminal for automatic retry. Fix the blocker or use
+an explicit visible human handoff; never rotate identities or attempt to bypass
+the site's anti-abuse controls.

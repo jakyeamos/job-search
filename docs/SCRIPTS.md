@@ -40,6 +40,9 @@ node queue.mjs list
 node queue.mjs clear
 node queue.mjs status
 node queue.mjs verify
+node queue.mjs health --limit 100          # dry run; no queue mutation
+node queue.mjs health --limit 100 --apply  # persist active/expired results
+node queue.mjs health --all --apply        # sweep all eligible non-restricted URLs
 node queue.mjs install-schedule --dry-run
 node queue.mjs install-schedule
 node queue-ui.mjs
@@ -68,21 +71,41 @@ After an application signal, the outreach processor runs a bounded public
 contact-discovery pass through the authenticated Firecrawl CLI credentials when
 they are available. It searches for the assigned recruiter, hiring manager, or
 relevant team member, scrapes only non-LinkedIn public pages, and stores the
-source URLs and evidence locally. The existing `data/outreach-contacts.json`
-manifest remains a supported override/supplement for contacts you have already
-researched.
+source URLs and evidence locally. It also searches Gmail headers for existing
+professional relationships in the configured mailbox and searches configured
+warm networks such as Amazon and Case Western Reserve University for relevant
+public recruiter, hiring-manager, and team signals. The existing
+`data/outreach-contacts.json` manifest remains a supported override/supplement
+for contacts you have already researched.
 
 The authorized `node application-queue.mjs run` worker invokes one outreach
 processing pass after a batch contains at least one confirmed submission. Dry
-runs, blocked applications, failed submissions, and `submission_unknown`
-results do not trigger outreach. The interactive queue uses the same processor
-after its `Applied` action.
+runs, blocked applications, anti-spam blocks, failed submissions, and
+`submission_unknown` results do not trigger outreach. The interactive queue uses
+the same processor after its `Applied` action.
+
+The daily clear workflow is available from the existing local queue UI or the
+CLI. It refreshes sources first, selects up to six eligible roles, generates
+verified tailored artifacts, records question blockers for the UI, and groups
+human handoffs in one dedicated Chrome window:
+
+```bash
+node application-queue.mjs clear --dry-run --limit 6
+node application-queue.mjs clear --limit 6
+node application-queue.mjs status
+```
+
+It does not retry submitted, uncertain, anti-spam, CAPTCHA, MFA, or completed
+human-handoff records, and it never sends outreach before confirmation.
 
 Automatic email still requires a named or explicitly generic professional
-contact, a public source URL, a company-domain address, and
-`emailVerified: true`. Guessed addresses, private mailboxes, LinkedIn scraping,
-and TeamWork Online crawling are blocked. LinkedIn messages remain drafts for
-manual sending. Dry-run mode performs no web discovery and no network send.
+contact, a verified professional address, and `emailVerified: true`. Public
+contacts require a source URL and employer-domain evidence; first-party
+relationship contacts require a verified Gmail relationship and source message
+ID. Guessed addresses, private
+mailboxes, LinkedIn scraping, and TeamWork Online crawling are blocked. LinkedIn
+messages remain drafts for manual sending. Dry-run mode performs no web
+discovery and no network send.
 
 ```bash
 node outreach.mjs prepare --application <queue-id> --dry-run
@@ -285,6 +308,26 @@ npm run rollback
 **Exit codes:** `0` success, `1` no backup branch found or git error.
 
 ---
+
+## health
+
+Runs a bounded freshness sweep over existing `ready`, `in_review`, and
+`snoozed` queue roles. It checks ATS APIs first, then a lightweight HTTP
+request; Playwright is opt-in with `--browser`. LinkedIn and TeamWork Online
+alert URLs are reported as restricted and are never crawled. The command is a
+dry run unless `--apply` is present. Only definitive expired results mark a
+mutable role `stale`; applied, skipped, excluded, historical, and uncertain
+records are preserved.
+
+```bash
+node queue.mjs health --limit 100 --json
+node queue.mjs health --limit 100 --apply
+node queue.mjs health --all --apply --browser
+```
+
+`--all` means all eligible unique URLs rather than the default bounded batch.
+Use it deliberately because non-ATS URLs may require browser fallback and
+network checks remain sequential.
 
 ## liveness
 
