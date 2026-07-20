@@ -7,6 +7,78 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { detectConfirmation, detectSubmissionBlock } from '../apply/lib/adapter-core.mjs';
+
+test('confirmation detection prioritizes dialogs and live regions', () => {
+  const result = detectConfirmation({
+    url: 'https://jobs.ashbyhq.com/deepgram/f424ef6a/application',
+    title: 'Deepgram careers',
+    bodyText: 'Application form',
+    signalTexts: ['Thank you for applying — we will be in touch.'],
+    formCount: 1,
+    submitControlCount: 1,
+  });
+  assert.equal(result.confirmed, true);
+  assert.ok(result.markers.some((marker) => marker.includes('signal:thank-you')));
+});
+
+test('confirmation detection does not trust a body phrase while the form remains', () => {
+  const result = detectConfirmation({
+    url: 'https://jobs.ashbyhq.com/deepgram/f424ef6a/application',
+    title: 'Deepgram careers',
+    bodyText: 'Thank you for your interest. Complete the application below.',
+    signalTexts: [],
+    formCount: 1,
+    submitControlCount: 1,
+  });
+  assert.equal(result.confirmed, false);
+});
+
+test('confirmation detection accepts a confirmation page body when the form is gone', () => {
+  const result = detectConfirmation({
+    url: 'https://jobs.ashbyhq.com/deepgram/f424ef6a/application',
+    title: 'Deepgram careers',
+    bodyText: 'Your application was submitted successfully.',
+    signalTexts: [],
+    formCount: 0,
+    submitControlCount: 0,
+  });
+  assert.equal(result.confirmed, true);
+  assert.ok(result.markers.some((marker) => marker.includes('body:application-submitted')));
+});
+
+test('confirmation detection recognizes a confirmation route in a nested frame', () => {
+  const result = detectConfirmation({
+    frames: [
+      { url: 'https://jobs.ashbyhq.com/deepgram/f424ef6a/application', bodyText: 'Application form', formCount: 1, submitControlCount: 1 },
+      { url: 'https://jobs.ashbyhq.com/deepgram/f424ef6a/thank-you', bodyText: '', formCount: 0, submitControlCount: 0 },
+    ],
+  });
+  assert.equal(result.confirmed, true);
+  assert.ok(result.markers.some((marker) => marker.includes('frame-1:url')));
+});
+
+test('submission block detection classifies explicit possible-spam responses', () => {
+  const result = detectSubmissionBlock({
+    title: 'Software Engineer, Data Platform @ Ramp',
+    signalTexts: [
+      "We couldn't submit your application. Your application submission was flagged as possible spam.",
+    ],
+  });
+  assert.equal(result.blocked, true);
+  assert.equal(result.state, 'blocked_by_antispam');
+  assert.ok(result.markers.some((marker) => marker.includes('possible-spam')));
+});
+
+test('submission block detection ignores a reCAPTCHA footer without a block signal', () => {
+  const result = detectSubmissionBlock({
+    title: 'Software Engineer Application',
+    bodyText: 'Protected by reCAPTCHA. Privacy Policy.',
+    signalTexts: [],
+  });
+  assert.equal(result.blocked, false);
+  assert.equal(result.state, null);
+});
 
 const execFileAsync = promisify(execFile);
 
@@ -68,6 +140,8 @@ test('Greenhouse adapter submits only after the authorized gate and records conf
     assert.ok(marker, result.stdout);
     const payload = JSON.parse(marker.slice('CAREER_OPS_APPLICATION_RESULT '.length));
     assert.equal(payload.state, 'submitted');
+    assert.equal(payload.submissionEvidence.confirmed, true);
+    assert.ok(payload.submissionEvidence.markers.length > 0);
   } finally {
     server.close();
     await once(server, 'close').catch(() => {});

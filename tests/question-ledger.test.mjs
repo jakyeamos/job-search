@@ -53,3 +53,32 @@ test('scoped answers do not leak across companies', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('question context retains options and supports role-scoped reuse', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-context-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const first = recordQuestion(file, 'Which accomplishment are you most proud of?', {
+      company: 'Acme',
+      role: 'Backend Engineer',
+      url: 'https://jobs.example/acme/1',
+      queueId: 'q1',
+      options: ['Pre-CR Suite', 'Tenure'],
+    });
+    recordQuestion(file, first.question, {
+      company: 'Beta',
+      role: 'Applied AI Engineer',
+      url: 'https://jobs.example/beta/1',
+      queueId: 'q2',
+      options: ['Tenure'],
+    });
+    const entry = loadLedger(file).entries[0];
+    assert.equal(entry.contexts.length, 2);
+    assert.deepEqual(entry.options, ['Tenure']);
+    answerQuestion(file, first.id, 'Pre-CR Suite', { scope: 'role', company: 'Acme', role: 'Backend Engineer' });
+    assert.equal(lookupAnswer(first.question, loadLedger(file), { company: 'Acme', role: 'Backend Engineer' }), 'Pre-CR Suite');
+    assert.equal(lookupAnswer(first.question, loadLedger(file), { company: 'Beta', role: 'Applied AI Engineer' }), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

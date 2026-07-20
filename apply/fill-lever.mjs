@@ -23,7 +23,7 @@
 import { chromium } from 'playwright';
 import {
   parseCliArgs, loadProfile, loadAnswers, loadLedgerAnswers, commonQuestions, answerFor,
-  createSummary, fillBySelector, attachFile, detectRequired, launchBrowser, reconcile, finish,
+  createSummary, fillBySelector, attachFile, detectRequired, launchBrowser, createBrowserPage, reconcile, finish,
   settle, EEO_LABEL_RE, LEGAL_LABEL_RE, MARKETING_RE,
 } from './lib/adapter-core.mjs';
 
@@ -42,8 +42,8 @@ async function main() {
 
   const resumePath = args.resume || profile.defaults?.resume_path || '';
 
-  const browser = await launchBrowser(chromium, { headless: args.headless, channel: args.browser });
-  const page = await browser.newPage();
+  const browser = await launchBrowser(chromium, { headless: args.headless, channel: args.browser, cdpEndpoint: args.cdpEndpoint });
+  const page = await createBrowserPage(browser, { shared: Boolean(args.cdpEndpoint) });
   await page.goto(args.url, { waitUntil: 'domcontentloaded' });
   await page.locator('input[name="name"]').waitFor({ timeout: 20000 }).catch(() => {});
   await settle(page);
@@ -92,7 +92,7 @@ async function main() {
 
     const value = resolveValue(c.label, id, profile, tables);
     if (value === null) {
-      if (c.required) tools.review(c.label, 'no matching profile value — answer manually');
+      if (c.required) tools.review(c.label, 'no matching profile value — answer manually', { options: c.options, kind: c.kind, required: true });
       continue;
     }
 
@@ -120,14 +120,18 @@ async function main() {
     headless: args.headless,
     url: args.url,
     submit: args.submit,
+    humanHandoff: args.humanHandoff,
+    humanTimeoutMs: args.humanTimeoutMs,
     policy: await import('./application-policy.mjs').then(({ loadPolicy }) => loadPolicy(args.policyPath)),
     ledgerPath: args.ledgerPath,
     adapter: 'lever',
     applicationKey: args.applicationKey,
+    queueId: args.queueId,
     company: args.company,
     title: args.title,
     fitScore: args.fitScore,
     liveness: args.liveness,
+    prepareOnly: args.prepareOnly,
   });
 }
 

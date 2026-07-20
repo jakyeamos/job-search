@@ -4,6 +4,7 @@
 // reconciliation pass, and browser hold-open all live here.
 
 import { parseArgs } from 'util';
+import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
@@ -14,6 +15,192 @@ import { projectAccomplishmentAnswerTable } from '../../project-accomplishment-l
 const DEFAULT_PROFILE = fileURLToPath(
   new URL('../../config/application-profile.json', import.meta.url),
 );
+
+const CONFIRMATION_PATTERNS = [
+  ['thank-you', /\b(?:thank you|thanks for applying)(?: for your application)?\b/i],
+  ['application-submitted', /\bapplication (?:was )?submitted\b/i],
+  ['application-received', /\bapplication received\b/i],
+  ['successfully-applied', /\bsuccessfully applied\b/i],
+  ['received-your-application', /\bwe['’]?ve received (?:your )?application\b/i],
+  ['application-complete', /\bapplication (?:is )?complete\b/i],
+  ['submitted-successfully', /\bsubmitted successfully\b/i],
+  ['we-will-be-in-touch', /\bwe(?:['’]ll| will) be in touch\b/i],
+];
+
+const CONFIRMATION_URL_RE = /thank[-_ ]?you|success|confirmation|submitted|application[-_ ]?received/i;
+const SUBMISSION_BLOCK_PATTERNS = [
+  ['possible-spam', /flagged as possible spam|possible spam/i],
+  ['suspicious-activity', /suspicious (?:activity|submission)|automated (?:submission|activity)|bot detection/i],
+  ['rate-limited', /too many (?:requests|attempts)|rate limit/i],
+];
+const EVIDENCE_TEXT_LIMIT = 1200;
+const EVIDENCE_SIGNAL_LIMIT = 12;
+const EVIDENCE_RESPONSE_LIMIT = 40;
+const HUMAN_HANDOFF_DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+
+function normalizeEvidenceText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function redactEvidenceText(value, sensitiveTokens = []) {
+  let text = normalizeEvidenceText(value);
+  const tokens = [...new Set(sensitiveTokens.map((token) => normalizeEvidenceText(token)))]
+    .filter((token) => token.length >= 4)
+    .sort((left, right) => right.length - left.length);
+  for (const token of tokens) {
+    text = text.replace(new RegExp(escapeRegExp(token), 'gi'), '[redacted-field]');
+  }
+  return text
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/(?:\+?\d[\d .()\-]{7,}\d)/g, '[redacted-phone]')
+    .replace(/https?:\/\/[^\s]+/gi, '[redacted-url]');
+}
+
+function evidenceUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return '';
+  }
+}
+
+function shortHash(value) {
+  return createHash('sha256').update(String(value || '')).digest('hex').slice(0, 16);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesFor(patterns, value) {
+  const text = String(value || '');
+  return patterns.filter(([, pattern]) => pattern.test(text)).map(([name]) => name);
+}
+
+/**
+ * Classify sanitized-independent post-submit observations without a browser.
+ * Signal text is preferred to the whole body so a job description or footer
+ * cannot confirm a submission while the original form is still present.
+ *
+ * @param {{ url?: string, title?: string, bodyText?: string, signalTexts?: string[], formCount?: number, submitControlCount?: number, frames?: Array<Record<string, unknown>> }} observation
+ * @returns {{ confirmed: boolean, markers: string[] }}
+ */
+export function detectConfirmation(observation = {}) {
+  const frames = Array.isArray(observation.frames) && observation.frames.length
+    ? observation.frames
+    : [observation];
+  const markers = new Set();
+  for (const [index, frame] of frames.entries()) {
+    const signalText = Array.isArray(frame.signalTexts) ? frame.signalTexts.join('\n') : '';
+    const bodyText = String(frame.bodyText || '');
+    const title = String(frame.title || '');
+    const url = String(frame.url || '');
+    for (const marker of matchesFor(CONFIRMATION_PATTERNS, signalText)) markers.add(`frame-${index}:signal:${marker}`);
+    for (const marker of matchesFor(CONFIRMATION_PATTERNS, title)) markers.add(`frame-${index}:title:${marker}`);
+    if (CONFIRMATION_URL_RE.test(url)) markers.add(`frame-${index}:url`);
+    const formCount = Number(frame.formCount ?? observation.formCount ?? 0);
+    const submitControlCount = Number(frame.submitControlCount ?? observation.submitControlCount ?? 0);
+    if (formCount === 0 && submitControlCount === 0) {
+      for (const marker of matchesFor(CONFIRMATION_PATTERNS, bodyText)) markers.add(`frame-${index}:body:${marker}`);
+    }
+  }
+  return { confirmed: markers.size > 0, markers: [...markers] };
+}
+
+/**
+ * Classify explicit post-submit anti-abuse messages. Do not inspect arbitrary
+ * body text here: ATS footers often mention reCAPTCHA even on a normal form.
+ * @param {{ title?: string, signalTexts?: string[], frames?: Array<Record<string, unknown>> }} observation
+ * @returns {{ blocked: boolean, state: string|null, markers: string[] }}
+ */
+export function detectSubmissionBlock(observation = {}) {
+  const frames = Array.isArray(observation.frames) && observation.frames.length
+    ? observation.frames
+    : [observation];
+  const markers = new Set();
+  for (const [index, frame] of frames.entries()) {
+    const source = [
+      String(frame.title || ''),
+      ...(Array.isArray(frame.signalTexts) ? frame.signalTexts : []),
+    ].join('\n');
+    for (const marker of matchesFor(SUBMISSION_BLOCK_PATTERNS, source)) {
+      markers.add(`frame-${index}:${marker}`);
+    }
+  }
+  return {
+    blocked: markers.size > 0,
+    state: markers.size > 0 ? 'blocked_by_antispam' : null,
+    markers: [...markers],
+  };
+}
+
+async function collectSensitiveFieldValues(page) {
+  return page.locator('input:not([type="file"]), textarea, select').evaluateAll((elements) => elements
+    .map((element) => element.value || element.textContent || '')
+    .filter((value) => String(value).trim().length >= 4))
+    .catch(() => []);
+}
+
+async function capturePostSubmitEvidence(page, responses, sensitiveTokens) {
+  const frameObservations = [];
+  for (const frame of page.frames()) {
+    const observation = await frame.evaluate((signalLimit) => {
+      const visible = (element) => {
+        const style = window.getComputedStyle(element);
+        return style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const textOf = (element) => (element.textContent || '').replace(/\s+/g, ' ').trim();
+      const signalNodes = Array.from(document.querySelectorAll(
+        'main h1, main h2, main h3, [role="alert"], [role="status"], [aria-live], dialog, [data-testid*="success" i], [data-testid*="confirm" i], [class*="success" i], [class*="confirm" i], [class*="thank" i]',
+      ));
+      const signalTexts = signalNodes
+        .filter(visible)
+        .map(textOf)
+        .filter(Boolean)
+        .slice(0, signalLimit);
+      return {
+        url: window.location.href,
+        title: document.title,
+        bodyText: document.body?.innerText || '',
+        signalTexts,
+        formCount: document.querySelectorAll('form').length,
+        submitControlCount: Array.from(document.querySelectorAll('button, input[type="submit"]')).filter(visible).length,
+      };
+    }, EVIDENCE_SIGNAL_LIMIT).catch(() => ({ url: frame.url(), title: '', bodyText: '', signalTexts: [], formCount: 0, submitControlCount: 0 }));
+    frameObservations.push(observation);
+  }
+
+  const main = frameObservations[0] || { url: page.url(), title: '', bodyText: '', signalTexts: [], formCount: 0, submitControlCount: 0 };
+  const confirmation = detectConfirmation({ ...main, frames: frameObservations });
+  const normalizedBody = normalizeEvidenceText(frameObservations.map((frame) => frame.bodyText).join('\n'));
+  const sanitizedSignals = [...new Set(frameObservations.flatMap((frame) => frame.signalTexts || []))]
+    .map((value) => redactEvidenceText(value, sensitiveTokens))
+    .filter(Boolean)
+    .slice(0, EVIDENCE_SIGNAL_LIMIT);
+  const sanitizedFrames = frameObservations.map((frame) => ({
+    url: evidenceUrl(frame.url),
+    title: redactEvidenceText(frame.title, sensitiveTokens).slice(0, 240),
+    signalTexts: (frame.signalTexts || []).map((value) => redactEvidenceText(value, sensitiveTokens)).filter(Boolean).slice(0, EVIDENCE_SIGNAL_LIMIT),
+    formCount: frame.formCount,
+    submitControlCount: frame.submitControlCount,
+    bodyTextLength: normalizeEvidenceText(frame.bodyText).length,
+  }));
+
+  return {
+    observedAt: new Date().toISOString(),
+    url: evidenceUrl(main.url || page.url()),
+    title: redactEvidenceText(main.title, sensitiveTokens).slice(0, 240),
+    markers: confirmation.markers,
+    confirmed: confirmation.confirmed,
+    signalTexts: sanitizedSignals,
+    bodyPreview: redactEvidenceText(normalizedBody, sensitiveTokens).slice(0, EVIDENCE_TEXT_LIMIT),
+    bodyTextLength: normalizedBody.length,
+    bodyTextHash: shortHash(normalizedBody),
+    frames: sanitizedFrames,
+    responses: responses.slice(-EVIDENCE_RESPONSE_LIMIT),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -39,6 +226,11 @@ export function parseCliArgs() {
       'fit-score': { type: 'string' },
       liveness: { type: 'string' },
       browser: { type: 'string' },
+      'cdp-endpoint': { type: 'string' },
+      'queue-id': { type: 'string' },
+      'human-handoff': { type: 'boolean', default: false },
+      'human-timeout': { type: 'string' },
+      'prepare-only': { type: 'boolean', default: false },
       headless: { type: 'boolean', default: false },
     },
   });
@@ -60,6 +252,7 @@ export function parseCliArgs() {
     policyPath: values.policy ? absPath(values.policy) : DEFAULT_POLICY_PATH,
     submit: !!values.submit,
     applicationKey: values['application-key'] || '',
+    queueId: values['queue-id'] || '',
     company: values.company || '',
     title: values.title || '',
     lane: values.lane || '',
@@ -67,6 +260,12 @@ export function parseCliArgs() {
     fitScore: values['fit-score'] === undefined ? null : Number(values['fit-score']),
     liveness: values.liveness || '',
     browser: values.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
+    cdpEndpoint: values['cdp-endpoint'] || '',
+    humanHandoff: !!values['human-handoff'],
+    prepareOnly: !!values['prepare-only'],
+    humanTimeoutMs: values['human-timeout'] === undefined
+      ? HUMAN_HANDOFF_DEFAULT_TIMEOUT_MS
+      : Math.max(30_000, Number(values['human-timeout']) * 1000 || HUMAN_HANDOFF_DEFAULT_TIMEOUT_MS),
     headless: !!values.headless,
   };
 }
@@ -109,6 +308,7 @@ export async function loadLedgerAnswers(path, context = {}) {
 
 /** @param {import('playwright').ChromiumType} chromium @param {{ headless: boolean, channel?: string }} options */
 export async function launchBrowser(chromium, options) {
+  if (options.cdpEndpoint) return chromium.connectOverCDP(options.cdpEndpoint);
   const requested = options.channel || 'chrome-beta';
   const channels = [requested, requested === 'chrome-beta' ? 'chrome' : null, null].filter((value, index, all) => value !== null ? all.indexOf(value) === index : all.indexOf(value) === index);
   let lastError = null;
@@ -120,6 +320,13 @@ export async function launchBrowser(chromium, options) {
     }
   }
   throw lastError || new Error('unable to launch a browser');
+}
+
+/** @param {import('playwright').Browser} browser @param {{ shared?: boolean }} [options] */
+export async function createBrowserPage(browser, options = {}) {
+  if (!options.shared) return browser.newPage();
+  const context = browser.contexts()[0] || await browser.newContext();
+  return context.newPage();
 }
 
 function toRegex(pattern) {
@@ -169,7 +376,12 @@ export function createSummary() {
     // key = an id/name string used by the reconciliation pass to detect silent resets.
     ok: (label, key = '') => summary.filled.push({ label, key }),
     skip: (label, reason = '') => summary.skipped.push({ label, reason }),
-    review: (label, reason = '') => summary.needsReview.push({ label, reason }),
+    review: (label, reason = '', metadata = {}) => summary.needsReview.push({
+      label,
+      reason,
+      ...metadata,
+      options: Array.isArray(metadata.options) ? metadata.options : [],
+    }),
   };
 }
 
@@ -274,6 +486,30 @@ export async function settle(page) {
 
 export async function detectRequired(page) {
   return page.evaluate(() => {
+    let nextFieldId = 0;
+    const fieldEntry = (el) => el.closest('[data-field-path], [class*="_fieldEntry"], [class*="Field"], fieldset');
+    const fieldKey = (el) => {
+      const box = fieldEntry(el);
+      if (!box) return el.name || el.id || '';
+      const path = box.getAttribute('data-field-path');
+      let id = box.getAttribute('data-codex-field-id');
+      if (!id) {
+        id = `codex-field-${nextFieldId++}`;
+        box.setAttribute('data-codex-field-id', id);
+      }
+      const fieldPath = path || id;
+      const optionInputs = Array.from(box.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+      const names = new Set(optionInputs.map((input) => input.name || input.id).filter(Boolean));
+      const groupByContainer = box.tagName.toLowerCase() === 'fieldset'
+        || Boolean(box.querySelector('button'))
+        || names.size > 1
+        || !el.name;
+      return groupByContainer ? `container:${fieldPath}` : `name:${fieldPath}:${el.name}`;
+    };
+    const fieldRequired = (el) => {
+      const box = fieldEntry(el);
+      return Boolean(box?.querySelector('[class*="_required"], [aria-required="true"]'));
+    };
     const labelFor = (el) => {
       if (el.id) {
         const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
@@ -298,12 +534,30 @@ export async function detectRequired(page) {
       return el.name || el.id || '(unlabeled)';
     };
 
+    const groupLabelFor = (el) => {
+      if (/communicationConsent/i.test(el.name || '')) return 'Text message consent';
+      const box = fieldEntry(el);
+      const heading = box?.querySelector('legend, [class*="_heading"], [class*="question-title"]');
+      if (heading && heading.textContent.trim()) return heading.textContent.trim();
+      return labelFor(el);
+    };
+
     const isRequired = (el) =>
       el.hasAttribute('required') || el.getAttribute('aria-required') === 'true';
 
     const inRecaptcha = (el) =>
       el.name === 'g-recaptcha-response' ||
       !!el.closest('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"], [class*="recaptcha" i]');
+
+    const isVisible = (el) => {
+      if (el.getAttribute('aria-hidden') === 'true' || el.closest('[aria-hidden="true"]')) return false;
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
+    };
+
+    const hasCustomSelection = (el) => Boolean(
+      el.closest('.select__control')?.querySelector('.select__single-value, [aria-selected="true"]')?.textContent?.trim(),
+    );
 
     const els = Array.from(document.querySelectorAll('input, select, textarea'));
     const out = [];
@@ -313,22 +567,28 @@ export async function detectRequired(page) {
       const type = (el.type || el.tagName).toLowerCase();
       if (type === 'hidden') continue;
       if (inRecaptcha(el)) continue;
+      if (!isVisible(el)) continue;
 
       if (type === 'radio' || type === 'checkbox') {
         const name = el.name;
-        if (!name) {
-          if (isRequired(el) && !el.checked) {
+        const key = fieldKey(el);
+        if (!key) {
+          if ((isRequired(el) || fieldRequired(el)) && !el.checked) {
             out.push({ tag: el.tagName.toLowerCase(), type, name: '', id: el.id, label: labelFor(el), group: false });
           }
           continue;
         }
-        if (seenGroups.has(name)) continue;
-        seenGroups.add(name);
-        const group = els.filter((x) => x.name === name && (x.type || '').toLowerCase() === type);
-        const groupRequired = group.some(isRequired);
-        const anyChecked = group.some((x) => x.checked);
+        if (seenGroups.has(key)) continue;
+        seenGroups.add(key);
+        const group = els.filter((x) => fieldKey(x) === key && (x.type || '').toLowerCase() === type);
+        const groupRequired = group.some(isRequired) || fieldRequired(el);
+        const box = fieldEntry(el);
+        const customSelected = Boolean(box?.querySelector(
+          'button[class*="_active"], button[aria-pressed="true"], [data-state="checked"]',
+        ));
+        const anyChecked = group.some((x) => x.checked) || customSelected;
         if (groupRequired && !anyChecked) {
-          out.push({ tag: 'input', type, name, id: el.id, label: labelFor(el), group: true });
+          out.push({ tag: 'input', type, name, id: el.id, label: groupLabelFor(el), group: true });
         }
         continue;
       }
@@ -342,9 +602,9 @@ export async function detectRequired(page) {
       }
 
       // text / email / tel / select / textarea / combobox inputs
-      if (!isRequired(el)) continue;
+      if (!isRequired(el) && !fieldRequired(el)) continue;
       const val = (el.value || '').trim();
-      if (val === '') {
+      if (val === '' && !hasCustomSelection(el)) {
         out.push({ tag: el.tagName.toLowerCase(), type, name: el.name, id: el.id, label: labelFor(el), group: false });
       }
     }
@@ -385,18 +645,43 @@ export function reconcile(tools, stillEmpty) {
 // Final report + browser hold-open
 // ---------------------------------------------------------------------------
 
+/** @param {string} label */
+function isHumanOnlyReview(label) {
+  return LEGAL_LABEL_RE.test(label)
+    || /identity|verification|multi[- ]factor|one[- ]time password|captcha|recaptcha|hcaptcha|autocomplete|dropdown suggestion|select .* manually|current location/i.test(label);
+}
+
+/** @param {Array<Record<string, unknown>>} reviews */
+function reviewState(reviews) {
+  const blocking = reviews.filter((review) => {
+    const label = String(review.label || '');
+    return !EEO_LABEL_RE.test(label) && !MARKETING_RE.test(label);
+  });
+  if (blocking.some((review) => isHumanOnlyReview(String(review.label || '')))) {
+    return { state: 'blocked_by_human', reason: `${blocking.length} field(s) require human review` };
+  }
+  if (blocking.length) {
+    return { state: 'blocked_by_question', reason: `${blocking.length} required or unresolved field(s) need an answer` };
+  }
+  return { state: 'not_requested', reason: 'fill-only mode' };
+}
+
 export async function finish(page, browser, tools, {
   headless,
   url,
   submit = false,
+  humanHandoff = false,
+  humanTimeoutMs = HUMAN_HANDOFF_DEFAULT_TIMEOUT_MS,
   policy = loadPolicy(),
   ledgerPath = DEFAULT_LEDGER_PATH,
   adapter = 'unknown',
   applicationKey = '',
+  queueId = '',
   company = '',
   title = '',
   fitScore = null,
   liveness = '',
+  prepareOnly = false,
 }) {
   const { filled, skipped, needsReview } = tools.summary;
   const line = '─'.repeat(60);
@@ -420,15 +705,53 @@ export async function finish(page, browser, tools, {
   for (const review of needsReview) {
     const label = String(review.label || '').replace(/^EEO:\s*/i, '').trim();
     if (!label || /^EEO:/i.test(String(review.label || '')) || /captcha|recaptcha|hcaptcha|multi-factor|verification code/i.test(label)) continue;
-    recordQuestion(ledgerPath, label, { company, role: title, source: `adapter:${adapter}` });
+    recordQuestion(ledgerPath, label, {
+      company,
+      role: title,
+      url,
+      queueId,
+      source: `adapter:${adapter}`,
+      options: review.options,
+      fieldKind: review.kind || review.fieldKind || null,
+      reason: review.reason || '',
+    });
   }
 
-  let submission = { state: submit ? 'blocked' : 'not_requested', reason: submit ? 'submission was not attempted' : 'fill-only mode' };
-  if (submit) {
+  const blockingReviews = needsReview.filter((review) => {
+    const label = String(review.label || '');
+    return !EEO_LABEL_RE.test(label) && !MARKETING_RE.test(label);
+  });
+  let submission = submit || humanHandoff || prepareOnly
+    ? reviewState(blockingReviews)
+    : { state: 'not_requested', reason: 'fill-only mode' };
+  if (prepareOnly) {
+    submission = blockingReviews.length
+      ? reviewState(blockingReviews)
+      : { state: 'handoff_ready', reason: 'form prepared in the shared browser session; waiting for human handoff' };
+  } else if (humanHandoff) {
+    if (headless) {
+      submission = { state: 'blocked', reason: 'human handoff requires a visible browser; remove --headless' };
+    } else if (submit) {
+      submission = { state: 'blocked', reason: '--human-handoff cannot be combined with --submit' };
+    } else {
+      const effectiveLiveness = liveness === 'active' || liveness === 'expired'
+        ? liveness
+        : await hasActiveFormEvidence(page) ? 'active' : liveness;
+      const gate = submissionGate(policy, adapter, { fitScore, liveness: effectiveLiveness, needsReview: blockingReviews.length });
+      if (!gate.ok) {
+        submission = { state: 'blocked', reason: gate.reason };
+        console.log(`\n⚠️  Human handoff blocked: ${gate.reason}`);
+      } else {
+        console.log(`\n🧑‍💻 Human handoff ready: complete any CAPTCHA and click Submit manually in the visible browser. Watching for up to ${Math.round(humanTimeoutMs / 60000)} minutes.`);
+        submission = await observeHumanSubmission(page, { adapter, url, timeoutMs: humanTimeoutMs });
+        console.log(`\n${submission.state === 'submitted' ? '✅' : '⚠️'} Human handoff ${submission.state}: ${submission.reason}`);
+      }
+    }
+  } else if (submit) {
     const effectiveLiveness = liveness === 'active' || liveness === 'expired'
       ? liveness
       : await hasActiveFormEvidence(page) ? 'active' : liveness;
-    const gate = submissionGate(policy, adapter, { fitScore, liveness: effectiveLiveness, needsReview: needsReview.length });
+    const gate = submissionGate(policy, adapter, { fitScore, liveness: effectiveLiveness, needsReview: blockingReviews.length });
     if (!gate.ok) {
       submission = { state: 'blocked', reason: gate.reason };
       console.log(`\n⚠️  Submission blocked: ${gate.reason}`);
@@ -444,16 +767,19 @@ export async function finish(page, browser, tools, {
     url,
     adapter,
     applicationKey,
+    queueId,
     company,
     title,
     fitScore,
     filled,
     skipped,
     needsReview,
+    submissionEvidence: submission.evidence || null,
   };
-  if (submit || headless) console.log(`CAREER_OPS_APPLICATION_RESULT ${JSON.stringify(result)}`);
+  if (submit || humanHandoff || headless || prepareOnly) console.log(`CAREER_OPS_APPLICATION_RESULT ${JSON.stringify(result)}`);
 
-  if (headless || submission.state === 'submitted') {
+  if (prepareOnly) return result;
+  if (headless || humanHandoff || submission.state === 'submitted') {
     await browser.close();
     return result;
   }
@@ -466,10 +792,10 @@ async function submitApplication(page, policy, context) {
   const visibleText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
   const captchaVisible = await page.locator('iframe[src*="captcha" i]:visible, [class*="captcha" i]:visible, [id*="captcha" i]:visible').count().catch(() => 0);
   if (policy.stopOnCaptcha && (captchaVisible > 0 || /\bcaptcha\b|recaptcha|hcaptcha/i.test(visibleText))) {
-    return { state: 'blocked', reason: 'captcha or anti-bot challenge is present; human action is required' };
+    return { state: 'blocked_by_captcha', reason: 'captcha or anti-bot challenge is present; human action is required' };
   }
   if (policy.stopOnMfa && /multi[- ]factor|one[- ]time password|verification code|sign in to continue/i.test(visibleText)) {
-    return { state: 'blocked', reason: 'sign-in, MFA, or verification step is present; human action is required' };
+    return { state: 'blocked_by_mfa', reason: 'sign-in, MFA, or verification step is present; human action is required' };
   }
 
   const controls = page.locator('button, input[type="submit"]');
@@ -482,20 +808,112 @@ async function submitApplication(page, policy, context) {
   }
   if (candidates.length !== 1) return { state: 'blocked', reason: candidates.length ? `found ${candidates.length} possible submit controls; refusing to guess` : 'no unambiguous submit control found' };
 
+  const sensitiveTokens = await collectSensitiveFieldValues(page);
+  const responseSummaries = [];
+  const onResponse = (response) => {
+    const resourceType = response.request().resourceType();
+    if (!['document', 'fetch', 'xhr'].includes(resourceType)) return;
+    const responseUrl = evidenceUrl(response.url());
+    if (!responseUrl) return;
+    responseSummaries.push({
+      resourceType,
+      status: response.status(),
+      ok: response.ok(),
+      url: responseUrl,
+    });
+  };
+  page.on('response', onResponse);
+
+  let clickError = null;
   try {
     await candidates[0].click({ timeout: 5000 });
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(1000);
   } catch (error) {
-    return { state: 'failed', reason: `submit control could not be clicked: ${error instanceof Error ? error.message : String(error)}` };
+    clickError = error;
+  }
+  if (clickError) {
+    page.off('response', onResponse);
+    return { state: 'failed', reason: `submit control could not be clicked: ${clickError instanceof Error ? clickError.message : String(clickError)}` };
   }
 
-  const afterUrl = page.url();
-  const afterText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
-  const confirmed = /thank you|application (?:was )?submitted|application received|successfully applied|we['’]?ve received|thanks for applying/i.test(afterText)
-    || /thank[-_ ]?you|success|confirmation|submitted/i.test(afterUrl);
-  if (confirmed) return { state: 'submitted', reason: `success confirmation detected for ${context.adapter}` };
-  return { state: 'submission_unknown', reason: 'submit was clicked but no success confirmation was detected; automatic retry is disabled' };
+  let evidence = await capturePostSubmitEvidence(page, responseSummaries, sensitiveTokens);
+  const deadline = Date.now() + 8000;
+  while (!evidence.confirmed && Date.now() < deadline) {
+    await page.waitForTimeout(250);
+    evidence = await capturePostSubmitEvidence(page, responseSummaries, sensitiveTokens);
+  }
+  page.off('response', onResponse);
+  if (evidence.confirmed) {
+    return {
+      state: 'submitted',
+      reason: `success confirmation detected for ${context.adapter}: ${evidence.markers.join(', ')}`,
+      evidence,
+    };
+  }
+  const block = detectSubmissionBlock(evidence);
+  if (block.blocked) {
+    return {
+      state: block.state,
+      reason: `anti-spam block detected (${block.markers.join(', ')}); human handoff required; automatic retry is disabled`,
+      evidence,
+    };
+  }
+  return {
+    state: 'submission_unknown',
+    reason: 'submit was clicked but no success confirmation was detected; automatic retry is disabled',
+    evidence,
+  };
+}
+
+/** @param {import('playwright').Page} page @param {{ adapter: string, url: string, timeoutMs: number }} context */
+export async function observeHumanSubmission(page, context) {
+  const sensitiveTokens = await collectSensitiveFieldValues(page);
+  const responseSummaries = [];
+  const onResponse = (response) => {
+    const resourceType = response.request().resourceType();
+    if (!['document', 'fetch', 'xhr'].includes(resourceType)) return;
+    const responseUrl = evidenceUrl(response.url());
+    if (!responseUrl) return;
+    responseSummaries.push({ resourceType, status: response.status(), ok: response.ok(), url: responseUrl });
+  };
+  page.on('response', onResponse);
+  const deadline = Date.now() + context.timeoutMs;
+  let evidence = await capturePostSubmitEvidence(page, responseSummaries, sensitiveTokens);
+  while (!page.isClosed() && Date.now() < deadline) {
+    if (evidence.confirmed) {
+      page.off('response', onResponse);
+      return {
+        state: 'submitted',
+        reason: `success confirmation detected for ${context.adapter}: ${evidence.markers.join(', ')}`,
+        evidence,
+      };
+    }
+    const block = detectSubmissionBlock(evidence);
+    if (block.blocked) {
+      page.off('response', onResponse);
+      return {
+        state: block.state,
+        reason: `anti-spam block detected (${block.markers.join(', ')}); automatic retry is disabled`,
+        evidence,
+      };
+    }
+    await page.waitForTimeout(500);
+    evidence = await capturePostSubmitEvidence(page, responseSummaries, sensitiveTokens);
+  }
+  page.off('response', onResponse);
+  if (page.isClosed()) {
+    return {
+      state: 'human_handoff_closed',
+      reason: 'visible browser was closed before a confirmation was observed; no automatic retry',
+      evidence,
+    };
+  }
+  return {
+    state: 'human_handoff_timeout',
+    reason: `no manual submission confirmation observed within ${Math.round(context.timeoutMs / 60000)} minutes; no automatic retry`,
+    evidence,
+  };
 }
 
 /** @param {import('playwright').Page} page */

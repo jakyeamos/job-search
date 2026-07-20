@@ -17,7 +17,7 @@
 import { chromium } from 'playwright';
 import {
   parseCliArgs, loadProfile, loadAnswers, loadLedgerAnswers, commonQuestions, answerFor,
-  createSummary, fillBySelector, attachFile, selectNative, detectRequired, launchBrowser, reconcile,
+  createSummary, fillBySelector, attachFile, selectNative, detectRequired, launchBrowser, createBrowserPage, reconcile,
   finish, settle, EEO_LABEL_RE, LEGAL_LABEL_RE, MARKETING_RE,
 } from './lib/adapter-core.mjs';
 
@@ -39,8 +39,8 @@ async function main() {
   const resumePath = args.resume || profile.defaults?.resume_path || '';
   const coverPath = args.cover || profile.defaults?.cover_letter_path || '';
 
-  const browser = await launchBrowser(chromium, { headless: args.headless, channel: args.browser });
-  const page = await browser.newPage();
+  const browser = await launchBrowser(chromium, { headless: args.headless, channel: args.browser, cdpEndpoint: args.cdpEndpoint });
+  const page = await createBrowserPage(browser, { shared: Boolean(args.cdpEndpoint) });
   await page.goto(args.url, { waitUntil: 'domcontentloaded' });
   await page.locator('#first_name').waitFor({ timeout: 20000 }).catch(() => {});
   await settle(page);
@@ -61,9 +61,15 @@ async function main() {
   await attachFile(page, '#resume', resumePath, 'Résumé', tools);
   await attachFile(page, '#cover_letter', coverPath, 'Cover letter', tools);
 
+  // Set the phone country before custom react-select questions; Greenhouse can
+  // re-render the custom-question section when the phone country changes.
+  if (await page.locator('#country').count()) {
+    await selectReactSelectByLabel(page, 'Country', profile.address?.country || '', tools);
+  }
+
   // --- Custom questions ----------------------------------------------------
   const questions = await collectQuestions(page);
-  for (const q of questions) {
+  for (const q of [...questions].sort((left, right) => Number(left.kind === 'combobox') - Number(right.kind === 'combobox'))) {
     if (EEO_LABEL_RE.test(q.label)) {
       tools.review(`EEO: ${q.label}`, 'voluntary self-identification — fill it yourself');
       continue;
@@ -79,7 +85,7 @@ async function main() {
 
     const value = resolveValue(q.label, id, profile, tables);
     if (value === null) {
-      if (q.required) tools.review(q.label, 'no matching profile value — answer manually');
+      if (q.required) tools.review(q.label, 'no matching profile value — answer manually', { options: q.options, kind: q.kind, required: true });
       continue;
     }
 
@@ -94,9 +100,12 @@ async function main() {
     }
   }
 
-  // Country combobox (system field) — fill from address.country when present.
-  if (await page.locator('#country').count()) {
-    await selectReactSelectByLabel(page, 'Country', profile.address?.country || '', tools);
+  // A late Greenhouse field re-render can clear a selected custom dropdown;
+  // reconcile the known combobox answers once after all text fields settle.
+  for (const q of questions.filter((question) => question.kind === 'combobox')) {
+    if (EEO_LABEL_RE.test(q.label) || MARKETING_RE.test(q.label) || LEGAL_LABEL_RE.test(q.label)) continue;
+    const value = resolveValue(q.label, id, profile, tables);
+    if (value !== null) await selectReactSelectByLabel(page, q.label, value, tools);
   }
 
   // --- Required-field reconciliation ---------------------------------------
@@ -113,14 +122,18 @@ async function main() {
     headless: args.headless,
     url: args.url,
     submit: args.submit,
+    humanHandoff: args.humanHandoff,
+    humanTimeoutMs: args.humanTimeoutMs,
     policy: await import('./application-policy.mjs').then(({ loadPolicy }) => loadPolicy(args.policyPath)),
     ledgerPath: args.ledgerPath,
     adapter: 'greenhouse',
     applicationKey: args.applicationKey,
+    queueId: args.queueId,
     company: args.company,
     title: args.title,
     fitScore: args.fitScore,
     liveness: args.liveness,
+    prepareOnly: args.prepareOnly,
   });
 }
 
@@ -156,13 +169,26 @@ async function collectQuestions(page) {
     // Native question inputs / textareas / selects (#question_{id}).
     document.querySelectorAll('[id^="question_"]').forEach((el) => {
       const tag = el.tagName.toLowerCase();
+      if (!['input', 'select', 'textarea'].includes(tag)) return;
       if (el.type === 'hidden') return;
-      if (tag === 'textarea') out.push({ kind: 'textarea', id: el.id, label: labelFor(el), required: req(el) });
-      else if (tag === 'select') out.push({ kind: 'select', id: el.id, label: labelFor(el), required: req(el) });
+      if (tag === 'textarea') out.push({ kind: 'textarea', id: el.id, label: labelFor(el), required: req(el), options: [] });
+      else if (tag === 'select') out.push({
+        kind: 'select',
+        id: el.id,
+        label: labelFor(el),
+        required: req(el),
+        options: Array.from(el.options).map((option) => option.textContent.trim()).filter(Boolean),
+      });
       else if (el.type === 'radio' || el.type === 'checkbox') {
         if (seenRadio.has(el.name)) return; seenRadio.add(el.name);
-        out.push({ kind: 'radio', name: el.name, id: el.id, label: labelFor(el), required: req(el) });
-      } else out.push({ kind: 'text', id: el.id, label: labelFor(el), required: req(el) });
+        const options = el.name
+          ? Array.from(document.querySelectorAll(`input[name="${CSS.escape(el.name)}"]`)).map(optionLabel).filter(Boolean)
+          : [];
+        out.push({ kind: 'radio', name: el.name, id: el.id, label: labelFor(el), required: req(el), options: [...new Set(options)] });
+      } else {
+        const kind = el.getAttribute('role') === 'combobox' ? 'combobox' : 'text';
+        out.push({ kind, id: el.id, label: labelFor(el), required: req(el) });
+      }
     });
 
     // React-select comboboxes that are NOT standard/system fields (e.g. Yes/No custom
@@ -180,7 +206,8 @@ async function collectQuestions(page) {
       if (!label) return;
       const block = node;
       const required = !!(block.querySelector && block.querySelector('[aria-required="true"]'));
-      out.push({ kind: 'combobox', label, required });
+      const options = [...new Set(Array.from(node.querySelectorAll('[role="option"], .select__option')).map((option) => option.textContent.trim()).filter(Boolean))];
+      out.push({ kind: 'combobox', label, required, options });
     });
 
     // De-dup by label (a react-select can also expose a hidden native mirror).
@@ -224,7 +251,16 @@ async function selectReactSelectByLabel(page, labelText, value, tools) {
     for (let i = 0; i < n; i++) {
       const t = (await scope.nth(i).innerText()).trim();
       const hit = exact ? t.toLowerCase() === value.toLowerCase() : t.toLowerCase().includes(value.toLowerCase());
-      if (hit) { await scope.nth(i).click(); picked = true; break; }
+      if (hit) {
+        await scope.nth(i).click({ force: true });
+        await page.waitForTimeout(150);
+        if (!(await control.locator('.select__single-value').count())) {
+          await input.press('Enter').catch(() => {});
+          await page.waitForTimeout(150);
+        }
+        picked = Boolean(await control.locator('.select__single-value').count());
+        break;
+      }
     }
     if (picked) break;
   }

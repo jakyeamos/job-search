@@ -60,6 +60,19 @@ export function recordQuestion(file, question, metadata = {}) {
   const id = questionId(normalized);
   const now = new Date().toISOString();
   const existing = ledger.entries.find((entry) => entry.id === id);
+  const context = {
+    company: metadata.company || null,
+    role: metadata.role || null,
+    url: metadata.url || null,
+    queueId: metadata.queueId || null,
+    source: metadata.source || 'application-form',
+    recordedAt: now,
+  };
+  const contexts = [...(Array.isArray(existing?.contexts) ? existing.contexts : [])]
+    .filter((item) => item && typeof item === 'object')
+    .filter((item) => String(item.queueId || '') !== String(context.queueId || '')
+      || String(item.url || '') !== String(context.url || ''));
+  if (context.company || context.role || context.url || context.queueId) contexts.push(context);
   const entry = {
     id,
     question: normalized,
@@ -70,6 +83,14 @@ export function recordQuestion(file, question, metadata = {}) {
     sensitivity: existing?.sensitivity || (isSensitiveQuestion(normalized) ? 'high' : 'normal'),
     company: existing?.company || metadata.company || null,
     role: existing?.role || metadata.role || null,
+    url: existing?.url || metadata.url || null,
+    queueId: existing?.queueId || metadata.queueId || null,
+    contexts,
+    options: Array.isArray(metadata.options) && metadata.options.length
+      ? [...new Set(metadata.options.map((value) => String(value).trim()).filter(Boolean))]
+      : Array.isArray(existing?.options) ? existing.options : [],
+    fieldKind: existing?.fieldKind || metadata.fieldKind || null,
+    blockerReason: existing?.blockerReason || metadata.reason || null,
     source: existing?.source || metadata.source || 'application-form',
     createdAt: existing?.createdAt || now,
     updatedAt: now,
@@ -88,7 +109,7 @@ export function recordQuestion(file, question, metadata = {}) {
  * @param {string} file
  * @param {string} target
  * @param {string} answer
- * @param {{ scope?: string, company?: string, role?: string, pattern?: string, expiresAt?: string, confirmSensitive?: boolean }} [options]
+ * @param {{ scope?: string, company?: string, role?: string, url?: string, queueId?: string, pattern?: string, expiresAt?: string, confirmSensitive?: boolean }} [options]
  */
 export function answerQuestion(file, target, answer, options = {}) {
   const ledger = loadLedger(file);
@@ -101,13 +122,19 @@ export function answerQuestion(file, target, answer, options = {}) {
     throw new Error('sensitive answers need --confirm-sensitive before being reused globally');
   }
   const now = new Date().toISOString();
+  const requestedScope = options.scope || entry.scope || 'question';
+  const scope = ['question', 'global', 'company', 'role', 'posting'].includes(requestedScope)
+    ? requestedScope
+    : 'role';
   const updated = {
     ...entry,
     answer: String(answer),
     status: 'answered',
-    scope: options.scope || entry.scope || 'question',
+    scope,
     company: options.company || entry.company || null,
     role: options.role || entry.role || null,
+    url: options.url || entry.url || null,
+    queueId: options.queueId || entry.queueId || null,
     pattern: options.pattern || entry.pattern || entry.question,
     expiresAt: options.expiresAt || entry.expiresAt || null,
     updatedAt: now,
@@ -166,7 +193,7 @@ function matchesScope(entry, context) {
   if (entry.scope === 'global') return true;
   if (entry.scope === 'company') return normalizeKey(entry.company) === normalizeKey(context.company);
   if (entry.scope === 'role') return normalizeKey(entry.role) === normalizeKey(context.role);
-  if (entry.scope === 'posting') return entry.url && entry.url === context.url;
+  if (entry.scope === 'posting') return Boolean(entry.url && entry.url === context.url);
   return false;
 }
 
