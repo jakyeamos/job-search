@@ -1,0 +1,32 @@
+{
+  "lockfileVersion": 1,
+  "plugins": {
+    "gmail": {
+      "source": "bundled",
+      "version": "1.0.0",
+      "integrity": "sha256-7d3d714868436dd05fedda4ed845e5c1923d46a1a5bb11681a71c8c75e274b3e",
+      "files": {
+        "_helpers.mjs": "sha256-0ea65273c5234e8f333b4b4d1a65d119f73003f14c6efc800a028b9ca0d8ead9",
+        "index.mjs": "sha256-1083a7cb2582cbe8ced231934b29268bca0f9a1852ebc86e0b93e0163699114f",
+        "manifest.json": "sha256-71651ecc13bb3f8e7a224e289ef224fc5bf0d524782092312cc506761b3d32c5",
+        "skill.md": "sha256-ed9cbcfda5686f208c1e19f14f3c54880da5603bee9faf70eab3da36dc2d58c4"
+      },
+      "consent": {
+        "hooks": [
+          "ingest"
+        ],
+        "requiredEnv": [
+          "GMAIL_CLIENT_ID",
+          "GMAIL_CLIENT_SECRET",
+          "GMAIL_REFRESH_TOKEN"
+        ],
+        "allowedHosts": [
+          "oauth2.googleapis.com",
+          "gmail.googleapis.com"
+        ],
+        "skill": true,
+        "allowsLocalhost": false
+      }
+    }
+  }
+}
