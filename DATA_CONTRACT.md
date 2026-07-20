@@ -25,6 +25,8 @@ These files contain your personal data, customizations, and work product. Update
 | `data/application-runs.json` | Idempotency and submission outcome audit trail |
 | `reports/*` | Your evaluation reports |
 | `output/*` | Your generated PDFs |
+| `output/application-artifacts/*` | Per-role tailored resume, cover letter, and evidence manifest artifacts |
+| `output/applications/*/resume-manifest.json` | Per-role resume contract metadata and artifact hashes |
 | `jds/*` | Your saved job descriptions |
 | `research/*` | Your market/company research and lessons-learned docs, indexed by `research/INDEX.md` |
 
@@ -38,6 +40,9 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/triage.md` | Fast first-pass triage scoring instructions |
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
+| `resume-contract.mjs` | Single queue-facing resume request, manifest, and artifact contract |
+| `resume.mjs` | Resume plan and artifact-registration commands |
+| `apply/application-artifacts.mjs` | Evidence-bound per-role resume and cover-letter generator |
 | `modes/scan.md` | Portal scanner instructions |
 | `modes/batch.md` | Batch processing instructions |
 | `modes/apply.md` | Application assistant instructions |

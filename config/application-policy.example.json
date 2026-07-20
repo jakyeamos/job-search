@@ -10,5 +10,6 @@
   "requireKnownRequiredAnswers": true,
   "stopOnCaptcha": true,
   "stopOnMfa": true,
-  "allowMarketingConsent": false
+  "allowMarketingConsent": false,
+  "generateCoverLetter": true
 }

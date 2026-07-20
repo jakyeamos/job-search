@@ -19,6 +19,15 @@ Never fill an evidence gap with a plausible metric, customer, technology,
 certification, or outcome. A claim marked as needing confirmation is not ready
 for a resume.
 
+## Queue-facing contract
+
+All resume renderers—manual PDF mode, batch generation, dashboard regeneration,
+or another approved renderer—produce artifacts through the same queue-facing
+contract. Use `node resume.mjs plan` to inspect the selected lane and evidence,
+then `node resume.mjs register` to record the generated artifact, source hashes,
+selected projects, paper format, and audit status. The application worker never
+chooses between unregistered files by filename or modification time.
+
 ## Resume tiers
 
 Career Ops is optimized for an early-career candidate with substantial project

@@ -20,6 +20,7 @@ export const DEFAULT_POLICY = Object.freeze({
   stopOnCaptcha: true,
   stopOnMfa: true,
   allowMarketingConsent: false,
+  generateCoverLetter: true,
 });
 
 /** @param {string} file */

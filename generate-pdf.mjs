@@ -314,6 +314,21 @@ async function generatePDF() {
   return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
 }
 
+/** @param {{ headless: boolean, channel?: string }} options */
+async function launchPdfBrowser(options) {
+  const requested = options.channel || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta';
+  const channels = [...new Set([requested, requested === 'chrome-beta' ? 'chrome' : null, null])];
+  let lastError = null;
+  for (const channel of channels) {
+    try {
+      return await chromium.launch(channel ? { headless: options.headless, channel } : { headless: options.headless });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('unable to launch a PDF browser');
+}
+
 /**
  * Inline url('./fonts/...') references as base64 data: URLs.
  *
@@ -386,7 +401,7 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
   const { writeFile, unlink } = await import('fs/promises');
   await writeFile(tmpHtmlPath, html, 'utf-8');
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchPdfBrowser({ headless: true });
   try {
     const page = await browser.newPage();
 
