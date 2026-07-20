@@ -1,0 +1,444 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "name": "Jakye Amos",
+    "audience": "Hiring managers, recruiters, technical builders, and product-minded engineering teams",
+    "narrative": "An intern-tested builder who ships useful backend, AI, data, product, and developer-tooling systems fast.",
+    "portfolioUrl": "https://jakye.netlify.app/",
+    "githubUrl": "https://github.com/jakyeamos",
+    "linkedinUrl": "https://www.linkedin.com/in/jakyeamos/",
+    "xHandle": "soundscapeweb",
+    "graduationStatusPolicy": "Do not include graduation dates, expected-completion wording, or remaining-course wording in LinkedIn-facing copy."
+  },
+  "publishing": {
+    "primaryChannel": "linkedin",
+    "secondaryChannel": "x",
+    "cadence": "four-story-units-per-week",
+    "optionalFifthUnit": "thoughtful reply or hiring-relevant discussion",
+    "videoCadence": "one native 60-120 second demo per week",
+    "approval": "manual",
+    "linkedinAutomation": false,
+    "xLivePosting": false,
+    "ownedArchive": ["portfolio", "frmwrklabs"],
+    "videoHome": "native-linkedin-x"
+  },
+  "platformStrategy": {
+    "linkedin": {
+      "purpose": "Primary hiring-discovery and professional-conversation surface",
+      "priority": "primary",
+      "formats": ["200-300 word case study", "carousel", "native demo", "thoughtful reply"],
+      "rules": [
+        "Open with one concrete problem, decision, or lesson.",
+        "Use first-hand explanation and one useful idea instead of a project inventory.",
+        "Prefer real conversation over engagement pods, automation, or generic announcement language."
+      ],
+      "linkRule": "Give the post a complete idea first; link to the relevant case study or artifact rather than a naked homepage.",
+      "successMetrics": ["profile visits", "project clicks", "recruiter replies", "conversations", "referrals", "interviews"],
+      "sourceRefs": [
+        "https://www.linkedin.com/business/marketing/blog/ai-search/how-to-maximize-ai-visibility-for-your-linkedin-posts",
+        "https://news.linkedin.com/2026/authentic-content-and-conversations",
+        "https://metricool.com/press-release-linkedin-study-2026/"
+      ]
+    },
+    "x": {
+      "purpose": "Compact technical conversation and builder-network surface",
+      "priority": "secondary",
+      "formats": ["single post", "compact thread", "native image or clip", "reply"],
+      "rules": [
+        "Lead with an observation, tradeoff, or changed mind.",
+        "Make the post useful before anyone clicks a link.",
+        "Use replies as part of distribution and keep live posting manual."
+      ],
+      "linkRule": "Use links sparingly and only after the idea is complete; a relevant reply is often better than leading with a link.",
+      "successMetrics": ["replies", "reposts", "profile visits", "project clicks", "conversations", "recruiter replies"],
+      "sourceRefs": [
+        "https://help.x.com/en/rules-and-policies/recommendations",
+        "https://help.x.com/en/resources/recommender-systems/search-recommendations",
+        "https://buffer.com/resources/links-on-x/"
+      ]
+    },
+    "instagram": {
+      "purpose": "Visual discovery and saveable proof surface",
+      "priority": "discovery",
+      "formats": ["original Reel", "saveable carousel", "Story question"],
+      "rules": [
+        "Show the working surface or name the problem in the opening seconds.",
+        "Use original visuals and avoid recycled platform watermarks or generic cross-posts.",
+        "Teach one thing per carousel and end with a question or honest next step."
+      ],
+      "linkRule": "Keep the caption self-contained; use the profile link or a clear profile action for deeper proof.",
+      "successMetrics": ["watch time", "saves", "shares", "profile actions", "replies", "project clicks"],
+      "sourceRefs": [
+        "https://about.fb.com/news/2024/10/best-practices-education-hub-creators-instagram/amp/",
+        "https://metricool.com/press-release-instagram-study-2026/",
+        "https://www.facebook.com/help/instagram/653964212890722"
+      ]
+    },
+    "native-video": {
+      "purpose": "Reusable visual proof adapted natively for LinkedIn, X, and Instagram",
+      "priority": "discovery",
+      "formats": ["60-120 second screen recording", "captioned walkthrough", "architecture or workflow demo"],
+      "rules": [
+        "Put the problem or working surface on screen immediately.",
+        "Show one technical decision and one current limitation.",
+        "Use captions and approved screens only; do not publish private or client-sensitive evidence."
+      ],
+      "linkRule": "Let the native video carry the proof; add a relevant case-study link only when it supplies necessary depth.",
+      "successMetrics": ["watch time", "profile visits", "project clicks", "replies", "recruiter replies", "conversations"],
+      "sourceRefs": [
+        "https://metricool.com/press-release-linkedin-study-2026/",
+        "https://metricool.com/press-release-instagram-study-2026/"
+      ]
+    },
+    "portfolio": {
+      "purpose": "Canonical verification and conversion surface",
+      "priority": "owned",
+      "formats": ["case study", "architecture note", "screenshots with captions", "demo transcript"],
+      "rules": [
+        "Answer the problem, what was built, the key judgment, and the current boundary.",
+        "Use clear headings, named authorship, structured metadata, captions, and alt text.",
+        "Link social posts to a relevant proof section rather than only to the homepage."
+      ],
+      "linkRule": "The portfolio is the destination for depth; every public project link must respect its visibility and status label.",
+      "successMetrics": ["project clicks", "contact actions", "recruiter replies", "interview mentions"],
+      "sourceRefs": [
+        "platform-research.md",
+        "https://www.linkedin.com/business/marketing/blog/content-marketing/introducing-a-guide-to-optimizing-your-owned-content-for-ai-discovery"
+      ]
+    },
+    "frmwrk-labs": {
+      "purpose": "Reflective lab archive for reasoning, boundaries, and unfinished systems",
+      "priority": "owned",
+      "formats": ["lab note", "technical essay", "decision record", "unresolved edge"],
+      "rules": [
+        "Start with the question underneath the build.",
+        "Keep the decision being tested and the unresolved edge visible.",
+        "Publish only when the underlying idea deserves a durable note; do not force a cadence."
+      ],
+      "linkRule": "Use the lab note as the destination for an idea with enough reasoning to outlive a social post.",
+      "successMetrics": ["qualified reads", "references", "technical conversations", "project clicks"],
+      "sourceRefs": ["platform-research.md", "https://www.frmwrklabs.com/"]
+    }
+  },
+  "contentModel": {
+    "atomFields": ["sourceProject", "claimRefs", "proofArtifact", "platforms", "audience", "asset", "status", "context", "personalAngle", "nextStep", "voiceProfile"],
+    "outcomeFields": ["publicationOutcome", "impressions", "profileVisits", "projectClicks", "recruiterReplies", "conversations", "referrals", "interviews", "notes"]
+  },
+  "profiles": {
+    "linkedin": {
+      "headline": "3x Amazon SDE Intern | Backend, AI, Data & Product Engineer | Building Reliable Systems",
+      "about": "I build backend systems, data workflows, developer tools, and AI-enabled products that turn ambiguous problems into usable software.\n\nI completed three Amazon SDE internship terms across Ads and FinTech/business-systems environments, and I have led client-facing product delivery through Forward Automations. My current work spans Tenure, engineering systems, basketball/data products, and applied AI systems.\n\nI am especially interested in backend engineering, applied AI, data engineering, platform/developer tools, product engineering, and solutions or forward-deployed roles.\n\nSelected work: https://jakye.netlify.app/\nGitHub: https://github.com/jakyeamos",
+      "educationLabel": "Case Western Reserve University — Computer Science",
+      "featured": [
+        {"label": "Portfolio", "url": "https://jakye.netlify.app/"},
+        {"label": "Tenure", "url": "https://jakye.netlify.app/"},
+        {"label": "Engineering systems", "url": "https://github.com/jakyeamos"},
+        {"label": "BBDSE / CourtIQ", "url": "https://github.com/jakyeamos/BBDSE"},
+        {"label": "FRMWRK Labs", "url": "https://www.frmwrklabs.com/"}
+      ]
+    },
+    "x": {
+      "handle": "soundscapeweb",
+      "bio": "Backend, AI & data systems builder. 3x Amazon SDE intern. Building Soundscape, Tenure, engineering tools, and basketball/data products.",
+      "pinnedPost": "Most of what I build starts with a handoff that lost something important. I’m exploring that in Tenure (a LaunchNY cohort venture), Soundscape, and tools for making AI work easier to inspect. I’ll share parts, dead ends, and what I change my mind about: jakye.netlify.app/"
+    }
+  },
+  "writing": {
+    "general": {
+      "id": "general-humanizer-v1",
+      "purpose": "Make verified drafts sound like a person thinking clearly, without adding claims.",
+      "preserve": ["project names", "technical terms", "numbers", "status labels", "uncertainty", "disclosure boundaries", "first-person ownership"],
+      "avoid": ["Current work:", "Projects and longer notes:", "Proof:", "Sources:", "In today’s landscape", "At its core", "It is worth noting that", "robust", "showcase", "leverage", "game-changing", "seamless", "unlock", "I am excited to announce"],
+      "rules": ["Start with a concrete problem, observation, decision, or tension.", "Use first person when the sentence is about Jakye’s motivation or judgment.", "Prefer one specific idea over a catalog of projects.", "Leave metadata in the review object instead of exposing labels in the post.", "Never add facts, outcomes, users, customers, revenue, or adoption beyond the source brief.", "Run destination voice after the general humanizer and before manual approval."]
+    },
+    "profiles": {
+      "linkedin": {
+        "id": "linkedin-builder-v1",
+        "audience": "Hiring managers and technical collaborators",
+        "tone": "Clear, grounded, useful, and lightly personal",
+        "shape": ["concrete problem", "why Jakye is building this", "current state or next step"],
+        "forbiddenPhrases": ["Current work:", "Projects and longer notes:", "Proof:", "Sources:", "I am excited to announce"]
+      },
+      "x": {
+        "id": "x-builder-v1",
+        "audience": "Builders and curious technical peers",
+        "tone": "Specific, conversational, compact, and unfinished in an honest way",
+        "shape": ["one observation", "one personal build decision", "one unresolved or current point"],
+        "forbiddenPhrases": ["Current work:", "Projects and longer notes:", "Proof:", "Sources:", "robust", "showcase"]
+      },
+      "instagram": {
+        "id": "instagram-builder-v1",
+        "audience": "Builders and curious viewers discovering work visually",
+        "tone": "Visual, plainspoken, specific, and personal",
+        "shape": ["name the problem or show the working surface", "explain one technical point", "end with the current limitation or next step"],
+        "forbiddenPhrases": ["Current work:", "Projects and longer notes:", "Proof:", "Sources:", "robust", "showcase", "seamless"]
+      },
+      "native-video": {
+        "id": "native-video-builder-v1",
+        "audience": "Recruiters, builders, and product-minded viewers",
+        "tone": "Plainspoken walkthrough with one technical point",
+        "shape": ["what problem is on screen", "what the system does", "what is still unfinished"],
+        "forbiddenPhrases": ["Current work:", "Projects and longer notes:", "Proof:", "Sources:", "seamless"]
+      },
+      "portfolio": {
+        "id": "portfolio-case-study-v1",
+        "audience": "People evaluating the work after a resume or conversation",
+        "tone": "Explanatory, restrained, and easy to scan",
+        "shape": ["problem context", "technical or product judgment", "current state and boundary"],
+        "forbiddenPhrases": ["Current work:", "Projects and longer notes:", "Proof:", "Sources:", "game-changing", "seamless"]
+      },
+      "frmwrk-labs": {
+        "id": "frmwrk-labs-note-v1",
+        "audience": "Technical readers interested in reasoning and unfinished systems",
+        "tone": "Reflective, analytical, first-person, and willing to leave the rough edge visible",
+        "shape": ["the question behind the build", "the decision being tested", "the unresolved edge"],
+        "forbiddenPhrases": ["Current work:", "Projects and longer notes:", "Proof:", "Sources:", "showcase", "unlock", "seamless"]
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "tenure",
+      "title": "Tenure",
+      "kind": "flagship",
+      "narrative": "Human-reviewed AI systems can preserve institutional knowledge without turning unverified model output into organizational truth.",
+      "projects": ["tenure"],
+      "contentBudget": 4,
+      "publicStatus": "LaunchNY cohort venture; pilot-ready product; pre-pilot hardening is underway"
+    },
+    {
+      "id": "engineering-systems",
+      "title": "Engineering Systems",
+      "kind": "flagship",
+      "narrative": "AI-assisted engineering becomes more trustworthy when context, quality gates, evaluation contracts, and release evidence are explicit.",
+      "projects": ["aios", "pre-cr-suite", "quality-runner", "terrace", "tmcp"],
+      "contentBudget": 4,
+      "publicStatus": "Public tooling and local-first systems with verified package/release surfaces"
+    },
+    {
+      "id": "data-product-systems",
+      "title": "Data and Product Systems",
+      "kind": "flagship",
+      "narrative": "Decision products become useful when data uncertainty, product workflows, and user-facing explanations stay connected.",
+      "projects": ["bbdse-courtiq", "signal-lab", "rte", "hoopscout", "soundscape", "github-issue-resolution-modeling"],
+      "contentBudget": 4,
+      "publicStatus": "Research, product, and private-beta surfaces with explicit public-readiness boundaries"
+    },
+    {
+      "id": "client-delivery",
+      "title": "Client Delivery",
+      "kind": "supporting",
+      "narrative": "Ambiguous client problems become useful software through fast scoping, end-to-end ownership, and honest operating boundaries.",
+      "projects": ["forward-automations", "bidcamp", "crimclock", "remodelvision", "frmwrk-labs", "chirons-forge"],
+      "contentBudget": 4,
+      "publicStatus": "Rotate approved and anonymized client/product proof; never expose private implementation or customer data"
+    }
+  ],
+  "projects": [
+    {
+      "slug": "tenure",
+      "name": "Tenure",
+      "lane": "tenure",
+      "tier": "flagship",
+      "publicStatus": "LaunchNY cohort venture; pilot-ready product",
+      "publicClaims": ["specialist-led knowledge capture", "reviewed SOPs", "permissioned organizational wiki", "cited Q&A", "process intelligence reports", "human review gates"],
+      "doNotClaim": ["customers", "revenue", "completed pilots", "broad adoption"],
+      "publicSurfaces": ["https://jakye.netlify.app/"],
+      "videoEligible": true
+    },
+    {
+      "slug": "aios",
+      "name": "AIOS",
+      "lane": "engineering-systems",
+      "tier": "flagship",
+      "publicStatus": "Local-first engineering operations system in active modernization",
+      "publicClaims": ["session hooks", "context packet receipts", "workflow orchestration", "pattern extraction", "layered knowledge retrieval"],
+      "doNotClaim": ["finished commercial OS", "broad public adoption"],
+      "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": true
+    },
+    {
+      "slug": "pre-cr-suite",
+      "name": "Pre-CR Suite",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Published npm package surface",
+      "publicClaims": ["changed-line coverage checks", "pre-review diagnostics", "core and server packages", "coverage-first readiness"],
+      "doNotClaim": ["broad adoption", "team-wide usage"],
+      "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": true
+    },
+    {
+      "slug": "quality-runner",
+      "name": "Quality Runner",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Published PyPI package and MCP server",
+      "publicClaims": ["quality orchestration", "evidence-backed findings", "versioned artifacts", "ordered remediation plans", "read-only review workflow"],
+      "doNotClaim": ["broad adoption", "automated source changes"],
+      "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": true
+    },
+    {
+      "slug": "terrace",
+      "name": "Terrace",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Published npm package with release-readiness checks",
+      "publicClaims": ["spec-driven AI development", "structured build gates", "test-validated workflow", "audit receipts"],
+      "doNotClaim": ["broad public adoption"],
+      "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": false
+    },
+    {
+      "slug": "tmcp",
+      "name": "TMCP",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Marketplace-tested MCP/plugin distribution surface",
+      "publicClaims": ["skill-packet workflows", "release readiness", "UI rubrics", "agent handoffs", "marketplace install verification"],
+      "doNotClaim": ["broad adoption"],
+      "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": false
+    },
+    {
+      "slug": "bbdse-courtiq",
+      "name": "BBDSE / CourtIQ",
+      "lane": "data-product-systems",
+      "tier": "flagship",
+      "publicStatus": "Unified basketball analytics and product suite; public deployment currently paused",
+      "publicClaims": ["basketball analytics workspace", "reliability and uncertainty analysis", "role translation", "decision-training product surfaces"],
+      "doNotClaim": ["active public deployment", "customer adoption", "complete suite implementation"],
+      "publicSurfaces": ["https://github.com/jakyeamos/BBDSE"],
+      "videoEligible": true
+    },
+    {
+      "slug": "signal-lab",
+      "name": "Signal Lab",
+      "lane": "data-product-systems",
+      "tier": "supporting",
+      "publicStatus": "Research diagnostics for reliability, uncertainty, and role translation",
+      "publicClaims": ["stability curves", "sample-size analysis", "empirical Bayes shrinkage", "role/context splits"],
+      "doNotClaim": ["production analytics platform", "complete downstream product"],
+      "publicSurfaces": ["https://github.com/jakyeamos/BBDSE"],
+      "videoEligible": false
+    },
+    {
+      "slug": "rte",
+      "name": "Role Translation Engine",
+      "lane": "data-product-systems",
+      "tier": "supporting",
+      "publicStatus": "Research/product module in active development",
+      "publicClaims": ["context dependence", "competition inflation", "role downshifting", "portability"],
+      "doNotClaim": ["validated draft predictions", "production deployment"],
+      "publicSurfaces": ["https://github.com/jakyeamos/BBDSE"],
+      "videoEligible": false
+    },
+    {
+      "slug": "forward-automations",
+      "name": "Forward Automations",
+      "lane": "client-delivery",
+      "tier": "supporting",
+      "publicStatus": "Professional CTO/client delivery work",
+      "publicClaims": ["regulated healthcare MVP delivery", "architecture-firm productivity software", "legacy application refactor", "AI marketing automation"],
+      "doNotClaim": ["private client details", "unapproved screenshots", "customer data"],
+      "publicSurfaces": ["https://jakye.netlify.app/"],
+      "videoEligible": true
+    },
+    {
+      "slug": "bidcamp",
+      "name": "BidCamp",
+      "lane": "client-delivery",
+      "tier": "supporting",
+      "publicStatus": "Live closed beta",
+      "publicClaims": ["multi-tenant government-contracting SaaS", "Claude-powered RFP analysis", "proposal workflows", "human-reviewed digests", "tenant-scoped access"],
+      "doNotClaim": ["customer names", "tenant data", "broad adoption"],
+      "publicSurfaces": ["https://usebidcamp.com/"],
+      "videoEligible": true
+    },
+    {
+      "slug": "crimclock",
+      "name": "CrimClock",
+      "lane": "client-delivery",
+      "tier": "supporting",
+      "publicStatus": "Product build / reviewer preview",
+      "publicClaims": ["legal-time intelligence", "procedural timing", "sentencing and custody calculations", "plain-language explanations", "decision-support boundaries"],
+      "doNotClaim": ["legal advice", "established customer adoption"],
+      "publicSurfaces": ["https://jakye.netlify.app/"],
+      "videoEligible": false
+    },
+    {
+      "slug": "remodelvision",
+      "name": "RemodelVision",
+      "lane": "client-delivery",
+      "tier": "supporting",
+      "publicStatus": "Working AI visualization and estimation pipeline; product flows remain incomplete",
+      "publicClaims": ["photo-to-visualization workflow", "rough cost estimation", "Claude vision", "image transformation pipeline"],
+      "doNotClaim": ["complete product", "customer adoption", "finished persistence flows"],
+      "publicSurfaces": ["https://jakye.netlify.app/"],
+      "videoEligible": true
+    },
+    {
+      "slug": "soundscape",
+      "name": "Soundscape",
+      "lane": "data-product-systems",
+      "tier": "supporting",
+      "publicStatus": "Active full-stack product build with shared web/mobile surfaces",
+      "publicClaims": ["music discovery workflows", "social listening surfaces", "ratings and feed systems", "shared TypeScript product architecture"],
+      "doNotClaim": ["public adoption", "finished launch", "complete product maturity"],
+      "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": true
+    },
+    {
+      "slug": "github-issue-resolution-modeling",
+      "name": "GitHub Issue Resolution Modeling",
+      "lane": "data-product-systems",
+      "tier": "supporting",
+      "publicStatus": "Research/data project with model and analysis artifacts",
+      "publicClaims": ["issue-resolution modeling", "data preparation", "model evaluation", "evidence-aware analysis"],
+      "doNotClaim": ["production deployment", "validated business outcomes", "broad adoption"],
+      "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": false
+    },
+    {
+      "slug": "frmwrk-labs",
+      "name": "FRMWRK Labs",
+      "lane": "client-delivery",
+      "tier": "supporting",
+      "publicStatus": "Owned software research and publishing surface",
+      "publicClaims": ["standalone reasoning engines", "source-backed software research", "Concordia production surface", "long-form technical writing"],
+      "doNotClaim": ["customer adoption beyond the public site", "private implementation details", "unapproved client outcomes"],
+      "publicSurfaces": ["https://www.frmwrklabs.com/"],
+      "videoEligible": false
+    },
+    {
+      "slug": "chirons-forge",
+      "name": "Chiron's Forge",
+      "lane": "client-delivery",
+      "tier": "supporting",
+      "publicStatus": "Live applied-AI product surface",
+      "publicClaims": ["multi-model research", "independent judging", "synthesis and refinement", "skill-file and report generation"],
+      "doNotClaim": ["customer adoption beyond the public product surface", "private user data", "unsupported production scale"],
+      "publicSurfaces": ["https://www.chironsforge.com/"],
+      "videoEligible": true
+    }
+  ],
+  "backlog": [
+    {"id":"tenure-problem","lane":"tenure","project":"tenure","slot":"monday","format":"linkedin-case-study","title":"Why institutional knowledge disappears before organizations realize it","hook":"The hard part of employee transition is not writing a document after the fact; it is capturing the tacit decisions while the work is happening.","context":"When someone leaves, the document they leave behind usually records the procedure, not the judgment that made the procedure work.","personalAngle":"That gap is what pushed me toward Tenure, a LaunchNY cohort venture for turning specialist knowledge into reviewed, cited, permissioned internal knowledge.","nextStep":"I’m working through the capture flow first, because a useful answer should still show where it came from and who signed off on it.","voiceProfile":"venture-builder","proofArtifact":"Tenure product overview","video":false,"status":"backlog","sourceRefs":["cv.md","article-digest.md","config/profile.yml"]},
+    {"id":"tenure-architecture","lane":"tenure","project":"tenure","slot":"tuesday","format":"technical-tradeoff","title":"Why Tenure puts human review between extraction and organizational truth","hook":"An AI extraction pipeline is only useful if the organization can see what was extracted, why it was extracted, and who approved it.","context":"The dangerous step in an AI knowledge system is the quiet jump from extracted text to organizational truth.","personalAngle":"Tenure keeps a human review step between those two things so people can see what was captured, why it was captured, and what is still uncertain.","nextStep":"The next test is making that review feel like part of the work instead of another queue nobody wants to own.","voiceProfile":"venture-builder","proofArtifact":"Human-review pipeline description","video":false,"status":"backlog","sourceRefs":["article-digest.md","config/profile.yml"]},
+    {"id":"tenure-boundary","lane":"tenure","project":"tenure","slot":"friday","format":"failure-note","title":"The boundary Tenure refuses to cross","hook":"Tenure is not a transcript summarizer and it is not allowed to turn ungrounded model output into client knowledge.","context":"A polished transcript can look authoritative even when it has missed the decision that mattered.","personalAngle":"Tenure is not meant to turn a model summary into knowledge just because the prose sounds confident.","nextStep":"The product is pilot-ready, but the review and citation boundaries are still the part I’m treating as core product work.","voiceProfile":"venture-builder","proofArtifact":"Compliance and review boundary","video":false,"status":"backlog","sourceRefs":["article-digest.md"]},
+    {"id":"tenure-demo","lane":"tenure","project":"tenure","slot":"thursday","format":"native-video","title":"Tenure in 90 seconds: capture to reviewed knowledge","hook":"A short walkthrough of the capture, extraction, review, wiki, and cited-Q&A loop.","context":"The Tenure loop is meant to follow a piece of work from capture to something another person can actually use.","personalAngle":"I want the product to make the handoff visible: capture, extraction, review, wiki, then cited questions and answers.","nextStep":"The demo should show the working path and the places where a person still has to make the call.","voiceProfile":"venture-builder","proofArtifact":"Approved product walkthrough","video":true,"status":"needs-asset","sourceRefs":["cv.md","article-digest.md"]},
+    {"id":"systems-problem","lane":"engineering-systems","project":"aios","slot":"monday","format":"linkedin-case-study","title":"AI-assisted engineering needs operational context, not just better prompts","hook":"The useful question is not what an agent generated; it is what evidence, constraints, and handoffs shaped the work.","context":"When AI-assisted engineering goes wrong, the missing ingredient is often not another prompt; it is the context around the task.","personalAngle":"AIOS grew out of wanting receipts for the evidence, constraints, and handoffs that shaped a change.","nextStep":"I’m still modernizing the local-first system, so the useful thing to show is the context packet and what it preserves.","voiceProfile":"systems-builder","proofArtifact":"AIOS context packet receipt","video":false,"status":"backlog","sourceRefs":["cv.md","article-digest.md","config/profile.yml"]},
+    {"id":"systems-quality","lane":"engineering-systems","project":"quality-runner","slot":"tuesday","format":"technical-tradeoff","title":"Why quality checks should produce evidence before they produce edits","hook":"Quality Runner is intentionally read-only: the first artifact is a reviewable finding and remediation plan, not an automatic source change.","context":"A quality tool that edits the source before anyone can inspect the reasoning makes review harder, not easier.","personalAngle":"Quality Runner starts with a finding and an ordered remediation plan because I want the evidence to be readable before a change is proposed.","nextStep":"The published package is the proof surface; the next work is making the read-only workflow useful across more repositories.","voiceProfile":"systems-builder","proofArtifact":"Published Quality Runner package","video":false,"status":"backlog","sourceRefs":["cv.md","article-digest.md"]},
+    {"id":"systems-tradeoff","lane":"engineering-systems","project":"pre-cr-suite","slot":"friday","format":"failure-note","title":"The engineering workflow I wanted before opening a pull request","hook":"Changed-line coverage is easier to fix before review than after a pull request turns it into a social negotiation.","context":"By the time a pull request tells you a changed line has no useful test coverage, the conversation has already become more expensive.","personalAngle":"Pre-CR Suite is my attempt to move that check to the moment before review, while the change is still local and explainable.","nextStep":"The interesting engineering work is keeping the check useful across editors without making the developer learn a new workflow.","voiceProfile":"systems-builder","proofArtifact":"Pre-CR package surface","video":false,"status":"backlog","sourceRefs":["article-digest.md"]},
+    {"id":"systems-demo","lane":"engineering-systems","project":"quality-runner","slot":"thursday","format":"native-video","title":"Quality Runner in 90 seconds","hook":"Show the CLI discovering checks, producing evidence-backed findings, and writing an ordered remediation artifact.","context":"I wanted a quality workflow that could show its work before it suggested a fix.","personalAngle":"In this short demo, Quality Runner discovers checks, records evidence-backed findings, and writes a remediation artifact without changing source code.","nextStep":"The current surface is intentionally read-only; the next step is to keep that review boundary useful as the checks get more capable.","voiceProfile":"systems-builder","proofArtifact":"Approved CLI recording","video":true,"status":"needs-asset","sourceRefs":["cv.md","article-digest.md"]},
+    {"id":"bbdse-problem","lane":"data-product-systems","project":"bbdse-courtiq","slot":"monday","format":"linkedin-case-study","title":"Sports analytics should show uncertainty, not just rankings","hook":"The interesting question is not whether a metric is high; it is how much evidence it takes before the metric becomes decision-useful.","context":"A basketball metric can look precise long before there is enough evidence to make it useful.","personalAngle":"BBDSE/CourtIQ is where I’ve been testing how to put uncertainty and role context next to the number instead of hiding them behind a ranking.","nextStep":"The public deployment is paused, but the reliability work is still the part I trust enough to keep showing.","voiceProfile":"data-builder","proofArtifact":"BBDSE reliability report","video":false,"status":"backlog","sourceRefs":["article-digest.md","config/profile.yml"]},
+    {"id":"bbdse-reliability","lane":"data-product-systems","project":"signal-lab","slot":"tuesday","format":"technical-tradeoff","title":"What Signal Lab measures before it recommends a basketball metric","hook":"Before building a dashboard around a stat, I want to know how quickly it stabilizes, where it gets noisy, and how role changes affect it.","context":"Before I put a basketball stat into a decision surface, I want to know how quickly it stabilizes and where it gets noisy.","personalAngle":"Signal Lab exists for that unglamorous step: sample-size analysis, stability curves, shrinkage, and role/context splits.","nextStep":"The work is still research rather than a production analytics platform, which is exactly why the diagnostics matter.","voiceProfile":"data-builder","proofArtifact":"Signal Lab report artifact","video":false,"status":"backlog","sourceRefs":["article-digest.md"]},
+    {"id":"bbdse-product","lane":"data-product-systems","project":"bbdse-courtiq","slot":"friday","format":"product-insight","title":"Why CourtIQ and BBDSE belong in the same product lane","hook":"The analytics layer is more useful when it reaches a decision-training surface instead of stopping at a report.","context":"A report can answer a question and still leave the person looking at it with no next move.","personalAngle":"CourtIQ and BBDSE belong together because the analytics can become a decision-training surface instead of ending at a chart.","nextStep":"I’m keeping the product claim narrow while the suite is still being shaped and the public deployment is paused.","voiceProfile":"data-builder","proofArtifact":"BBDSE/CourtIQ product surface","video":false,"status":"backlog","sourceRefs":["config/profile.yml"]},
+    {"id":"bbdse-demo","lane":"data-product-systems","project":"bbdse-courtiq","slot":"thursday","format":"native-video","title":"BBDSE/CourtIQ in 90 seconds","hook":"Walk through the decision surface, the analytics boundary, and what remains paused or under development.","context":"The most useful basketball product surface is not the ranking by itself; it is the decision a person can make with the evidence around it.","personalAngle":"This walkthrough connects the BBDSE analytics boundary to CourtIQ’s training surface and shows what is actually working.","nextStep":"I’ll also show what remains paused, because that is part of the current state rather than a footnote.","voiceProfile":"data-builder","proofArtifact":"Approved CourtIQ walkthrough","video":true,"status":"needs-asset","sourceRefs":["config/profile.yml"]},
+    {"id":"bidcamp-workflow","lane":"client-delivery","project":"bidcamp","slot":"friday","format":"linkedin-case-study","title":"What makes a government-contracting workflow useful to a small firm","hook":"The product has to connect RFP analysis, proposal work, procurement intelligence, and reviewed follow-up without exposing tenant data.","context":"Small firms do not need another isolated RFP summary; they need the analysis to survive the handoff into proposal work.","personalAngle":"BidCamp connects RFP analysis, procurement intelligence, and reviewed follow-up in a multi-tenant workflow without making tenant data part of the demo.","nextStep":"It is live in closed beta, so I’m showing the workflow and keeping adoption claims out of the story.","voiceProfile":"client-builder","proofArtifact":"BidCamp public product surface","video":false,"status":"backlog","sourceRefs":["cv.md","article-digest.md"]},
+    {"id":"forward-delivery","lane":"client-delivery","project":"forward-automations","slot":"monday","format":"linkedin-case-study","title":"The common thread in my client work","hook":"Across healthcare, architecture, live-event software, and marketing systems, the recurring job has been turning an ambiguous workflow into something usable under a short deadline.","context":"The client work has looked different on the surface - healthcare, architecture, live events, and marketing - but the underlying problem is usually the same: a messy workflow with a short deadline.","personalAngle":"At Forward Automations, I’ve worked as a CTO turning those ambiguous requests into usable products and internal systems.","nextStep":"I can share the patterns and anonymized outcomes; private repositories, customer data, and client-sensitive details stay private.","voiceProfile":"client-builder","proofArtifact":"Anonymized client-delivery summary","video":false,"status":"needs-approval","sourceRefs":["cv.md","article-digest.md"]},
+    {"id":"crimclock-boundary","lane":"client-delivery","project":"crimclock","slot":"tuesday","format":"technical-tradeoff","title":"Why legal-time software needs explicit decision-support boundaries","hook":"A calculation can be useful without pretending to be legal advice; the product has to make that boundary visible.","context":"Time calculations in legal workflows are consequential partly because a small misunderstanding can change what someone thinks happens next.","personalAngle":"CrimClock is a legal-time intelligence platform, so the product has to explain the calculation without pretending to be legal advice.","nextStep":"The reviewer preview is where I’m testing whether the boundary is clear in the interface, not just in a disclaimer.","voiceProfile":"client-builder","proofArtifact":"CrimClock reviewer-preview surface","video":false,"status":"backlog","sourceRefs":["article-digest.md"]},
+    {"id":"remodelvision-pipeline","lane":"client-delivery","project":"remodelvision","slot":"thursday","format":"native-video","title":"From room photo to renovation visualization","hook":"A short walkthrough of the working vision, transformation, and rough-estimation path, including the flows that are not finished yet.","context":"A room photo can start a useful renovation conversation, but turning it into a trustworthy estimate takes more than a generated image.","personalAngle":"RemodelVision connects a working vision/transformation path to rough estimation while keeping the incomplete product flows visible.","nextStep":"The current pipeline is real and useful to inspect; persistence and other product flows are still unfinished.","voiceProfile":"client-builder","proofArtifact":"Approved RemodelVision walkthrough","video":true,"status":"needs-asset","sourceRefs":["article-digest.md"]}
+  ]
+}
