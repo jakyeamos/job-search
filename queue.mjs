@@ -30,6 +30,9 @@ import {
   renderQueueMarkdown,
   writeQueueState,
 } from './queue-lib.mjs';
+import { checkPublicLiveness } from './liveness-http.mjs';
+
+export { checkPublicLiveness } from './liveness-http.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -74,40 +77,6 @@ async function runNodeScript(script, args, options = {}) {
       error: typed.message || String(error),
     };
   }
-}
-
-/**
- * Bounded public liveness check. It never follows redirects and is never used
- * for alert-only LinkedIn/TeamWork/other restricted sources.
- * @param {string} url
- * @param {(input: string, init?: RequestInit) => Promise<Response>} [fetchFn]
- * @returns {Promise<'active'|'expired'|'uncertain'>}
- */
-export async function checkPublicLiveness(url, fetchFn = globalThis.fetch) {
-  const normalized = normalizeUrl(url);
-  if (!normalized) return 'uncertain';
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
-  try {
-    let response = await fetchFn(normalized, {
-      method: 'HEAD',
-      redirect: 'manual',
-      signal: controller.signal,
-      headers: { 'User-Agent': 'career-ops-queue/1.0' },
-    });
-    if (response.status === 405 || response.status === 403) {
-      response = await fetchFn(normalized, {
-        method: 'GET',
-        redirect: 'manual',
-        signal: controller.signal,
-        headers: { 'User-Agent': 'career-ops-queue/1.0', Range: 'bytes=0-1024' },
-      });
-    }
-    if (response.status === 404 || response.status === 410) return 'expired';
-    if (response.status >= 200 && response.status < 400) return 'active';
-    return 'uncertain';
-  } catch { return 'uncertain'; }
-  finally { clearTimeout(timer); }
 }
 
 /** @param {Array<Record<string, unknown>>} candidates @param {number} limit */
@@ -276,8 +245,8 @@ function acquireLock(root, scheduled) {
   return () => { try { unlinkSync(LOCK_FILE); } catch { /* no-op */ } };
 }
 
-/** @param {string} root @param {number} limit @param {boolean} dryRun @param {boolean} scheduled @param {boolean} skipPublic */
-async function refresh(root, limit, dryRun, scheduled, skipPublic) {
+/** @param {string} root @param {number} limit @param {boolean} dryRun @param {boolean} scheduled @param {boolean} skipPublic @param {boolean} skipOutreach */
+async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach = false) {
   const release = acquireLock(root, scheduled);
   try {
     await loadDotenvOnce();
@@ -315,19 +284,38 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic) {
       errors: sourceErrors,
     };
     if (!dryRun) saveQueue(root, state);
-    const outreachArgs = ['process'];
-    if (dryRun) outreachArgs.push('--dry-run');
-    const outreach = await runNodeScript('outreach.mjs', outreachArgs, { timeoutMs: 180_000 });
-    if (!outreach.ok) sourceErrors.push(`outreach process failed: ${outreach.error}`);
-    state.lastRun.outreach = {
-      ok: outreach.ok,
-      output: `${outreach.stdout || ''}${outreach.stderr || ''}`.trim().slice(0, 4000),
-    };
+    if (skipOutreach) {
+      state.lastRun.outreach = { ok: true, skipped: true, output: 'outreach deferred until a confirmed application submission' };
+    } else {
+      const outreachArgs = ['process'];
+      if (dryRun) outreachArgs.push('--dry-run');
+      const outreach = await runNodeScript('outreach.mjs', outreachArgs, { timeoutMs: 180_000 });
+      if (!outreach.ok) sourceErrors.push(`outreach process failed: ${outreach.error}`);
+      state.lastRun.outreach = {
+        ok: outreach.ok,
+        output: `${outreach.stdout || ''}${outreach.stderr || ''}`.trim().slice(0, 4000),
+      };
+    }
     if (!dryRun) saveQueue(root, state);
     const selected = state.items.filter((item) => item.selectedForToday);
     console.log(`Queue refresh${dryRun ? ' (dry run)' : ''}: ${selected.length} role(s) selected, ${state.items.length} total retained.`);
     if (sourceErrors.length) for (const error of sourceErrors) console.log(`  ⚠️ ${error}`);
     for (const item of selected.sort((a, b) => Number(a.queueRank || 999) - Number(b.queueRank || 999))) console.log(`  ${item.queueRank}. ${item.company || 'Unknown'} | ${item.title} | ${item.fitScore.toFixed(1)}/5 | ${item.status} | ${item.applyUrl}`);
+    if (process.env.CAREER_OPS_QUEUE_PREVIEW === '1') {
+      const preview = state.items.map((item) => ({
+        id: item.id,
+        company: item.company,
+        title: item.title,
+        status: item.status,
+        applicationState: item.applicationState || null,
+        fitScore: item.fitScore,
+        liveness: item.liveness,
+        applyUrl: item.applyUrl,
+        canonicalUrl: item.canonicalUrl,
+        postedAt: item.postedAt,
+      }));
+      console.log(`CAREER_OPS_QUEUE_PREVIEW ${JSON.stringify(preview)}`);
+    }
     return state;
   } finally { release(); }
 }
@@ -457,12 +445,24 @@ async function main() {
   const command = args[0] || 'list';
   const limit = Math.max(1, Math.min(10, Number(readFlag(args, '--limit', String(DEFAULT_QUEUE_LIMIT))) || DEFAULT_QUEUE_LIMIT));
   if (command === 'refresh') {
-    await refresh(ROOT, limit, args.includes('--dry-run'), args.includes('--scheduled'), args.includes('--skip-public'));
+    await refresh(ROOT, limit, args.includes('--dry-run'), args.includes('--scheduled'), args.includes('--skip-public'), args.includes('--skip-outreach'));
     return;
   }
   if (command === 'list' || command === 'today') { listQueue(ROOT); return; }
   if (command === 'clear') { await clearQueue(ROOT); return; }
   if (command === 'verify') { verifyQueue(ROOT); return; }
+  if (command === 'health') {
+    const health = await import('./queue-health.mjs');
+    const healthLimit = Math.max(1, Math.min(2_000, Number(readFlag(args, '--limit', '100')) || 100));
+    const result = await health.runQueueHealth({
+      limit: healthLimit,
+      all: args.includes('--all'),
+      apply: args.includes('--apply'),
+      browser: args.includes('--browser'),
+    });
+    console.log(args.includes('--json') ? JSON.stringify(result, null, 2) : health.renderHealthReport(result));
+    return;
+  }
   if (command === 'status') {
     await loadDotenvOnce();
     const state = readQueueState(QUEUE_JSON);
@@ -471,10 +471,11 @@ async function main() {
     console.log(`Queue file: ${QUEUE_JSON}`);
     console.log(`Selected: ${(state.items || []).filter((item) => item.selectedForToday).length}`);
     console.log(`Last refresh: ${state.lastRun?.at || 'never'}`);
+    console.log(`Last health check: ${state.lastHealthCheck?.at || 'never'}`);
     return;
   }
   if (command === 'install-schedule') { await installSchedule(ROOT, args.includes('--dry-run')); return; }
-  throw new Error(`Unknown queue command "${command}". Use refresh, list, clear, status, verify, or install-schedule.`);
+  throw new Error(`Unknown queue command "${command}". Use refresh, list, clear, health, status, verify, or install-schedule.`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {

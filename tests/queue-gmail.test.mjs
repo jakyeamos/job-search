@@ -188,7 +188,7 @@ test('queue selection is capped and preserves applied state', () => {
     id: stableQueueId({ url: `https://example.com/${index}`, company: 'Example', title: `Backend Engineer ${index}` }),
     source: 'greenhouse',
     title: `Backend Engineer ${index}`,
-    company: 'Example',
+    company: `Example ${index}`,
     location: 'Remote US',
     canonicalUrl: `https://example.com/${index}`,
     applyUrl: `https://example.com/${index}`,

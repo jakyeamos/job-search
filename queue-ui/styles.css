@@ -223,6 +223,78 @@ h1 {
 
 .queue-section { padding-top: 42px; }
 
+.application-control-section,
+.question-section,
+.handoff-section { border-top: 1px solid var(--line); }
+
+.application-control-section { padding-bottom: 8px; }
+
+.run-progress {
+  min-height: 44px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.question-list,
+.handoff-list { display: grid; gap: 12px; }
+
+.question-card,
+.handoff-card {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.question-card-heading,
+.question-card-actions,
+.handoff-card {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.question-card-heading h3,
+.handoff-card h3 { margin: 0 0 4px; font-size: 16px; }
+.question-card-heading p,
+.handoff-card p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+.question-text { margin: 18px 0 7px; font-weight: 650; }
+.question-reason { margin-bottom: 14px; color: var(--ink-soft); font-size: 13px; }
+
+.question-field,
+.question-scope {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.question-field { margin-top: 10px; }
+.question-field select,
+.question-field textarea,
+.question-scope select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.question-field textarea { resize: vertical; line-height: 1.45; }
+.question-card-actions { align-items: end; margin-top: 16px; }
+.question-scope { min-width: 150px; }
+.question-card-actions .button { margin-left: auto; }
+.handoff-card { align-items: center; }
+
+.handoff-card .tag { flex: 0 0 auto; }
+
 .outreach-section { padding-top: 52px; }
 
 .outreach-list { display: grid; gap: 12px; }
@@ -515,6 +587,11 @@ h1 {
   .toolbar-select { justify-content: space-between; }
   .toolbar-select select { flex: 1; }
   .section-heading { align-items: start; flex-direction: column; gap: 8px; }
+  .question-card-heading,
+  .question-card-actions,
+  .handoff-card { align-items: stretch; flex-direction: column; }
+  .question-card-actions .button { margin-left: 0; }
+  .question-scope { min-width: 0; }
   .queue-row { padding: 19px 0; }
   .queue-title-line { gap: 10px; }
   .queue-title-line h3 { font-size: 16px; }

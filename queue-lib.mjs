@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { buildResumeRequest } from './resume-contract.mjs';
 
 export const QUEUE_SCHEMA_VERSION = 1;
 export const DEFAULT_QUEUE_LIMIT = 10;
@@ -278,10 +279,8 @@ export function scoreCandidate(candidate, profile = {}) {
 export function buildQueueItem(candidate, profile, root) {
   const evaluation = scoreCandidate(candidate, profile);
   const canonicalUrl = normalizeUrl(String(candidate.canonicalUrl || candidate.url || ''));
-  const basePdf = path.join(root, 'output', 'Jakye_Amos_Canonical_Base_Resume.pdf');
-  const resumeArtifact = existsSync(basePdf) ? basePdf : path.join(root, 'cv.md');
   const source = normalizeText(String(candidate.source || inferSourceFromUrl(canonicalUrl))).toLowerCase() || 'manual';
-  return {
+  const item = {
     id: stableQueueId({ ...candidate, canonicalUrl }),
     source,
     sourceLabel: candidate.sourceLabel || source,
@@ -301,8 +300,6 @@ export function buildQueueItem(candidate, profile, root) {
     fitReasons: evaluation.reasons,
     blockers: evaluation.blockers,
     lane: evaluation.lane,
-    resumeArtifact,
-    resumeStatus: 'canonical-base; lane PDFs pending Amazon update approval',
     outreach: {
       suggested: evaluation.status === 'ready',
       searchQuery: `${normalizeText(String(candidate.company || ''))} ${normalizeText(String(candidate.title || ''))} recruiter hiring manager`,
@@ -311,6 +308,19 @@ export function buildQueueItem(candidate, profile, root) {
     queueRank: null,
     selectedForToday: false,
     updatedAt: new Date().toISOString(),
+  };
+  const resume = buildResumeRequest(item, root);
+  return {
+    ...item,
+    resumeContractVersion: resume.contractVersion,
+    resumeJobKey: resume.jobKey,
+    resumeManifest: resume.manifestPath,
+    resumeArtifact: resume.artifactPath,
+    resumeFormat: resume.paperFormat,
+    resumeProjects: resume.selectedProjects,
+    resumeStatus: existsSync(resume.artifactPath)
+      ? 'contract-managed; canonical artifact available'
+      : 'contract-managed; tailored artifact required',
   };
 }
 
@@ -372,13 +382,17 @@ export function buildQueue(candidates, previous = {}, options = {}) {
   }
 
   const selectedIdentities = new Set();
+  const selectedCompanies = new Set();
   const selected = [...merged.values()]
     .filter(eligibleForSelection)
     .sort((a, b) => sortScore(b) - sortScore(a))
     .filter((item) => {
       const identity = selectionIdentity(item);
       if (selectedIdentities.has(identity)) return false;
+      const company = normalizeKey(String(item.company || ''));
+      if (company && selectedCompanies.has(company)) return false;
       selectedIdentities.add(identity);
+      if (company) selectedCompanies.add(company);
       return true;
     })
     .slice(0, limit);
@@ -452,7 +466,7 @@ export function renderQueueMarkdown(state) {
       '',
     );
   }
-  lines.push('## Controls', '', '- Run `node queue.mjs clear` to review, open, apply, skip, or snooze roles.', '- Applications are never submitted automatically.', '');
+  lines.push('## Controls', '', '- Run `node queue.mjs clear` to review, open, apply, skip, or snooze roles.', '- Automatic submission is separate, revocable, policy-gated, and uses `node application-queue.mjs run`.', '');
   return lines.join('\n');
 }
 

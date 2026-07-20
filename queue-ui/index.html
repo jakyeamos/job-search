@@ -17,6 +17,7 @@
         <div class="topbar-actions">
           <span class="connection-status" id="connectionStatus"><span class="status-dot" aria-hidden="true"></span>Local queue</span>
           <button class="button button-quiet" id="refreshButton" type="button">Refresh sources</button>
+          <button class="button button-primary" id="clearQueueButton" type="button">Clear today’s queue</button>
         </div>
       </header>
 
@@ -33,14 +34,26 @@
               <span class="summary-label">to review today</span>
             </div>
             <div class="summary-item">
-              <span class="summary-value" id="retainedCount">—</span>
-              <span class="summary-label">retained overall</span>
+              <span class="summary-value" id="liveCount">—</span>
+              <span class="summary-label">live unique roles</span>
             </div>
             <div class="summary-item">
               <span class="summary-value" id="lastRefresh">—</span>
               <span class="summary-label">last refresh</span>
             </div>
           </div>
+        </section>
+
+        <section class="queue-section application-control-section" aria-labelledby="applicationRunHeading">
+          <div class="section-heading">
+            <div>
+              <p class="kicker">Authorized application run</p>
+              <h2 id="applicationRunHeading">Submit the best six.</h2>
+              <p id="applicationRunSubheading">The runner prepares each application, stops on ambiguity, and reports every handoff.</p>
+            </div>
+            <span class="account-label" id="applicationRunStatus">Idle</span>
+          </div>
+          <div class="run-progress" id="applicationRunProgress" aria-live="polite"></div>
         </section>
 
         <section class="queue-toolbar" aria-label="Queue filters and sorting">
@@ -94,6 +107,29 @@
           <div class="queue-list" id="queueList" aria-live="polite" aria-busy="true"></div>
         </section>
 
+        <section class="queue-section question-section" aria-labelledby="questionHeading">
+          <div class="section-heading">
+            <div>
+              <p class="kicker">You unblock the uncertain parts</p>
+              <h2 id="questionHeading">Questions waiting for you</h2>
+              <p id="questionSubheading">Answers are saved at role or company scope and used to resume the affected application.</p>
+            </div>
+          </div>
+          <div class="question-list" id="questionList" aria-live="polite"></div>
+        </section>
+
+        <section class="queue-section handoff-section" aria-labelledby="handoffHeading">
+          <div class="section-heading">
+            <div>
+              <p class="kicker">Human handoff</p>
+              <h2 id="handoffHeading">Browser applications</h2>
+              <p id="handoffSubheading">CAPTCHA, anti-spam, MFA, and manual-submit steps open as tabs in one dedicated Chrome window.</p>
+            </div>
+            <button class="button button-quiet" id="openHandoffsButton" type="button">Open handoffs</button>
+          </div>
+          <div class="handoff-list" id="handoffList" aria-live="polite"></div>
+        </section>
+
         <section class="outreach-section" aria-labelledby="outreachHeading">
           <div class="section-heading">
             <div>
@@ -108,7 +144,7 @@
 
         <section class="quiet-note" aria-label="Queue boundary">
           <span class="quiet-note-mark" aria-hidden="true">↳</span>
-          <p><strong>You stay in control.</strong> Opening a role never marks it applied. The tracker changes only when you choose Applied, Skip, or Snooze.</p>
+          <p><strong>You stay in control.</strong> Opening a role never marks it applied. Automatic clearing records an application only after confirmation evidence; questions and human handoffs stay visible here.</p>
         </section>
       </main>
     </div>

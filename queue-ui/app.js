@@ -1,6 +1,7 @@
 const elements = {
   allCount: document.querySelector('#allCount'),
   connectionStatus: document.querySelector('#connectionStatus'),
+  clearQueueButton: document.querySelector('#clearQueueButton'),
   fieldSelect: document.querySelector('#fieldSelect'),
   lastRefresh: document.querySelector('#lastRefresh'),
   laneSelect: document.querySelector('#laneSelect'),
@@ -9,9 +10,14 @@ const elements = {
   queueSubheading: document.querySelector('#queueSubheading'),
   outreachList: document.querySelector('#outreachList'),
   outreachSubheading: document.querySelector('#outreachSubheading'),
+  applicationRunProgress: document.querySelector('#applicationRunProgress'),
+  applicationRunStatus: document.querySelector('#applicationRunStatus'),
+  questionList: document.querySelector('#questionList'),
+  handoffList: document.querySelector('#handoffList'),
+  openHandoffsButton: document.querySelector('#openHandoffsButton'),
   readyCount: document.querySelector('#readyCount'),
   refreshButton: document.querySelector('#refreshButton'),
-  retainedCount: document.querySelector('#retainedCount'),
+  liveCount: document.querySelector('#liveCount'),
   reviewCount: document.querySelector('#reviewCount'),
   selectedCount: document.querySelector('#selectedCount'),
   snoozeDate: document.querySelector('#snoozeDate'),
@@ -31,6 +37,7 @@ const ui = {
   state: null,
   snoozeItemId: null,
   toastTimer: null,
+  applicationPollTimer: null,
 };
 
 const COMPANY_FIELD_RULES = [
@@ -196,11 +203,60 @@ function renderSummary() {
   const totals = ui.state?.totals || {};
   const selected = selectedItems();
   elements.selectedCount.textContent = String(totals.selected ?? selected.length);
-  elements.retainedCount.textContent = String(totals.retained ?? '—');
+  elements.liveCount.textContent = String(totals.liveUnique ?? '—');
   elements.readyCount.textContent = String(selected.filter((item) => item.status === 'ready').length);
   elements.reviewCount.textContent = String(selected.filter((item) => item.status === 'in_review').length);
   elements.allCount.textContent = String(selected.length);
   elements.lastRefresh.textContent = formatDateTime(ui.state?.lastRun?.at);
+}
+
+function renderApplicationRun() {
+  const run = ui.state?.applicationRun || {};
+  const running = run.status === 'running';
+  elements.clearQueueButton.disabled = running;
+  elements.clearQueueButton.textContent = running ? 'Clearing…' : 'Clear today’s queue';
+  elements.applicationRunStatus.textContent = humanize(run.phase || run.status || 'idle');
+  const current = run.current;
+  const report = Array.isArray(run.report) ? run.report : [];
+  const summary = current
+    ? `${humanize(current.status || 'working')}: ${current.company || ''} · ${current.title || ''}`
+    : report.length
+      ? `${report.length} role${report.length === 1 ? '' : 's'} processed in the last run.`
+      : 'Ready to process up to six high-fit roles.';
+  elements.applicationRunProgress.textContent = summary;
+}
+
+function renderQuestions() {
+  const questions = Array.isArray(ui.state?.questions) ? ui.state.questions : [];
+  if (!questions.length) {
+    elements.questionList.innerHTML = '<div class="empty-state"><h3>No answers are blocking the queue.</h3><p>Unknown required questions will appear here instead of being guessed.</p></div>';
+    return;
+  }
+  elements.questionList.innerHTML = questions.map((question) => {
+    const options = Array.isArray(question.options) ? question.options : [];
+    const initialAnswer = question.answer || question.suggestedAnswer || '';
+    const optionMarkup = options.length
+      ? `<label class="question-field"><span>Known choices</span><select data-question-choice="${escapeHtml(question.id)}"><option value="">Choose a listed answer</option>${options.map((option) => `<option value="${escapeHtml(option)}"${option === initialAnswer ? ' selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`
+      : '';
+    return `<article class="question-card" data-question-id="${escapeHtml(question.id)}" data-queue-id="${escapeHtml(question.queueId)}">
+      <div class="question-card-heading"><div><h3>${escapeHtml(question.role || 'Application question')}</h3><p>${escapeHtml(question.company || 'Company not parsed')} · ${escapeHtml(question.sensitivity || 'normal')} sensitivity</p></div><span class="tag">${escapeHtml(humanize(question.scope || 'role'))}</span></div>
+      <p class="question-text">${escapeHtml(question.question)}</p>
+      <p class="question-reason">${escapeHtml(question.reason || 'This field needs a factual answer before submission.')}</p>
+      ${optionMarkup}
+      <label class="question-field"><span>Your answer</span><textarea data-question-answer="${escapeHtml(question.id)}" rows="3" placeholder="Answer only what you know to be true">${escapeHtml(initialAnswer)}</textarea></label>
+      <div class="question-card-actions"><label class="question-scope"><span>Reuse at</span><select data-question-scope="${escapeHtml(question.id)}"><option value="role"${question.scope === 'role' ? ' selected' : ''}>This role</option><option value="company"${question.scope === 'company' ? ' selected' : ''}>This company</option></select></label><button class="button button-primary" type="button" data-question-submit="${escapeHtml(question.id)}">Save answer &amp; resume</button></div>
+    </article>`;
+  }).join('');
+}
+
+function renderHandoffs() {
+  const session = ui.state?.handoffs || {};
+  const pages = Array.isArray(session.pages) ? session.pages : [];
+  if (!pages.length) {
+    elements.handoffList.innerHTML = '<div class="empty-state"><h3>No browser handoffs are waiting.</h3><p>CAPTCHA and manual-submit applications will be grouped into one Chrome window here.</p></div>';
+    return;
+  }
+  elements.handoffList.innerHTML = pages.map((page) => `<article class="handoff-card"><div><h3>${escapeHtml(page.title || 'Application')}</h3><p>${escapeHtml(page.company || '')}</p></div><span class="tag ${page.status === 'submitted' ? 'tag-status-ready' : ''}">${escapeHtml(humanize(page.status || 'waiting'))}</span></article>`).join('');
 }
 
 function renderItem(item) {
@@ -306,10 +362,13 @@ function renderQueue() {
 function render() {
   if (!ui.state) return;
   renderSummary();
+  renderApplicationRun();
   renderFieldOptions();
   renderLocationOptions();
   renderLaneOptions();
   renderQueue();
+  renderQuestions();
+  renderHandoffs();
   renderOutreach();
   document.querySelectorAll('[data-filter]').forEach((button) => {
     button.classList.toggle('is-active', button.dataset.filter === ui.filter);
@@ -342,11 +401,71 @@ async function loadQueue({ quiet = false } = {}) {
     ui.state = await requestJson('/api/queue');
     setConnection(true);
     render();
+    if (ui.state.applicationRun?.status === 'running' && !ui.applicationPollTimer) {
+      ui.applicationPollTimer = setInterval(() => loadQueue({ quiet: true }), 2000);
+    } else if (ui.state.applicationRun?.status !== 'running' && ui.applicationPollTimer) {
+      clearInterval(ui.applicationPollTimer);
+      ui.applicationPollTimer = null;
+    }
   } catch (error) {
     setConnection(false);
     elements.queueList.setAttribute('aria-busy', 'false');
     elements.queueList.innerHTML = '<div class="empty-state"><h3>Could not load the queue.</h3><p>Make sure the local queue server is running, then try again.</p></div>';
     if (!quiet) showToast(error instanceof Error ? error.message : String(error), true);
+  }
+}
+
+async function clearTodayQueue() {
+  elements.clearQueueButton.disabled = true;
+  try {
+    await requestJson('/api/applications/clear', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ limit: 6 }),
+    });
+    await loadQueue({ quiet: true });
+    showToast('Queue clear started. I’ll stop on questions or human handoffs.');
+  } catch (error) {
+    elements.clearQueueButton.disabled = false;
+    showToast(error instanceof Error ? error.message : String(error), true);
+  }
+}
+
+async function openHandoffs() {
+  elements.openHandoffsButton.disabled = true;
+  try {
+    await requestJson('/api/handoffs/open', { method: 'POST' });
+    await loadQueue({ quiet: true });
+    showToast('Handoff tabs are opening in one dedicated Chrome window.');
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), true);
+  } finally {
+    elements.openHandoffsButton.disabled = false;
+  }
+}
+
+async function submitQuestion(card, questionId) {
+  const answerField = card.querySelector(`[data-question-answer="${CSS.escape(questionId)}"]`);
+  const scopeField = card.querySelector(`[data-question-scope="${CSS.escape(questionId)}"]`);
+  const choiceField = card.querySelector(`[data-question-choice="${CSS.escape(questionId)}"]`);
+  const answer = String(choiceField?.value || answerField?.value || '').trim();
+  if (!answer) {
+    showToast('Add an answer before resuming this application.', true);
+    return;
+  }
+  const button = card.querySelector(`[data-question-submit="${CSS.escape(questionId)}"]`);
+  if (button) button.disabled = true;
+  try {
+    const payload = await requestJson('/api/questions/answer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: questionId, queueId: card.dataset.queueId, answer, scope: scopeField?.value || 'role' }),
+    });
+    await loadQueue({ quiet: true });
+    showToast(payload.resuming ? 'Answer saved. The application is resuming.' : 'Answer saved.');
+  } catch (error) {
+    if (button) button.disabled = false;
+    showToast(error instanceof Error ? error.message : String(error), true);
   }
 }
 
@@ -413,6 +532,8 @@ function openSnoozeDialog(id) {
 }
 
 elements.refreshButton.addEventListener('click', refreshQueue);
+elements.clearQueueButton.addEventListener('click', clearTodayQueue);
+elements.openHandoffsButton.addEventListener('click', openHandoffs);
 elements.laneSelect.addEventListener('change', () => {
   ui.lane = elements.laneSelect.value;
   renderQueue();
@@ -450,6 +571,13 @@ elements.queueList.addEventListener('click', (event) => {
   }
   const emptyRefresh = event.target instanceof Element ? event.target.closest('[data-empty-refresh]') : null;
   if (emptyRefresh) refreshQueue();
+});
+elements.questionList.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target.closest('[data-question-submit]') : null;
+  if (!target) return;
+  const card = target.closest('[data-question-id]');
+  const questionId = target.dataset.questionSubmit;
+  if (card && questionId) submitQuestion(card, questionId);
 });
 elements.snoozeForm.addEventListener('submit', (event) => {
   if (event.submitter?.value !== 'confirm') {
