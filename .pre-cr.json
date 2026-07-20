@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "testCommand": "node doctor.mjs",
+  "coveragePaths": [],
+  "coverageFormat": "auto",
+  "threshold": 0,
+  "checks": {
+    "coverage": false,
+    "security": true,
+    "checklist": true
+  },
+  "excludePatterns": [
+    "**/node_modules/**",
+    "**/.quality-runner/**"
+  ]
+}

@@ -12,7 +12,17 @@ data/gmail-state.json
 data/gmail-organizer-state.json
 data/outreach-state.json
 data/outreach-contacts.json
+data/application-policy.json
+data/application-question-ledger.json
+data/application-runs.json
+data/application-clear-state.json
+data/application-clear.lock
+data/application-handoff-session.json
+data/application-handoff.lock
+data/.queue-health.lock
 data/.job-queue.lock
+data/cache/
+data/pdf-index.tsv
 reports/*.md
 !reports/.gitkeep
 output/*
