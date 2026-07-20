@@ -2,6 +2,7 @@
 
 ## Current State
 
+- Cerebras added to `portals.yml` tracked_companies (Ashby board, verified live via Playwright 2026-07-19). Initial scan surfaced 10 early-career-adjacent candidates in `data/pipeline.md`; all 10 failed the pipeline mode's triage gate (scores 2.0-3.2/5, all FAIL/SKIP) — mostly hidden 3-6+ YOE minimums and Toronto-office Canadian work-auth requirements despite non-senior titles. No full evaluations or reports generated (below the 3.8 PASS/MARGINAL threshold); tracker entries #87-#96 recorded as SKIP with `Triage:` notes. `applications.md` now has 89 entries, pipeline verified clean.
 - Post-application outreach and Firecrawl-backed public contact discovery are implemented in commits `0fabef4` and `cbb62fd`; the authorized queue worker now invokes one bounded outreach pass after any batch with a confirmed submission in `722ae19`.
 - Queue `Applied`, local confirmed application runs, and matched Gmail confirmation messages feed one idempotent outreach record per company and role.
 - Email is fail-closed to `jakyejobs@gmail.com`; LinkedIn output remains a manual draft.
@@ -12,6 +13,11 @@
 - Current local outreach state has three records, zero sends, two blocked malformed aggregate-alert identities, and one valid Amazon application with eight candidates and two ranked LinkedIn drafts.
 - The verified project-accomplishment ledger is `config/project-accomplishment-ledger.json`: 31 researched entries, 29 approved answer atoms, and 2 intentionally excluded planning/superseded entries. All absolute source references resolve locally.
 - Job-aware accomplishment selection is implemented in `ef5390a`; the queue passes each role's lane and posting description into the ATS adapters.
+- ATS post-submit evidence now classifies explicit possible-spam responses as terminal `blocked_by_antispam`; `application-queue.mjs handoff --queue-id <id>` provides an explicit visible-browser CAPTCHA/Submit handoff without automatic retries.
+- The daily clear workflow now refreshes first, selects up to six active high-fit supported-ATS roles with one role per company, generates verified resume/cover-letter artifacts, and records progress in `data/application-clear-state.json` behind a process lock.
+- Question blockers are persisted as `blocked_by_question` with role-scoped context/options and resume through the queue UI; CAPTCHA, MFA, anti-spam, and uncertain submissions use a single dedicated Chrome Beta handoff session and never trigger outreach without confirmation evidence.
+- Queue freshness now has a browserless-first `node queue.mjs health` sweep: ATS API checks, lightweight HTTP checks, optional `--browser` fallback, restricted-source skips, and explicit `--apply` before confirmed expired roles become `stale`.
+- `cv.md` now holds the full long-form CV (published PyPI/npm/MCP packages, the complete project inventory, expanded experience bullets, and Leadership & Community / Awards & Honors sections merged in from `portfolio/dist/docs/Jakye_Amos_Comprehensive_CV.pdf`) instead of a resume-length summary; it still satisfies the `## WORK EXPERIENCE` / `## PROJECTS` header contract that `apply/application-artifacts.mjs` and `resume-contract.mjs` parse, verified by regenerating tailored resume markdown for all six lanes with zero failures.
 
 ## Current Position
 
@@ -19,21 +25,28 @@
 - The processor searches for public recruiter, hiring-manager, and team evidence plus verified first-party Gmail relationships after application signals; `data/outreach-contacts.json` remains a supplement/correction manifest.
 - Warm-network discovery reads only Gmail headers/IDs, never stores message bodies, and uses configured Amazon/CWRU sources to find relevant public recruiter, hiring-manager, and team signals without scraping LinkedIn or auto-messaging.
 - Dogfood found and fixed a result-preservation defect in `cbb62fd`: scraped/search contact candidates now survive deduplication and retain search-result identity metadata.
-- The autonomous application worker preserves the existing fail-closed submission states and triggers outreach only for confirmed `submitted` results; dry runs, blocked, failed, and `submission_unknown` outcomes do not trigger it.
+- The autonomous application worker preserves fail-closed submission states and triggers outreach only for confirmed `submitted` results; dry runs, blocked, failed, anti-spam, and `submission_unknown` outcomes do not trigger it.
+- The Ramp test is retained as `blocked_by_antispam` with sanitized evidence; Deepgram remains `submission_unknown` and was not retried.
 - The queue UI exposes outreach status, verified-email state, follow-up dates, and LinkedIn drafts.
 - Follow-ups are scheduled five business days after a send and stop on replies, bounces, opt-outs, rejection, closed roles, or pause.
 - ATS adapters now select an approved accomplishment from the project ledger using the queue lane and job description; explicit scoped answers in `data/application-question-ledger.json` override that selection.
+- The queue UI exposes `Clear today's queue`, application progress, question answers/resume, handoff tabs, and sanitized application status through `/api/applications/clear`, `/api/applications/status`, `/api/questions/answer`, `/api/handoffs`, and `/api/handoffs/open`; it reuses the existing queue tab/server surface.
+- `queue.mjs verify` remains structural; `queue.mjs health --limit 100` is a dry-run freshness report, while `queue.mjs health --all --apply` performs the explicit queue-wide stale update. LinkedIn and TeamWork Online alert URLs are never crawled.
 
 ## Next Step
 
-1. Review the two Amazon LinkedIn drafts in the queue UI and send manually if they are relevant; no email is pending because Gmail contained no Amazon relationship thread and no public address was verified.
-2. Add any former Amazon manager, mentor, or teammate to `data/outreach-contacts.json` only if the identity and professional relationship are known; the resolver will then rank the warm contact against public hiring contacts.
-3. Keep accomplishment answers current by adding only verified outcomes/status changes to the project ledger; do not replace the lane selector with a single global answer.
-4. Complete the two-email ramp only after reviewing the first live sends.
+1. Run `node application-queue.mjs clear --limit 6` or use `Clear today's queue` when Gmail/network access is available; the current sandbox dry run found no eligible active supported-ATS roles because liveness is uncertain and prior terminal blockers are protected.
+2. Complete any question cards in the queue UI; only those answers resume their specific role and role-scoped answers do not leak to other applications.
+3. Use the explicit Ramp handoff only if you want to complete the application manually after solving reCAPTCHA: `node application-queue.mjs handoff --queue-id 088a7ba9f8ac89514a74 --timeout 600`.
+4. Keep accomplishment answers current by adding only verified outcomes/status changes to the project ledger; do not replace the lane selector with a single global answer.
 
 ## Validation
 
-- 65 repository tests pass, including the job-aware project-accomplishment selector and adapter integration, Gmail relationship extraction, Amazon/CWRU network queries, employer-domain email validation, mocked search-plus-scrape discovery, and the autonomous post-submission outreach trigger contract.
+- 80 of 82 repository tests pass; the same pre-existing live contact-discovery fixture fails at `tests/contact-discovery.test.mjs:109` (`no_contacts` vs `found`) and one Greenhouse localhost test is sandbox-skipped. The focused queue/application/health slice passes, including five new health tests.
+- The adapter/application syntax checks, `git diff --check`, anti-spam detection tests, queue handoff guard, and state readback pass.
 - Live discovery against the current valid Amazon record completed with 2 public searches, 4 warm-network searches, 19 retained source URLs, 8 ranked candidates, and 0 emails sent.
-- JavaScript syntax checks, `git diff --check`, queue verification, doctor, project-ledger source validation, and the no-network outreach dry run pass.
-- Doctor reports only the existing warning that Playwright MCP tools are not configured.
+- JavaScript syntax checks, `git diff --check`, queue verification, application status, project-ledger source validation, and the no-network application clear and queue health dry runs pass; neither dry run submitted applications or sent outreach.
+- Doctor reports the existing Playwright Chromium installation issue and Playwright MCP warning; the adapters can still target the user’s installed Chrome Beta for visible handoffs, but a bundled Chromium install remains a prerequisite for the fallback browser path.
+- `cv-sync-check.mjs`, `resume-audit.mjs`, and the `resume-audit`/`resume-contract` test suites pass against the rewritten full `cv.md`.
+- New script `generate-full-cv.mjs` renders `cv.md` verbatim (no lane truncation) to `output/Jakye_Amos_Full_CV.pdf` via the same `renderHtmlToPdf` ATS-safe pipeline `apply/application-artifacts.mjs` uses, reusing `templates/cv-template.html`'s CSS; it intentionally bypasses `generate-pdf.mjs`'s CLI-only section-order check (mirroring how the tailored-resume path already calls `renderHtmlToPdf` directly) since the full CV keeps Skills near the top rather than the tailored templates' Skills-last convention.
+- `output/canonical-base.html` (source of `output/Jakye_Amos_Canonical_Base_Resume.pdf`, the default artifact `resume-contract.mjs` points to) is a fully-rendered static file, hand-edited, not template-driven. Refreshed its Skills lines to match `cv.md` (added R, MATLAB, Express, tRPC, SQLite, Git) and appended "Amazon Future Engineer Scholar (2022)" to the Education line; re-rendered via a direct `renderHtmlToPdf` call (same order-check bypass as above) — still fits on 1 page with margin to spare. Any per-application `resume-manifest.json` that had hash-pinned the old PDF will now correctly detect it as stale on next use.
