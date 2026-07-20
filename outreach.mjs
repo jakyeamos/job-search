@@ -14,6 +14,7 @@ import {
   discoverContactsForApplication,
   isDiscoverableApplication,
 } from './contact-discovery.mjs';
+import { discoverWarmContactsForApplication } from './relationship-discovery.mjs';
 import { getMessageBody, isAuthenticEmail } from './plugins/gmail/_helpers.mjs';
 import { loadDotenvOnce } from './plugins/_engine.mjs';
 import {
@@ -47,6 +48,12 @@ const APPLICATION_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
 const STATE_PATH = path.join(ROOT, OUTREACH_STATE_PATH);
 const CONTACTS_PATH = path.join(ROOT, OUTREACH_CONTACTS_PATH);
 const CONFIRMATION_QUERY = 'in:anywhere {subject:"application received" subject:"thank you for applying" subject:"thanks for applying" subject:"application submitted" subject:"we received your application"} newer_than:30d';
+const DISCOVERY_PIPELINE_VERSION = 6;
+
+/** @typedef {{
+ *  listMessages: (query: string, options?: { limit?: number }) => Promise<Array<{ id: string, threadId?: string }>>,
+ *  getMessage: (id: string, format?: string) => Promise<Record<string, unknown>>,
+ * }} RelationshipClient */
 
 /** @param {string[]} args @param {string} flag @param {string} fallback */
 function readFlag(args, flag, fallback = '') {
@@ -130,8 +137,8 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
   return record;
 }
 
-/** @param {Record<string, unknown>} record @param {Record<string, unknown>} item @param {boolean} dryRun */
-async function discoverForRecord(record, item, dryRun) {
+/** @param {Record<string, unknown>} record @param {Record<string, unknown>} item @param {boolean} dryRun @param {{ gmailClient?: RelationshipClient | null }} [options] */
+async function discoverForRecord(record, item, dryRun, options = {}) {
   if (record.status === 'paused' || record.status === 'suppressed' || record.status === 'needs_application_identity') {
     return { status: 'skipped', reason: `record status is ${record.status}`, contacts: [], sources: [], queries: [], errors: [] };
   }
@@ -149,7 +156,10 @@ async function discoverForRecord(record, item, dryRun) {
   }
   const attemptedAt = String(record.discovery?.attemptedAt || '');
   const age = attemptedAt ? Date.now() - new Date(attemptedAt).getTime() : Number.POSITIVE_INFINITY;
-  if (Number.isFinite(age) && age < 7 * 24 * 60 * 60 * 1000 && Array.isArray(record.discoveredContacts)) {
+  if (Number.isFinite(age)
+    && age < 7 * 24 * 60 * 60 * 1000
+    && record.discovery?.pipelineVersion === DISCOVERY_PIPELINE_VERSION
+    && Array.isArray(record.discoveredContacts)) {
     return {
       status: String(record.discovery?.status || 'cached'),
       reason: 'recent discovery result reused',
@@ -159,10 +169,31 @@ async function discoverForRecord(record, item, dryRun) {
       errors: Array.isArray(record.discovery?.errors) ? record.discovery.errors : [],
     };
   }
-  const result = await discoverContactsForApplication(item, { dryRun });
+  const publicResult = await discoverContactsForApplication(item, { dryRun });
+  const warmResult = await discoverWarmContactsForApplication(item, loadProfile(ROOT), {
+    dryRun,
+    gmailClient: options.gmailClient || null,
+  });
+  const result = {
+    status: publicResult.contacts.length || warmResult.contacts.length
+      ? 'found'
+      : publicResult.status === 'unavailable' && warmResult.status === 'no_contacts'
+        ? 'unavailable'
+        : publicResult.status,
+    reason: [publicResult.reason, warmResult.reason].filter(Boolean).join('; '),
+    contacts: [...publicResult.contacts, ...warmResult.contacts],
+    queries: [...publicResult.queries, ...warmResult.gmailQueries, ...warmResult.webQueries],
+    sources: [...new Set([...publicResult.sources, ...warmResult.sources])],
+    errors: [...new Set([...publicResult.errors, ...warmResult.errors])],
+    phases: {
+      public: publicResult,
+      warmNetwork: warmResult,
+    },
+  };
   if (!dryRun) {
     record.discoveredContacts = result.contacts;
     record.discovery = {
+      pipelineVersion: DISCOVERY_PIPELINE_VERSION,
       status: result.status,
       attemptedAt: new Date().toISOString(),
       candidateCount: result.contacts.length,
@@ -171,6 +202,7 @@ async function discoverForRecord(record, item, dryRun) {
       queries: result.queries,
       sources: result.sources,
       errors: result.errors,
+      phases: result.phases,
     };
   }
   return result;
@@ -182,6 +214,7 @@ function printPrepared(item, record) {
   console.log(`  Search: ${record.searchQuery || buildContactSearchQuery(item)}`);
   for (const contact of record.contacts || []) {
     console.log(`  ${contact.type}: ${contact.name} — ${contact.title}`);
+    if (contact.relationshipLabel) console.log(`    Relationship: ${contact.relationshipLabel}`);
     console.log(`    Email: ${contact.email || 'not eligible'}${contact.emailVerified ? ' (verified public professional)' : ''}`);
     if (contact.initial?.subject) console.log(`    Email subject: ${contact.initial.subject}`);
     if (contact.linkedinDraft) console.log(`    LinkedIn draft: ${contact.linkedinDraft}`);
@@ -258,6 +291,19 @@ async function scanConfirmationEmails(state, items, dryRun) {
   }
   state.scan = { ...(state.scan || {}), confirmationAt: new Date().toISOString(), confirmationCount: matched };
   return { scanned: true, matched, reason: `checked ${messages.length} confirmation message(s)` };
+}
+
+/** @param {boolean} dryRun */
+async function createRelationshipClient(dryRun) {
+  if (dryRun || !process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) return null;
+  try {
+    const client = await createGmailClient({ expectedAccount: TARGET_GMAIL_ACCOUNT });
+    await client.verifyAccount();
+    return client;
+  } catch (error) {
+    console.log(`  Warm-network Gmail search unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 /** @param {Record<string, unknown>} state @param {Array<Record<string, unknown>>} items @param {boolean} dryRun */
@@ -451,12 +497,13 @@ async function processOutreach(dryRun) {
       confirmation = { scanned: false, matched: 0, reason: error instanceof Error ? error.message : String(error) };
     }
   }
+  const relationshipClient = await createRelationshipClient(dryRun);
   const discoveries = [];
   for (const record of state.records || []) {
     const item = items.find((candidate) => applicationKey(candidate) === record.key);
     if (!item) continue;
     try {
-      const result = await discoverForRecord(record, item, dryRun);
+      const result = await discoverForRecord(record, item, dryRun, { gmailClient: relationshipClient });
       discoveries.push({ company: item.company, title: item.title, ...result });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -520,6 +567,7 @@ async function processOutreach(dryRun) {
 
 /** @param {string} applicationId @param {boolean} dryRun */
 async function discover(applicationId, dryRun) {
+  await loadDotenvOnce();
   const queue = readQueueState(QUEUE_PATH);
   const items = Array.isArray(queue.items) ? queue.items : [];
   const item = items.find((candidate) => candidate.id === applicationId || applicationKey(candidate) === applicationId);
@@ -529,7 +577,8 @@ async function discover(applicationId, dryRun) {
     source: 'manual_discovery',
     at: new Date().toISOString(),
   });
-  const result = await discoverForRecord(record, item, dryRun);
+  const relationshipClient = await createRelationshipClient(dryRun);
+  const result = await discoverForRecord(record, item, dryRun, { gmailClient: relationshipClient });
   if (!dryRun) {
     prepareRecord(state, item, true, Array.isArray(record.discoveredContacts) ? record.discoveredContacts : []);
     saveOutreachState(STATE_PATH, state);

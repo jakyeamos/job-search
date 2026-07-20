@@ -27,6 +27,11 @@ const GENERIC_MAILBOX_RE = /^(?:careers?|jobs?|recruit(?:ing|ment)|talent|hiring
 const ROLE_RE = /(?:recruit|talent|hiring|people|engineering|software|technical|product|developer|cto|founder|manager|director|head|vice president|vp)/i;
 const AGGREGATE_COMPANY_RE = /\band\s+\d+\s+more\b|\b\d+\s+more\s+jobs?\b|\bfor\s+you\b|\bapply\s+now\b/i;
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const COMPANY_EMAIL_ALIASES = new Map([
+  ['amazon', ['amazon.com', 'amazon.jobs', 'aws.amazon.com']],
+  ['case western', ['case.edu']],
+  ['cwru', ['case.edu']],
+]);
 
 /** @param {string} value */
 function lower(value) { return normalizeText(value).toLowerCase(); }
@@ -83,6 +88,25 @@ function sourceTypeForUrl(url) {
 
 /** @param {string} url */
 function emailDomain(url) { return lower(url.split('@')[1] || ''); }
+
+/** @param {string} email @param {Record<string, unknown>} item */
+function employerEmailDomainMatches(email, item) {
+  const domain = emailDomain(email);
+  const urls = [item.companyWebsite, item.companyUrl, item.employerUrl, item.applyUrl, item.canonicalUrl]
+    .map(stringValue)
+    .filter(Boolean);
+  for (const url of urls) {
+    try {
+      const host = rootHost(new URL(url).hostname);
+      if (domain === host || domain.endsWith(`.${host}`) || host.endsWith(`.${domain}`)) return true;
+    } catch { /* non-URL company metadata is ignored */ }
+  }
+  const company = lower(item.company);
+  for (const [token, aliases] of COMPANY_EMAIL_ALIASES) {
+    if (company.includes(token) && aliases.includes(domain)) return true;
+  }
+  return false;
+}
 
 /** @param {string} text */
 function cleanLine(text) {
@@ -158,12 +182,18 @@ function contactsFromResult(result, item) {
   if (isLinkedInUrl(url)) {
     const identity = identityFromText(title, description);
     if (identity.name && identity.title) {
+      const publicEmail = extractEmails(evidence).find((email) => {
+        if (FREE_EMAIL_DOMAINS.has(emailDomain(email))) return false;
+        return employerEmailDomainMatches(email, item) || /(?:email|contact|reach|mail)\s*[:\-]/i.test(evidence);
+      }) || null;
       contacts.push({
         name: identity.name,
         title: identity.title,
         company: stringValue(item.company),
-        email: null,
-        emailVerified: false,
+        email: publicEmail,
+        emailVerified: Boolean(publicEmail),
+        guessed: false,
+        private: false,
         publicProfessional: true,
         sourceType: 'public-profile',
         sourceUrl: url,

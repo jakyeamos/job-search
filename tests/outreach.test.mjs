@@ -68,7 +68,32 @@ test('contact ranking keeps public professional emails and rejects guessed/priva
   assert.equal(contacts.find((contact) => contact.name === 'Guessed Person')?.email, null);
   assert.equal(contacts.find((contact) => contact.name === 'Private Person')?.email, null);
   assert.equal(contacts.some((contact) => contact.name === 'Other Company'), false);
+  assert.equal(rankContacts([verifiedContact({ title: 'Technical Recruitment Manager' })], item)[0].type, 'recruiter');
   assert.equal(selectContacts(contacts, 2).length, 2);
+});
+
+test('contact ranking permits a verified first-party Amazon relationship without a public URL', () => {
+  const contact = rankContacts([{
+    name: 'Taylor Amazon',
+    title: 'Existing Amazon connection',
+    company: 'Example AI',
+    email: 'taylor@amazon.com',
+    emailVerified: true,
+    emailVerificationType: 'first-party-relationship',
+    publicProfessional: true,
+    relationshipVerified: true,
+    relationshipType: 'existing_amazon_relationship',
+    relationshipLabel: 'Existing Amazon connection',
+    connection: true,
+    sourceType: 'first-party-relationship',
+    sourceMessageId: 'gmail-message-1',
+    roleRelevance: 'medium',
+  }], item)[0];
+  assert.equal(contact.emailEligible, true);
+  assert.equal(contact.type, 'connection');
+  const message = buildEmailMessage(profile, item, contact);
+  assert.match(message.body, /existing amazon connection/i);
+  assert.equal(validateMessage(message.subject, message.body).ok, true);
 });
 
 test('message generation stays within outreach safety rules', () => {

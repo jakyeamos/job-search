@@ -67,6 +67,21 @@ test('LinkedIn search results produce manual-only contact drafts', () => {
   assert.equal(contacts[0].sourceType, 'public-profile');
 });
 
+test('LinkedIn result snippets preserve explicitly published employer emails', () => {
+  const contacts = extractPublicContacts([{
+    url: 'https://www.linkedin.com/in/stephanie-example',
+    title: 'Stephanie Example - Senior Technical Recruiter at Amazon Web Services | LinkedIn',
+    description: 'Senior Technical Recruiter at Amazon Web Services. Contact: stephanie@amazon.com',
+  }], {
+    company: 'Amazon Web Services, Inc.',
+    title: 'Big Data Engineer II',
+    applyUrl: 'https://www.amazon.jobs/en/jobs/123/big-data-engineer-ii',
+  });
+  assert.equal(contacts.length, 1);
+  assert.equal(contacts[0].email, 'stephanie@amazon.com');
+  assert.equal(contacts[0].emailVerified, true);
+});
+
 test('live discovery preserves contacts collected from search and scrape results', async () => {
   const calls = [];
   const result = await discoverContactsForApplication(item, {

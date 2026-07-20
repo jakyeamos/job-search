@@ -37,6 +37,7 @@ const TITLE_STOPWORDS = new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on'
 const COMPANY_STOPWORDS = new Set(['and', 'more', 'jobs', 'job', 'for', 'you', 'apply', 'now', 'new', 'york', 'your']);
 const AGGREGATE_COMPANY_RE = /\band\s+\d+\s+more\b|\b\d+\s+more\s+jobs?\b|\bfor\s+you\b|\bapply\s+now\b/i;
 const BLOCKED_MESSAGE_RE = /(?:\+?1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}|expected\s+(?:(?:may|spring|fall|summer|winter)\s+)?20\d{2}|(?:spring|fall|summer|winter)\s+20\d{2}|\btwo\s+courses?\s+remaining\b)/i;
+const FIRST_PARTY_RELATIONSHIP_SOURCE = 'first-party-relationship';
 
 /** @param {string} value */
 function lower(value) { return normalizeText(value).toLowerCase(); }
@@ -181,7 +182,7 @@ function emailDomain(email) { return lower(email.split('@')[1] || ''); }
 function contactType(contact) {
   const title = lower(contact.title);
   if (/(?:hiring\s+manager|engineering\s+manager|team\s+lead|head\s+of|director|vp\s+engineering|founder|cto)/i.test(title)) return 'hiring_manager';
-  if (/(?:recruiter|talent\s+(?:acquisition|partner)|sourcing|people\s+partner)/i.test(title)) return 'recruiter';
+  if (/(?:recruit(?:er|ing|ment)|talent\s+(?:acquisition|partner)|sourcing|people\s+partner)/i.test(title)) return 'recruiter';
   if (contact.connection === true) return 'connection';
   return 'peer';
 }
@@ -204,6 +205,11 @@ function normalizeContact(contact, item) {
   const profileUrl = normalizeUrl(asString(contact.profileUrl));
   const sourceType = lower(contact.sourceType || contact.source || '');
   const domain = emailDomain(email);
+  const publicEvidenceEligible = Boolean(sourceUrl)
+    && ['company-site', 'job-posting', 'public-profile', 'application-contact', 'user-provided'].includes(sourceType);
+  const firstPartyEvidenceEligible = sourceType === FIRST_PARTY_RELATIONSHIP_SOURCE
+    && asBoolean(contact.relationshipVerified)
+    && Boolean(asString(contact.sourceMessageId));
   const emailEligible = Boolean(email)
     && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     && !FREE_EMAIL_DOMAINS.has(domain)
@@ -211,8 +217,7 @@ function normalizeContact(contact, item) {
     && contact.publicProfessional !== false
     && contact.guessed !== true
     && contact.private !== true
-    && Boolean(sourceUrl)
-    && ['company-site', 'job-posting', 'public-profile', 'application-contact', 'user-provided'].includes(sourceType);
+    && (publicEvidenceEligible || firstPartyEvidenceEligible);
   const relevance = lower(contact.roleRelevance || contact.relevance || 'high');
   const type = contactType(contact);
   const baseScore = type === 'hiring_manager' ? 100 : type === 'recruiter' ? 96 : type === 'connection' ? 91 : 85;
@@ -233,6 +238,14 @@ function normalizeContact(contact, item) {
     type,
     score,
     emailEligible,
+    relationshipType: asString(contact.relationshipType) || null,
+    relationshipLabel: asString(contact.relationshipLabel) || null,
+    relationshipSource: asString(contact.relationshipSource) || null,
+    relationshipEvidenceUrl: normalizeUrl(asString(contact.relationshipEvidenceUrl)) || null,
+    relationshipVerified: asBoolean(contact.relationshipVerified),
+    connection: contact.connection === true,
+    sourceMessageId: asString(contact.sourceMessageId) || null,
+    sourceMailbox: asString(contact.sourceMailbox) || null,
   };
 }
 
@@ -242,7 +255,8 @@ export function rankContacts(contacts, item) {
     .filter((contact) => isRecord(contact)
       && asString(contact.name)
       && asString(contact.title)
-      && (asString(contact.sourceUrl || contact.profileUrl) !== '')
+      && (asString(contact.sourceUrl || contact.profileUrl)
+        || (lower(contact.sourceType || contact.source || '') === FIRST_PARTY_RELATIONSHIP_SOURCE && asString(contact.sourceMessageId)))
       && companyMatches(contact, item)
       && lower(contact.roleRelevance || contact.relevance || 'high') !== 'low')
     .map((contact) => normalizeContact(contact, item));
@@ -259,16 +273,17 @@ export function rankContacts(contacts, item) {
 export function selectContacts(contacts, limit = 2) {
   const selected = [];
   let recruiterSelected = false;
-  let primarySelected = false;
+  let hiringManagerSelected = false;
   for (const contact of contacts) {
     if (selected.length >= Math.min(2, Math.max(1, limit))) break;
     if (contact.type === 'recruiter') {
       if (recruiterSelected) continue;
       recruiterSelected = true;
     }
-    const primary = contact.type === 'hiring_manager' || contact.type === 'recruiter';
-    if (primary && primarySelected) continue;
-    if (primary) primarySelected = true;
+    if (contact.type === 'hiring_manager') {
+      if (hiringManagerSelected) continue;
+      hiringManagerSelected = true;
+    }
     selected.push(contact);
   }
   return selected;
@@ -317,13 +332,20 @@ export function buildEmailMessage(profile, item, contact, kind = 'initial') {
   const hook = roleHook(item);
   const proof = proofPoint(profile, item);
   const firstName = asString(contact.name).split(/\s+/)[0] || 'there';
+  const relationshipLabel = asString(contact.relationshipLabel);
+  const warmBridge = contact.connection === true && relationshipLabel
+    ? `Because of our ${relationshipLabel.toLowerCase()}, I wanted to reach out directly.`
+    : '';
   if (kind === 'followup') {
     const subject = `Following up — ${title} at ${company}`;
-    const body = `Hi ${firstName},\n\nJust following up on my application for the ${title} role at ${company}. The work around ${hook} is especially close to ${proof.toLowerCase().replace(/[.]$/, '')}. Happy to send anything else that would be useful.\n\nThanks,\n${candidateName}`;
+    const body = `Hi ${firstName},\n\nJust following up on my application for the ${title} role at ${company}. ${warmBridge || `The work around ${hook} is especially close to ${proof.toLowerCase().replace(/[.]$/, '')}.`} Happy to send anything else that would be useful.\n\nThanks,\n${candidateName}`;
     return { subject, body, hash: messageHash(subject, body), kind };
   }
   const subject = `Applied for ${title} at ${company}`;
-  const body = `Hi ${firstName},\n\nI applied for the ${title} role at ${company} and wanted to reach out because the focus on ${hook} lines up with the work I have been doing. ${proof}.\n\nI would be glad to share more context if useful. My work is here: ${asString(profile.candidate?.portfolio_url) || 'https://jakye.netlify.app/'}\n\nThanks for taking a look,\n${candidateName}`;
+  const opening = warmBridge
+    ? `I recently applied for the ${title} role at ${company}. ${warmBridge}`
+    : `I applied for the ${title} role at ${company} and wanted to reach out because the focus on ${hook} lines up with the work I have been doing.`;
+  const body = `Hi ${firstName},\n\n${opening} ${proof}.\n\nI would be glad to share more context if useful. My work is here: ${asString(profile.candidate?.portfolio_url) || 'https://jakye.netlify.app/'}\n\nThanks for taking a look,\n${candidateName}`;
   return { subject, body, hash: messageHash(subject, body), kind };
 }
 
@@ -331,9 +353,13 @@ export function buildEmailMessage(profile, item, contact, kind = 'initial') {
 export function buildLinkedInDraft(profile, item, contact) {
   const firstName = asString(contact.name).split(/\s+/)[0] || 'there';
   const title = asString(item.title) || 'the role';
-  const company = asString(item.company) || 'your team';
+  const company = asString(item.company).replace(/[.]+$/, '') || 'your team';
   const hook = roleHook(item);
-  const message = `Hi ${firstName} — I applied for ${title} at ${company}. I have been building ${hook} and thought the overlap was worth a note. I would enjoy hearing how the team approaches it.`;
+  const relationshipLabel = asString(contact.relationshipLabel);
+  const bridge = contact.connection === true && relationshipLabel
+    ? `We have an existing ${relationshipLabel.toLowerCase()}, so I wanted to say hello.`
+    : `I have been building ${hook} and thought the overlap was worth a note.`;
+  const message = `Hi ${firstName} — I applied for ${title} at ${company}. ${bridge} I would enjoy hearing how the team approaches it.`;
   return message.length <= 300 ? message : `${message.slice(0, 297).trimEnd()}...`;
 }
 
