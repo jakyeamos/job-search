@@ -4,6 +4,18 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const DEFAULT_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
+export const TERMINAL_RUN_STATES = new Set([
+  'started',
+  'blocked_by_question',
+  'blocked_by_human',
+  'submitted',
+  'submission_unknown',
+  'blocked_by_antispam',
+  'blocked_by_captcha',
+  'blocked_by_mfa',
+  'human_handoff_timeout',
+  'human_handoff_closed',
+]);
 
 /** @param {string} file */
 export function loadRuns(file = DEFAULT_RUNS_PATH) {
@@ -30,17 +42,30 @@ export function saveRuns(file, state) {
 }
 
 /** @param {string} file @param {string} key @param {Record<string, unknown>} metadata */
-export function beginRun(file, key, metadata = {}) {
+export function beginRun(file, key, metadata = {}, options = {}) {
   const state = loadRuns(file);
   const existing = state.runs.find((run) => run.key === key);
-  if (existing && ['started', 'submitted', 'submission_unknown'].includes(existing.state)) {
+  const allowQuestionResume = options.allowQuestionResume === true && existing?.state === 'blocked_by_question';
+  if (existing && TERMINAL_RUN_STATES.has(existing.state) && !allowQuestionResume) {
     return { ok: false, run: existing, reason: `run already ${existing.state}` };
+  }
+  const attemptHistory = Array.isArray(existing?.attemptHistory) ? [...existing.attemptHistory] : [];
+  if (existing && existing.state !== 'started') {
+    attemptHistory.push({
+      attempt: Number(existing.attempt || 1),
+      state: existing.state,
+      startedAt: existing.startedAt || null,
+      finishedAt: existing.finishedAt || null,
+      result: existing.result || null,
+    });
   }
   const run = {
     key,
     ...metadata,
     state: 'started',
     attempt: Number(existing?.attempt || 0) + 1,
+    attemptHistory,
+    resumedFrom: allowQuestionResume ? existing.state : null,
     startedAt: new Date().toISOString(),
     finishedAt: null,
     result: null,
