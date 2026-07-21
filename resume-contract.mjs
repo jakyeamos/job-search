@@ -23,6 +23,7 @@ const FALLBACK_LANE_PROJECTS = {
   product_full_stack: ['BidCamp', 'Hoopscout', 'Court Vision'],
   data_analytics: ['Dsci-proj', 'BBDSE/CourtIQ', 'Tenure'],
   solutions_forward_deployed: ['Forward Automations', 'Tenure', 'BidCamp'],
+  sports_analytics: ['BBDSE/CourtIQ', 'Court Vision', 'Fantasy'],
 };
 
 /** @param {unknown} value */

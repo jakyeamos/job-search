@@ -28,6 +28,7 @@ const LANE_PHRASES = {
   product_full_stack: 'full-stack product systems and customer workflows',
   data_analytics: 'data pipelines, analytics, and decision-support products',
   solutions_forward_deployed: 'customer-facing systems, integrations, and rapid product delivery',
+  sports_analytics: 'basketball and sports analytics, player-evaluation modeling, and decision-support products',
 };
 
 const FALLBACK_PROJECTS = {
@@ -37,6 +38,7 @@ const FALLBACK_PROJECTS = {
   product_full_stack: ['BidCamp', 'Hoopscout', 'Court Vision'],
   data_analytics: ['Dsci-proj', 'BBDSE/CourtIQ', 'Tenure'],
   solutions_forward_deployed: ['Forward Automations', 'Tenure', 'BidCamp'],
+  sports_analytics: ['BBDSE/CourtIQ', 'Court Vision', 'Fantasy'],
 };
 
 const PROJECT_ALIASES = {
@@ -53,6 +55,7 @@ const PROJECT_ALIASES = {
   remodelvision: ['remodelvision'],
   soundscape: ['soundscape'],
   'forward automations': ['forward automations'],
+  fantasy: ['fantasy', 'dynasty fantasy', 'fantasy football'],
 };
 
 const TARGET_KEYWORDS = [
@@ -89,6 +92,7 @@ const LANE_COMPETENCIES = {
   product_full_stack: ['Full-stack product engineering', 'TypeScript/React/Node', 'API design', 'PostgreSQL', 'Real-time systems', 'Customer workflows'],
   data_analytics: ['Data pipelines', 'Analytics', 'SQL', 'Decision-support systems', 'Python modeling', 'Evidence-based reporting'],
   solutions_forward_deployed: ['Client-facing engineering', 'Rapid prototyping', 'System integrations', 'Applied AI', 'Product delivery', 'Technical communication'],
+  sports_analytics: ['Basketball and sports analytics', 'Player-evaluation modeling', 'Python/R data pipelines', 'Full-stack product delivery', 'SQL and relational data', 'Decision-support systems'],
 };
 
 const GENERATED_RESUME_COMPACT_CSS = `<style id="career-ops-generated-compact">
@@ -115,6 +119,7 @@ const RESUME_PROJECT_SUMMARIES = {
   remodelvision: 'Built a working AI remodeling visualization and rough-cost-estimation pipeline with a Next.js product surface.',
   soundscape: 'Built a full-stack music social platform with Next.js, tRPC, Prisma, and web/mobile product surfaces.',
   'forward automations': 'Delivered client-facing MVPs and automation systems across healthcare, architecture, live events, and startup marketing.',
+  fantasy: 'Built a local-first dynasty fantasy-football intelligence app with a trade engine, dashboards, draft room, and ingestion workflows.',
 };
 
 /** @param {string} value */
@@ -347,6 +352,7 @@ function projectNamesForLane(profile, lane) {
 export function laneForItem(item, profile) {
   if (typeof item.lane === 'string' && item.lane) return item.lane;
   const text = `${item.title || ''} ${item.description || ''}`.toLowerCase();
+  if (/\bsport|basketball|football|baseball|hockey|soccer|\bnba\b|\bnfl\b|\bnhl\b|\bmlb\b|\bathletic|\bfront office\b/i.test(text)) return 'sports_analytics';
   if (/data|analytics|sql|warehouse|pipeline/.test(text)) return 'data_analytics';
   if (/client|solutions|forward|implementation|consult/.test(text)) return 'solutions_forward_deployed';
   if (/frontend|full[- ]stack|product/.test(text)) return 'product_full_stack';
