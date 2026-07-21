@@ -93,6 +93,30 @@ The report is JSON and intentionally excludes current field values. It is a
 read-only diagnostic; it does not log in, upload files, click options, or
 submit an application.
 
+### Human submission packets
+
+When the goal is to prepare an application rather than submit it, build a
+read-only packet. The packet opens the rendered application form, records the
+exact labels, required state, field kind, and visible choices, then reuses
+verified ledger/profile/project answers where they are compatible. It never
+fills, uploads, clicks an option, or clicks Submit.
+
+```bash
+node apply/application-packets.mjs --queue-id <queue-id>
+node apply/application-packets.mjs <application-url> \
+  --company "Example" --title "Backend Engineer" \
+  --job-description "..." --headed
+```
+
+Each packet writes `submission-packet.json` and a copy-ready
+`submission-packet.md` under `output/application-packets/`. Unknown required
+questions are recorded in `data/application-question-ledger.json` and remain
+unanswered instead of being guessed. A user answer saved with the ledger is
+reused for exact or conservatively similar question wording; the packet keeps
+the exact form occurrence and options so a semantic match cannot hide a
+conflicting field. Final personal, legal, consent, identity, CAPTCHA, and
+Submit/Apply decisions remain human work.
+
 ## Usage
 
 ```bash

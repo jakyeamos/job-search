@@ -18,6 +18,7 @@
     "reconcile": "node reconcile-pipeline.mjs",
     "pdf": "node generate-pdf.mjs",
     "application-artifacts": "node apply/application-artifacts.mjs",
+    "application-packet": "node apply/application-packets.mjs",
     "cover-letter": "node apply/application-artifacts.mjs build",
     "sync-check": "node cv-sync-check.mjs",
     "update:check": "node update-system.mjs check",

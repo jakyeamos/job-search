@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   answerQuestion,
   answerTable,
+  findReusableAnswer,
   isSensitiveQuestion,
   loadLedger,
   lookupAnswer,
@@ -78,6 +79,36 @@ test('question context retains options and supports role-scoped reuse', () => {
     answerQuestion(file, first.id, 'Pre-CR Suite', { scope: 'role', company: 'Acme', role: 'Backend Engineer' });
     assert.equal(lookupAnswer(first.question, loadLedger(file), { company: 'Acme', role: 'Backend Engineer' }), 'Pre-CR Suite');
     assert.equal(lookupAnswer(first.question, loadLedger(file), { company: 'Beta', role: 'Applied AI Engineer' }), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('semantically equivalent location questions reuse one canonical entry', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-semantic-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const first = recordQuestion(file, 'Where do you plan to work from?', { fieldKind: 'text' });
+    const secondQuestion = 'From where do you intend to work? Please note: employees must be based in the United States or Canada';
+    const second = recordQuestion(file, secondQuestion, { fieldKind: 'text' });
+    assert.equal(second.id, first.id);
+    assert.equal(loadLedger(file).entries.length, 1);
+    assert.deepEqual(loadLedger(file).entries[0].aliases, [secondQuestion]);
+  answerQuestion(file, first.id, 'Buffalo, NY', { scope: 'question' });
+  assert.equal(lookupAnswer(secondQuestion, loadLedger(file), { fieldKind: 'text' }), 'Buffalo, NY');
+  assert.equal(findReusableAnswer(secondQuestion, loadLedger(file), { fieldKind: 'text' }).matchType, 'alias');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('different semantic questions do not collapse into one ledger entry', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-distinct-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    recordQuestion(file, 'Where do you plan to work from?', { fieldKind: 'text' });
+    recordQuestion(file, 'What is your expected salary?', { fieldKind: 'text' });
+    assert.equal(loadLedger(file).entries.length, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

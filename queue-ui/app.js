@@ -214,7 +214,7 @@ function renderApplicationRun() {
   const run = ui.state?.applicationRun || {};
   const running = run.status === 'running';
   elements.clearQueueButton.disabled = running;
-  elements.clearQueueButton.textContent = running ? 'Clearing…' : 'Clear today’s queue';
+  elements.clearQueueButton.textContent = running ? 'Preparing…' : 'Prepare today’s packets';
   elements.applicationRunStatus.textContent = humanize(run.phase || run.status || 'idle');
   const current = run.current;
   const report = Array.isArray(run.report) ? run.report : [];
@@ -238,13 +238,13 @@ function renderQuestions() {
     const optionMarkup = options.length
       ? `<label class="question-field"><span>Known choices</span><select data-question-choice="${escapeHtml(question.id)}"><option value="">Choose a listed answer</option>${options.map((option) => `<option value="${escapeHtml(option)}"${option === initialAnswer ? ' selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`
       : '';
-    return `<article class="question-card" data-question-id="${escapeHtml(question.id)}" data-queue-id="${escapeHtml(question.queueId)}">
-      <div class="question-card-heading"><div><h3>${escapeHtml(question.role || 'Application question')}</h3><p>${escapeHtml(question.company || 'Company not parsed')} · ${escapeHtml(question.sensitivity || 'normal')} sensitivity</p></div><span class="tag">${escapeHtml(humanize(question.scope || 'role'))}</span></div>
+    return `<article class="question-card" data-question-id="${escapeHtml(question.id)}" data-queue-id="${escapeHtml(question.queueId)}" data-queue-ids="${escapeHtml((question.queueIds || [question.queueId]).join(','))}">
+      <div class="question-card-heading"><div><h3>${escapeHtml(question.role || 'Application question')}</h3><p>${escapeHtml(question.company || 'Company not parsed')} · ${escapeHtml(question.sensitivity || 'normal')} sensitivity${question.occurrenceCount > 1 ? ` · ${escapeHtml(String(question.occurrenceCount))} applications` : ''}</p></div><span class="tag">${escapeHtml(humanize(question.scope || 'question'))}</span></div>
       <p class="question-text">${escapeHtml(question.question)}</p>
       <p class="question-reason">${escapeHtml(question.reason || 'This field needs a factual answer before submission.')}</p>
       ${optionMarkup}
       <label class="question-field"><span>Your answer</span><textarea data-question-answer="${escapeHtml(question.id)}" rows="3" placeholder="Answer only what you know to be true">${escapeHtml(initialAnswer)}</textarea></label>
-      <div class="question-card-actions"><label class="question-scope"><span>Reuse at</span><select data-question-scope="${escapeHtml(question.id)}"><option value="role"${question.scope === 'role' ? ' selected' : ''}>This role</option><option value="company"${question.scope === 'company' ? ' selected' : ''}>This company</option></select></label><button class="button button-primary" type="button" data-question-submit="${escapeHtml(question.id)}">Save answer &amp; resume</button></div>
+      <div class="question-card-actions"><label class="question-scope"><span>Reuse at</span><select data-question-scope="${escapeHtml(question.id)}"><option value="question"${question.scope === 'question' ? ' selected' : ''}>Matching question</option><option value="role"${question.scope === 'role' ? ' selected' : ''}>This role</option><option value="company"${question.scope === 'company' ? ' selected' : ''}>This company</option></select></label><button class="button button-primary" type="button" data-question-submit="${escapeHtml(question.id)}">Save answer</button></div>
     </article>`;
   }).join('');
 }
@@ -292,10 +292,11 @@ function renderItem(item) {
           <p>Evidence: ${escapeHtml(item.fitConfidence || 'limited')} confidence · ${escapeHtml(item.liveness || 'unknown')} link</p>
         </details>
       </div>
-      <div class="queue-actions">
-        <a class="button button-primary" href="${escapeHtml(safeHref(item.applyUrl || item.canonicalUrl))}" target="_blank" rel="noopener">Open role</a>
-        <button class="button" type="button" data-action="applied" data-id="${escapeHtml(item.id)}">Applied</button>
-        <button class="button" type="button" data-action="snooze" data-id="${escapeHtml(item.id)}">Later</button>
+        <div class="queue-actions">
+          <a class="button button-primary" href="${escapeHtml(safeHref(item.applyUrl || item.canonicalUrl))}" target="_blank" rel="noopener">Open role</a>
+          <button class="button" type="button" data-action="applied" data-id="${escapeHtml(item.id)}">Applied</button>
+          <button class="button" type="button" data-action="packet" data-id="${escapeHtml(item.id)}">${item.applicationPacket?.status ? 'Refresh packet' : 'Prepare packet'}</button>
+          <button class="button" type="button" data-action="snooze" data-id="${escapeHtml(item.id)}">Later</button>
         <button class="button button-danger" type="button" data-action="skipped" data-id="${escapeHtml(item.id)}">Skip</button>
       </div>
     </article>`;
@@ -418,13 +419,13 @@ async function loadQueue({ quiet = false } = {}) {
 async function clearTodayQueue() {
   elements.clearQueueButton.disabled = true;
   try {
-    await requestJson('/api/applications/clear', {
+    await requestJson('/api/applications/packets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ limit: 6 }),
     });
     await loadQueue({ quiet: true });
-    showToast('Queue clear started. I’ll stop on questions or human handoffs.');
+    showToast('Packet preparation started. I’ll stop on unknown questions and human-only fields.');
   } catch (error) {
     elements.clearQueueButton.disabled = false;
     showToast(error instanceof Error ? error.message : String(error), true);
@@ -444,13 +445,35 @@ async function openHandoffs() {
   }
 }
 
+async function preparePacket(id) {
+  const row = document.querySelector(`[data-item-id="${CSS.escape(id)}"]`);
+  row?.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+  try {
+    const payload = await requestJson('/api/applications/packet', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ queueId: id }),
+    });
+    const markdown = String(payload.packet?.markdown || '');
+    if (markdown && navigator.clipboard?.writeText) await navigator.clipboard.writeText(markdown).catch(() => {});
+    ui.state = payload.state;
+    setConnection(true);
+    render();
+    showToast(markdown ? 'Packet prepared and copied. Final submission stays human-only.' : 'Packet prepared.');
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), true);
+    row?.querySelectorAll('button').forEach((button) => { button.disabled = false; });
+  }
+}
+
 async function submitQuestion(card, questionId) {
   const answerField = card.querySelector(`[data-question-answer="${CSS.escape(questionId)}"]`);
   const scopeField = card.querySelector(`[data-question-scope="${CSS.escape(questionId)}"]`);
   const choiceField = card.querySelector(`[data-question-choice="${CSS.escape(questionId)}"]`);
   const answer = String(choiceField?.value || answerField?.value || '').trim();
+  const queueIds = String(card.dataset.queueIds || card.dataset.queueId || '').split(',').map((value) => value.trim()).filter(Boolean);
   if (!answer) {
-    showToast('Add an answer before resuming this application.', true);
+    showToast('Add an answer before saving it to the ledger.', true);
     return;
   }
   const button = card.querySelector(`[data-question-submit="${CSS.escape(questionId)}"]`);
@@ -459,10 +482,10 @@ async function submitQuestion(card, questionId) {
     const payload = await requestJson('/api/questions/answer', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: questionId, queueId: card.dataset.queueId, answer, scope: scopeField?.value || 'role' }),
+      body: JSON.stringify({ id: questionId, queueIds, answer, scope: scopeField?.value || 'question' }),
     });
     await loadQueue({ quiet: true });
-    showToast(payload.resuming ? 'Answer saved. The application is resuming.' : 'Answer saved.');
+    showToast('Answer saved and will be reused in matching packets.');
   } catch (error) {
     if (button) button.disabled = false;
     showToast(error instanceof Error ? error.message : String(error), true);
@@ -566,6 +589,7 @@ elements.queueList.addEventListener('click', (event) => {
     const action = target.dataset.action;
     if (!id || !action) return;
     if (action === 'snooze') openSnoozeDialog(id);
+    else if (action === 'packet') preparePacket(id);
     else mutateItem(id, action);
     return;
   }

@@ -359,6 +359,7 @@ export function commonQuestions(profile) {
 export function answerFor(questionText, tables) {
   for (const table of tables) {
     for (const entry of table) {
+      if (typeof entry.match === 'function' && entry.match(questionText)) return entry.value;
       if (entry.re.test(questionText)) return entry.value;
     }
   }

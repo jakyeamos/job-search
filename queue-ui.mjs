@@ -11,11 +11,12 @@ import { promisify } from 'node:util';
 import { recordApplication, saveQueue } from './queue.mjs';
 import { normalizeUrl, readQueueState } from './queue-lib.mjs';
 import { OUTREACH_STATE_PATH, recordSubmissionSignal, loadOutreachState } from './outreach-lib.mjs';
-import { loadLedger, answerQuestion, questionId } from './apply/question-ledger.mjs';
+import { loadLedger, answerQuestion, findQuestionMatch, isSensitiveQuestion, questionId } from './apply/question-ledger.mjs';
 import { selectProjectAccomplishment } from './project-accomplishment-ledger.mjs';
 import { loadClearState, DEFAULT_CLEAR_STATE_PATH } from './apply/application-run-state.mjs';
-import { resumeApplication, runClearQueue } from './application-queue.mjs';
+import { runClearQueue } from './application-queue.mjs';
 import { loadHandoffSession, runHandoffBatch } from './application-handoff.mjs';
+import { buildApplicationPacket } from './apply/application-packets.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ const HOST = '127.0.0.1';
 const MAX_BODY_BYTES = 64 * 1024;
 let clearPromise = null;
 let handoffPromise = null;
+let packetPromise = null;
 
 const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -80,14 +82,22 @@ function loadState() {
 
 function questionPayload(items) {
   const ledger = loadLedger();
-  return items
+  const grouped = new Map();
+  items
     .filter((item) => item.applicationState === 'blocked_by_question')
     .flatMap((item) => {
       const reviews = Array.isArray(item.applicationResult?.needsReview) ? item.applicationResult.needsReview : [];
       return reviews.map((review) => {
         const question = String(review.label || '').replace(/^EEO:\s*/i, '').trim();
         if (!question) return null;
-        const entry = ledger.entries.find((candidate) => candidate.id === questionId(question));
+        const sensitivity = isSensitiveQuestion(question) ? 'high' : 'normal';
+        const entry = ledger.entries.find((candidate) => candidate.id === questionId(question))
+          || findQuestionMatch(question, ledger, {
+            fieldKind: review.kind || review.fieldKind || '',
+            options: Array.isArray(review.options) ? review.options : [],
+            sensitivity,
+          })?.entry;
+        const canonicalId = entry?.id || questionId(question);
         const accomplishment = selectProjectAccomplishment({
           question,
           company: item.company,
@@ -95,22 +105,38 @@ function questionPayload(items) {
           description: item.description,
           lane: item.lane,
         });
-        return {
-          id: entry?.id || questionId(question),
+        const options = Array.isArray(review.options) && review.options.length ? review.options : (entry?.options || []);
+        const occurrence = { queueId: item.id, company: item.company, role: item.title, url: item.applyUrl || item.canonicalUrl };
+        const existing = grouped.get(canonicalId);
+        if (existing) {
+          existing.queueIds = [...new Set([...existing.queueIds, item.id])];
+          existing.occurrences.push(occurrence);
+          existing.options = [...new Set([...existing.options, ...options])];
+          if (!existing.suggestedAnswer && accomplishment?.answer) existing.suggestedAnswer = accomplishment.answer;
+          return null;
+        }
+        const payload = {
+          id: canonicalId,
           queueId: item.id,
+          queueIds: [item.id],
+          occurrences: [occurrence],
+          occurrenceCount: 1,
           company: item.company,
           role: item.title,
           url: item.applyUrl || item.canonicalUrl,
-          question,
+          question: entry?.question || question,
           reason: review.reason || entry?.blockerReason || 'required field needs an answer',
-          options: Array.isArray(review.options) && review.options.length ? review.options : (entry?.options || []),
+          options: [...new Set(options)],
           sensitivity: entry?.sensitivity || 'normal',
           suggestedAnswer: accomplishment?.answer || '',
           answer: entry?.answer || '',
-          scope: entry?.scope === 'company' ? 'company' : 'role',
+          scope: ['question', 'company', 'role'].includes(String(entry?.scope || '')) ? entry.scope : 'question',
         };
+        grouped.set(canonicalId, payload);
+        return null;
       }).filter(Boolean);
     });
+  return [...grouped.values()].map((question) => ({ ...question, occurrenceCount: question.occurrences.length }));
 }
 
 function publicHandoffSession() {
@@ -263,6 +289,68 @@ function startClearQueue(dryRun = false) {
   return publicApplicationRun();
 }
 
+async function runPacketQueue(limit = 6) {
+  const state = loadState();
+  const selected = (state.items || [])
+    .filter((item) => item.selectedForToday && ['ready', 'in_review'].includes(String(item.status || '')))
+    .sort((left, right) => Number(left.queueRank || 999) - Number(right.queueRank || 999))
+    .slice(0, Math.max(1, Math.min(Number(limit || 6), 6)));
+  const report = [];
+  updateClearState(DEFAULT_CLEAR_STATE_PATH, {
+    status: 'running',
+    phase: 'preparing-packets',
+    limit,
+    report: [],
+    questions: [],
+    handoffs: [],
+    error: null,
+    startedAt: new Date().toISOString(),
+  });
+  for (const item of selected) {
+    updateClearState(DEFAULT_CLEAR_STATE_PATH, {
+      phase: 'preparing-packets',
+      current: { id: item.id, company: item.company, title: item.title, status: 'started' },
+    });
+    try {
+      const packet = await buildApplicationPacket(item);
+      item.applicationPacket = packet.ok
+        ? {
+          status: packet.status,
+          generatedAt: packet.generatedAt,
+          markdownPath: packet.paths.markdown,
+          jsonPath: packet.paths.json,
+          unresolvedCount: packet.unresolved.length,
+        }
+        : { status: 'blocked', reason: packet.reason };
+      report.push({ id: item.id, company: item.company, title: item.title, action: packet.ok ? 'packet-ready' : 'blocked', status: packet.ok ? packet.status : null, reason: packet.ok ? `${packet.unresolved.length} required question(s) unresolved` : packet.reason });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      item.applicationPacket = { status: 'blocked', reason };
+      report.push({ id: item.id, company: item.company, title: item.title, action: 'blocked', reason });
+    }
+    state.generatedAt = new Date().toISOString();
+    saveQueue(ROOT, state);
+    updateClearState(DEFAULT_CLEAR_STATE_PATH, { report: [...report] });
+  }
+  const result = { ok: report.every((entry) => entry.action === 'packet-ready'), limit, report, humanSubmissionRequired: true };
+  updateClearState(DEFAULT_CLEAR_STATE_PATH, {
+    status: result.ok ? 'completed' : 'failed',
+    phase: 'complete',
+    report,
+    result,
+    error: result.ok ? null : 'one or more packets could not be prepared',
+  });
+  return result;
+}
+
+function startPacketQueue(limit = 6) {
+  if (packetPromise) return publicApplicationRun();
+  packetPromise = runPacketQueue(limit)
+    .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+    .finally(() => { packetPromise = null; });
+  return publicApplicationRun();
+}
+
 function startHandoffs() {
   if (handoffPromise) return publicHandoffSession();
   const state = loadState();
@@ -276,27 +364,60 @@ function startHandoffs() {
   return publicHandoffSession();
 }
 
-async function answerAndResume(payload) {
-  const id = stringValue(payload, 'id');
-  const answer = stringValue(payload, 'answer');
-  const scope = stringValue(payload, 'scope') || 'role';
+async function buildQueuePacket(payload) {
   const queueId = stringValue(payload, 'queueId');
-  if (!id || !answer || !queueId) throw new Error('question id, queue id, and answer are required');
+  if (!queueId) throw new Error('queue id is required');
   const state = loadState();
   const item = (state.items || []).find((candidate) => candidate.id === queueId);
   if (!item) throw new Error('queue item not found; refresh the page and try again');
-  const reviews = Array.isArray(item.applicationResult?.needsReview) ? item.applicationResult.needsReview : [];
-  const belongsToItem = reviews.some((review) => questionId(String(review.label || '').replace(/^EEO:\s*/i, '').trim()) === id);
-  if (!belongsToItem) throw new Error('question is not recorded as a blocker for this application');
+  const packet = await buildApplicationPacket(item);
+  if (!packet.ok) throw new Error(packet.reason);
+  item.applicationPacket = {
+    status: packet.status,
+    generatedAt: packet.generatedAt,
+    markdownPath: packet.paths.markdown,
+    jsonPath: packet.paths.json,
+    unresolvedCount: packet.unresolved.length,
+  };
+  state.generatedAt = new Date().toISOString();
+  saveQueue(ROOT, state);
+  return { packet, state: queuePayload(state) };
+}
+
+async function saveQueueQuestionAnswer(payload) {
+  const id = stringValue(payload, 'id');
+  const answer = stringValue(payload, 'answer');
+  const scope = stringValue(payload, 'scope') || 'question';
+  const queueIds = Array.isArray(payload.queueIds)
+    ? payload.queueIds.map((value) => String(value || '').trim()).filter(Boolean)
+    : [stringValue(payload, 'queueId')].filter(Boolean);
+  if (!id || !answer || !queueIds.length) throw new Error('question id, queue id, and answer are required');
+  const state = loadState();
+  const ledgerPath = path.join(ROOT, 'data', 'application-question-ledger.json');
+  const ledger = loadLedger(ledgerPath);
+  const items = queueIds.map((queueId) => (state.items || []).find((candidate) => candidate.id === queueId));
+  if (items.some((item) => !item)) throw new Error('queue item not found; refresh the page and try again');
+  for (const item of items) {
+    const reviews = Array.isArray(item.applicationResult?.needsReview) ? item.applicationResult.needsReview : [];
+    const belongsToItem = reviews.some((review) => {
+      const question = String(review.label || '').replace(/^EEO:\s*/i, '').trim();
+      return questionId(question) === id || findQuestionMatch(question, ledger, {
+        fieldKind: review.kind || review.fieldKind || '',
+        options: review.options || [],
+        sensitivity: isSensitiveQuestion(question) ? 'high' : 'normal',
+      })?.entry.id === id;
+    });
+    if (!belongsToItem) throw new Error('question is not recorded as a blocker for every application in this group');
+  }
+  const item = items[0];
   const entry = answerQuestion(path.join(ROOT, 'data', 'application-question-ledger.json'), id, answer, {
-    scope: scope === 'company' ? 'company' : 'role',
+    scope: ['question', 'company', 'role'].includes(scope) ? scope : 'question',
     company: item.company,
     role: item.title,
     url: item.applyUrl || item.canonicalUrl,
     queueId: item.id,
   });
-  const resumePromise = resumeApplication(queueId).catch((error) => ({ ok: false, reason: error instanceof Error ? error.message : String(error) }));
-  return { ok: true, entry, resuming: true, resumePromise };
+  return { ok: true, entry, queueIds, humanSubmissionRequired: true };
 }
 
 async function processOutreach() {
@@ -351,6 +472,24 @@ async function handleRequest(request, response) {
     }
     return;
   }
+  if (request.method === 'POST' && requestUrl.pathname === '/api/applications/packets') {
+    try {
+      const payload = await readJsonBody(request);
+      sendJson(response, 202, { ok: true, run: startPacketQueue(Number(payload.limit || 6)) });
+    } catch (error) {
+      sendError(response, 409, error instanceof Error ? error.message : String(error));
+    }
+    return;
+  }
+  if (request.method === 'POST' && requestUrl.pathname === '/api/applications/packet') {
+    try {
+      const payload = await readJsonBody(request);
+      sendJson(response, 200, await buildQueuePacket(payload));
+    } catch (error) {
+      sendError(response, 400, error instanceof Error ? error.message : String(error));
+    }
+    return;
+  }
   if (request.method === 'GET' && requestUrl.pathname === '/api/applications/status') {
     sendJson(response, 200, publicApplicationRun());
     return;
@@ -358,8 +497,8 @@ async function handleRequest(request, response) {
   if (request.method === 'POST' && requestUrl.pathname === '/api/questions/answer') {
     try {
       const payload = await readJsonBody(request);
-      const result = await answerAndResume(payload);
-      sendJson(response, 202, { ok: result.ok, entry: result.entry, resuming: result.resuming });
+      const result = await saveQueueQuestionAnswer(payload);
+      sendJson(response, 200, { ok: result.ok, entry: result.entry, queueIds: result.queueIds, humanSubmissionRequired: result.humanSubmissionRequired });
     } catch (error) {
       sendError(response, 400, error instanceof Error ? error.message : String(error));
     }
