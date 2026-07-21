@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import path from 'path';
 import yaml from 'js-yaml';
 import { buildResumeRequest } from './resume-contract.mjs';
+import { freshnessPenalty } from './queue-aging.mjs';
 
 export const QUEUE_SCHEMA_VERSION = 1;
 export const DEFAULT_QUEUE_LIMIT = 10;
@@ -61,6 +62,12 @@ const POSITIVE_ROLE_RE = /\b(software|backend|back-end|full[- ]?stack|data|analy
 /** @param {string} value */
 export function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+/** @param {unknown} value @returns {string|null} */
+function isoTimestamp(value) {
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 
 /** @param {string} value */
@@ -146,9 +153,11 @@ export function parseScanHistory(text) {
     const cells = line.split('\t');
     const url = normalizeUrl(cells[0]);
     if (!url) continue;
+    const firstSeenAt = /^\d{4}-\d{2}-\d{2}$/.test(cells[1] || '') ? cells[1] : null;
     byUrl.set(url, {
       source: normalizeText(cells[2]) || inferSourceFromUrl(url),
-      postedAt: /^\d{4}-\d{2}-\d{2}$/.test(cells[1] || '') ? cells[1] : null,
+      postedAt: firstSeenAt,
+      firstSeenAt,
       status: normalizeText(cells[5]),
     });
   }
@@ -280,6 +289,12 @@ export function buildQueueItem(candidate, profile, root) {
   const evaluation = scoreCandidate(candidate, profile);
   const canonicalUrl = normalizeUrl(String(candidate.canonicalUrl || candidate.url || ''));
   const source = normalizeText(String(candidate.source || inferSourceFromUrl(canonicalUrl))).toLowerCase() || 'manual';
+  const now = new Date().toISOString();
+  const observedAt = isoTimestamp(candidate.observedAt) || isoTimestamp(candidate.lastSeenAt);
+  const firstSeenAt = isoTimestamp(candidate.firstSeenAt)
+    || isoTimestamp(candidate.postedAt)
+    || isoTimestamp(candidate.discoveredAt)
+    || now;
   const item = {
     id: stableQueueId({ ...candidate, canonicalUrl }),
     source,
@@ -293,7 +308,12 @@ export function buildQueueItem(candidate, profile, root) {
     location: normalizeText(String(candidate.location || '')),
     description: normalizeText(String(candidate.description || '')),
     postedAt: candidate.postedAt || null,
-    discoveredAt: candidate.discoveredAt || new Date().toISOString(),
+    discoveredAt: candidate.discoveredAt || now,
+    firstSeenAt,
+    lastSeenAt: observedAt,
+    lastConfirmedActiveAt: candidate.liveness === 'active'
+      ? (isoTimestamp(candidate.lastConfirmedActiveAt) || observedAt)
+      : isoTimestamp(candidate.lastConfirmedActiveAt),
     liveness: candidate.liveness || 'uncertain',
     fitScore: evaluation.score,
     fitConfidence: evaluation.confidence,
@@ -326,7 +346,13 @@ export function buildQueueItem(candidate, profile, root) {
 
 /** @param {Record<string, unknown>} item */
 function eligibleForSelection(item) {
-  if (!item || item.status === 'excluded' || item.status === 'stale' || item.status === 'applied' || item.status === 'skipped') return false;
+  if (!item
+    || item.status === 'excluded'
+    || item.status === 'stale'
+    || item.status === 'archived'
+    || item.status === 'applied'
+    || item.status === 'skipped'
+    || ['stale', 'archivable'].includes(String(item.freshness || ''))) return false;
   if (item.status === 'snoozed') {
     return typeof item.snoozeUntil !== 'string' || item.snoozeUntil <= new Date().toISOString();
   }
@@ -337,8 +363,8 @@ function eligibleForSelection(item) {
 function sortScore(item) {
   const readiness = item.status === 'ready' ? 10 : 0;
   const weight = sourceWeight(String(item.source || ''));
-  const freshness = item.postedAt ? new Date(String(item.postedAt)).getTime() / 1e12 : 0;
-  return readiness + Number(item.fitScore || 0) * weight + freshness;
+  const postedFreshness = item.postedAt ? new Date(String(item.postedAt)).getTime() / 1e12 : 0;
+  return readiness + Number(item.fitScore || 0) * weight + postedFreshness - freshnessPenalty(String(item.freshness || 'unknown'));
 }
 
 /** @param {Record<string, unknown>} item */
@@ -353,7 +379,7 @@ function selectionIdentity(item) {
 /**
  * @param {Array<Record<string, unknown>>} candidates
  * @param {Record<string, unknown>} previous
- * @param {{ limit?: number, now?: string }} [options]
+ * @param {{ limit?: number, now?: string, retainUnseen?: boolean }} [options]
  */
 export function buildQueue(candidates, previous = {}, options = {}) {
   const limit = Math.max(1, Math.min(50, Number(options.limit || DEFAULT_QUEUE_LIMIT)));
@@ -363,22 +389,48 @@ export function buildQueue(candidates, previous = {}, options = {}) {
   for (const candidate of candidates) {
     if (!candidate?.id) continue;
     const old = previousItems.get(candidate.id);
+    const observedAt = isoTimestamp(candidate.observedAt) || isoTimestamp(candidate.lastSeenAt);
+    const observedNow = observedAt !== null || (candidate.liveness === 'active' && isoTimestamp(candidate.livenessCheckedAt) !== null);
     const snoozeExpired = old?.status === 'snoozed'
       && (!old.snoozeUntil || old.snoozeUntil <= now);
-    const preservedStatus = old && ['applied', 'skipped', 'snoozed'].includes(old.status) && !snoozeExpired
-      ? old.status
-      : candidate.status;
-    merged.set(candidate.id, {
+    let preservedStatus = candidate.status;
+    if (old && ['applied', 'skipped'].includes(String(old.status || ''))) preservedStatus = old.status;
+    if (old?.status === 'snoozed' && !snoozeExpired) preservedStatus = old.status;
+    if (old && ['stale', 'archived'].includes(String(old.status || '')) && !observedNow) preservedStatus = old.status;
+    const mergedItem = {
       ...candidate,
       ...(old || {}),
       ...candidate,
       status: preservedStatus,
       snoozeUntil: old?.snoozeUntil || candidate.snoozeUntil || null,
       updatedAt: now,
-    });
+    };
+    if (old?.firstSeenAt) mergedItem.firstSeenAt = old.firstSeenAt;
+    if (!observedNow && old?.lastSeenAt) mergedItem.lastSeenAt = old.lastSeenAt;
+    if (!observedNow && old?.lastConfirmedActiveAt) mergedItem.lastConfirmedActiveAt = old.lastConfirmedActiveAt;
+    if (!observedNow && old?.freshness) {
+      mergedItem.freshness = old.freshness;
+      mergedItem.freshnessAgeDays = old.freshnessAgeDays ?? null;
+      mergedItem.freshnessReferenceAt = old.freshnessReferenceAt || null;
+      mergedItem.freshnessUpdatedAt = old.freshnessUpdatedAt || null;
+    }
+    if (observedNow && old && ['stale', 'archived'].includes(String(old.status || ''))) {
+      delete mergedItem.staleAt;
+      delete mergedItem.staleReason;
+      delete mergedItem.archivedAt;
+      delete mergedItem.archivedReason;
+      delete mergedItem.freshness;
+      delete mergedItem.freshnessAgeDays;
+      delete mergedItem.freshnessReferenceAt;
+      delete mergedItem.freshnessUpdatedAt;
+      mergedItem.reactivatedAt = now;
+    }
+    if (observedNow && observedAt) mergedItem.lastSeenAt = observedAt;
+    if (observedNow && candidate.liveness === 'active') mergedItem.lastConfirmedActiveAt = observedAt || isoTimestamp(candidate.livenessCheckedAt) || old?.lastConfirmedActiveAt || null;
+    merged.set(candidate.id, mergedItem);
   }
   for (const old of previousItems.values()) {
-    if (!merged.has(old.id) && ['applied', 'skipped', 'snoozed'].includes(old.status)) merged.set(old.id, old);
+    if (!merged.has(old.id) && options.retainUnseen !== false) merged.set(old.id, old);
   }
 
   const selectedIdentities = new Set();

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildPacketMarkdown, packetPathsForItem } from '../apply/application-packets.mjs';
+import { buildPacketMarkdown, packetFreshnessGate, packetPathsForItem } from '../apply/application-packets.mjs';
 
 test('packet paths are stable and separated from application artifacts', () => {
   const item = { id: 'q1', company: 'Acme', title: 'Backend Engineer', applyUrl: 'https://jobs.example/acme/1' };
@@ -26,4 +26,20 @@ test('packet markdown makes unknowns and the human submit boundary explicit', ()
   assert.match(markdown, /Do you require sponsorship\?/);
   assert.match(markdown, /\[your answer\]/);
   assert.match(markdown, /Click Submit\/Apply only after your review/);
+});
+
+test('packet freshness gate blocks aged roles and warns on recheck-due roles', () => {
+  const stale = packetFreshnessGate({
+    status: 'stale',
+    firstSeenAt: '2026-06-01T00:00:00.000Z',
+  }, '2026-07-21T00:00:00.000Z');
+  assert.equal(stale.ok, false);
+  assert.match(stale.reason, /refresh and revalidate/);
+
+  const due = packetFreshnessGate({
+    status: 'in_review',
+    firstSeenAt: '2026-06-15T00:00:00.000Z',
+  }, '2026-07-21T00:00:00.000Z');
+  assert.equal(due.ok, true);
+  assert.match(due.warning, /recheck is due/);
 });

@@ -29,6 +29,7 @@ import { selectProjectAccomplishment } from '../project-accomplishment-ledger.mj
 import { generateApplicationArtifacts, jobHash } from './application-artifacts.mjs';
 import { inspectApplicationPage, applicationAdapter, normalizeApplicationUrl } from './form-inspection.mjs';
 import { readQueueState } from '../queue-lib.mjs';
+import { postingFreshness } from '../queue-aging.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DEFAULT_PROFILE_PATH = path.join(ROOT, 'config', 'application-profile.json');
@@ -232,6 +233,30 @@ function buildQuestions(item, inspection, profile, ledgerPath) {
   return { questions, artifacts, manual, ledger };
 }
 
+/**
+ * @param {Record<string, unknown>} item
+ * @param {string} [now]
+ * @returns {{ ok: boolean, freshness: ReturnType<typeof postingFreshness>, warning?: string, reason?: string }}
+ */
+export function packetFreshnessGate(item, now = new Date().toISOString()) {
+  const freshness = postingFreshness(item, now);
+  if (['stale', 'archivable', 'archived'].includes(freshness.state) || ['stale', 'archived'].includes(String(item.status || ''))) {
+    return {
+      ok: false,
+      freshness,
+      reason: 'posting freshness is stale; refresh and revalidate the role before preparing a submission packet',
+    };
+  }
+  if (freshness.state === 'recheck_due') {
+    return {
+      ok: true,
+      freshness,
+      warning: `posting freshness recheck is due (${freshness.ageDays} days since the last observation or positive verification)`,
+    };
+  }
+  return { ok: true, freshness };
+}
+
 /** @param {Record<string, unknown>} packet */
 export function buildPacketMarkdown(packet) {
   const target = packet.target || {};
@@ -247,6 +272,8 @@ export function buildPacketMarkdown(packet) {
     `- Packet status: ${packet.status || 'needs-review'}`,
     '',
   ];
+  const warnings = Array.isArray(packet.warnings) ? packet.warnings : [];
+  if (warnings.length) lines.push('## Warnings', '', ...warnings.map((warning) => `- ${warning}`), '');
   const artifacts = packet.artifacts || {};
   lines.push('## Files to attach', '');
   for (const [label, value] of [['Résumé', artifacts.resumePdf], ['Cover letter', artifacts.coverLetterPdf || artifacts.coverLetterText]]) {
@@ -277,6 +304,8 @@ export function buildPacketMarkdown(packet) {
 
 /** @param {Record<string, unknown>} item @param {{ browser?: string, headed?: boolean, cdpEndpoint?: string, ledgerPath?: string, profilePath?: string, outputRoot?: string, generateArtifacts?: boolean }} [options] */
 export async function buildApplicationPacket(item, options = {}) {
+  const freshnessGate = packetFreshnessGate(item);
+  if (!freshnessGate.ok) return { ok: false, reason: freshnessGate.reason };
   const effectiveItem = {
     ...item,
     applyUrl: normalizeApplicationUrl(String(item.applyUrl || item.canonicalUrl || '')),
@@ -355,7 +384,7 @@ export async function buildApplicationPacket(item, options = {}) {
     unresolved,
     manualItems: manual,
     artifactFields: artifacts,
-    warnings: [artifactWarning, inspection.formReady ? '' : 'no rendered application form was detected'].filter(Boolean),
+    warnings: [freshnessGate.warning || '', artifactWarning, inspection.formReady ? '' : 'no rendered application form was detected'].filter(Boolean),
     ledger: {
       path: options.ledgerPath || DEFAULT_LEDGER_PATH,
       canonicalQuestionCount: ledger.entries.length,

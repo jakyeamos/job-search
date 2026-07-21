@@ -167,6 +167,7 @@ export function applyHealthResult(state, target, result, at = new Date().toISOSt
       ...item,
       liveness: result.result,
       livenessCheckedAt: at,
+      ...(result.result === 'active' ? { lastConfirmedActiveAt: at } : {}),
       livenessCheck: {
         result: result.result,
         method: result.method,

@@ -179,7 +179,8 @@ function countUniqueLiveRoles(items) {
 /** @param {Record<string, unknown>} state */
 function queuePayload(state) {
   const items = Array.isArray(state.items) ? state.items : [];
-  const liveItems = items.filter((item) => ['ready', 'in_review', 'snoozed'].includes(String(item.status || '')));
+  const liveItems = items.filter((item) => ['ready', 'in_review', 'snoozed'].includes(String(item.status || ''))
+    && !['stale', 'archivable'].includes(String(item.freshness || '')));
   const selected = items
     .filter((item) => item.selectedForToday)
     .sort((a, b) => Number(a.queueRank || 999) - Number(b.queueRank || 999));
@@ -212,6 +213,7 @@ function queuePayload(state) {
       liveUnique: countUniqueLiveRoles(liveItems),
       excluded: items.filter((item) => item.status === 'excluded').length,
       stale: items.filter((item) => item.status === 'stale').length,
+      archived: items.filter((item) => item.status === 'archived').length,
       selected: selected.length,
       ready: items.filter((item) => item.status === 'ready').length,
       inReview: items.filter((item) => item.status === 'in_review').length,

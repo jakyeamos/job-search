@@ -30,6 +30,7 @@ import {
   renderQueueMarkdown,
   writeQueueState,
 } from './queue-lib.mjs';
+import { applyPostingAging } from './queue-aging.mjs';
 import { checkPublicLiveness } from './liveness-http.mjs';
 
 export { checkPublicLiveness } from './liveness-http.mjs';
@@ -123,8 +124,9 @@ async function discoverPublic(options) {
     const scan = await runNodeScript('scan.mjs', options.dryRun ? ['--dry-run'] : [], { timeoutMs: 300_000 });
     if (!scan.ok) errors.push(`tracked public scan failed: ${scan.error}`);
     const after = parsePipeline(readText(pipelineFile));
+    const observedAt = new Date().toISOString();
     for (const job of after) {
-      if (!before.has(job.url)) candidates.push({ ...job, liveness: 'uncertain', discoveredAt: new Date().toISOString() });
+      if (!before.has(job.url)) candidates.push({ ...job, liveness: 'uncertain', discoveredAt: observedAt, observedAt });
     }
 
     const atsLimit = Math.max(25, options.limit * 12);
@@ -132,12 +134,14 @@ async function discoverPublic(options) {
     if (options.dryRun) atsArgs.push('--dry-run');
     const ats = await runNodeScript('scan-ats-full.mjs', atsArgs, { timeoutMs: 300_000 });
     if (!ats.ok) errors.push(`YC/ATS scan failed: ${ats.error}`);
+    const atsObservedAt = new Date().toISOString();
     const atsOffers = parseAtsJson(ats.stdout).map((offer) => ({
       ...offer,
       canonicalUrl: offer.url,
       source: offer.source || 'yc',
       liveness: 'uncertain',
-      discoveredAt: new Date().toISOString(),
+      discoveredAt: atsObservedAt,
+      observedAt: atsObservedAt,
     }));
     candidates.push(...atsOffers);
   }
@@ -169,7 +173,17 @@ async function ingestGmail(options) {
         errors.push(`Gmail ingest failed: ${result.error || 'unknown error'}`);
         continue;
       }
-      if (Array.isArray(result.result)) candidates.push(...result.result);
+      if (Array.isArray(result.result)) {
+        const observedAt = new Date().toISOString();
+        for (const candidate of result.result) {
+          if (!candidate || typeof candidate !== 'object') continue;
+          candidates.push({
+            ...candidate,
+            observedAt: candidate.observedAt || observedAt,
+            lastSeenAt: candidate.lastSeenAt || candidate.observedAt || observedAt,
+          });
+        }
+      }
     }
     if (!candidates.length && !hasGmailCredentials()) errors.push('Gmail queue ingest unavailable until .env OAuth values are configured');
   } catch (error) {
@@ -255,26 +269,30 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
     const publicSources = await discoverPublic({ dryRun, limit, skipPublic });
     const pipelineJobs = parsePipeline(readText(path.join(root, 'data', 'pipeline.md')));
     const history = parseScanHistory(readText(path.join(root, 'data', 'scan-history.tsv')));
-    const pipelineCandidates = pipelineJobs.map((job) => ({
-      ...job,
-      ...(history.get(job.url) || {}),
-      source: history.get(job.url)?.source || job.source,
-      postedAt: history.get(job.url)?.postedAt || null,
-    }));
+    const pipelineCandidates = pipelineJobs.map((job) => {
+      const historyEntry = history.get(job.url);
+      return {
+        ...job,
+        ...(historyEntry || {}),
+        source: historyEntry?.source || job.source,
+        postedAt: historyEntry?.postedAt || null,
+        firstSeenAt: historyEntry?.firstSeenAt || null,
+        observedAt: null,
+      };
+    });
     let candidates = dedupCandidates([...pipelineCandidates, ...publicSources.candidates, ...gmail.candidates]);
     const applications = loadApplications(root);
     candidates = candidates.filter((candidate) => !applications.has(applicationKey(candidate)) && candidate.liveness !== 'expired');
-    const candidateItems = candidates.map((candidate) => buildQueueItem(candidate, loadProfile(root), root));
     const sourceErrors = [...gmail.errors, ...publicSources.errors];
-    if (sourceErrors.length && Array.isArray(previous.items)) {
-      const known = new Set(candidateItems.map((item) => item.id));
-      for (const old of previous.items) {
-        if (!known.has(old.id) && ['ready', 'in_review', 'snoozed'].includes(old.status)) candidateItems.push(old);
-      }
-    }
-    const state = buildQueue(candidateItems, previous, { limit, now: new Date().toISOString() });
+    const candidateItems = candidates.map((candidate) => buildQueueItem(candidate, loadProfile(root), root));
+    const now = new Date().toISOString();
+    const state = buildQueue(candidateItems, previous, { limit, now, retainUnseen: true });
+    const aging = applyPostingAging(state, {
+      now,
+      sourceScanHealthy: sourceErrors.length === 0 && !skipPublic,
+    });
     state.lastRun = {
-      at: new Date().toISOString(),
+      at: now,
       scheduled,
       dryRun,
       sources: {
@@ -282,6 +300,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
         public: { candidates: publicSources.candidates.length, errors: publicSources.errors.length },
       },
       errors: sourceErrors,
+      aging,
     };
     if (!dryRun) saveQueue(root, state);
     if (skipOutreach) {
@@ -386,7 +405,7 @@ function verifyQueue(root) {
     ids.add(item.id);
     if (!normalizeUrl(item.applyUrl || item.canonicalUrl)) errors.push(`invalid URL for ${item.title}`);
     if (item.selectedForToday) selected++;
-    if (!['ready', 'in_review', 'applied', 'skipped', 'snoozed', 'stale', 'excluded'].includes(item.status)) errors.push(`invalid status ${item.status}`);
+    if (!['ready', 'in_review', 'applied', 'skipped', 'snoozed', 'stale', 'archived', 'excluded'].includes(item.status)) errors.push(`invalid status ${item.status}`);
   }
   if (selected > 10) errors.push(`selected queue exceeds 10 roles (${selected})`);
   if (errors.length) { for (const error of errors) console.error(`❌ ${error}`); process.exitCode = 1; return; }

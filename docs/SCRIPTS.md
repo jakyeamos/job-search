@@ -65,6 +65,18 @@ and posting dates stay separate rather than being guessed.
 Queue state is kept in the local ignored files `data/job-queue.json` and
 `data/job-queue.md`.
 
+Each retained posting also carries `firstSeenAt`, `lastSeenAt`, and freshness
+metadata. A role is down-ranked after 14 days, marked `recheck_due` after 30
+days, and becomes `stale` after 45 days without observation or positive
+verification. At 60 days it becomes `archived`; archived records are retained
+for history and question-ledger provenance, while existing packet artifacts are
+left untouched; they can reactivate when a source observes the same role again.
+Alert-only URLs are removed from daily selection at the stale threshold without
+being treated as confirmed closures.
+The age transitions run during a successful `queue.mjs refresh`; source errors
+or a skipped public scan suspend them. A stale role must be refreshed and
+revalidated before a new human-submission packet can be prepared.
+
 ### Post-application outreach
 
 After an application signal, the outreach processor runs a bounded public
@@ -311,13 +323,13 @@ npm run rollback
 
 ## health
 
-Runs a bounded freshness sweep over existing `ready`, `in_review`, and
-`snoozed` queue roles. It checks ATS APIs first, then a lightweight HTTP
-request; Playwright is opt-in with `--browser`. LinkedIn and TeamWork Online
-alert URLs are reported as restricted and are never crawled. The command is a
-dry run unless `--apply` is present. Only definitive expired results mark a
-mutable role `stale`; applied, skipped, excluded, historical, and uncertain
-records are preserved.
+Runs a bounded liveness sweep over existing `ready`, `in_review`, and `snoozed`
+queue roles. It checks ATS APIs first, then a lightweight HTTP request;
+Playwright is opt-in with `--browser`. LinkedIn and TeamWork Online alert URLs
+are reported as restricted and are never crawled. The command is a dry run
+unless `--apply` is present. Definitive expired results mark a mutable role
+`stale`; time-based aging is applied by the daily `refresh` lifecycle. Applied,
+skipped, excluded, archived, historical, and uncertain records are preserved.
 
 ```bash
 node queue.mjs health --limit 100 --json
