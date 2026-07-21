@@ -182,6 +182,37 @@ export async function validatePortalsConfig(config, { providerIds = new Set() } 
     }
   }
 
+  const boards = config.job_boards;
+  if (boards !== undefined && !Array.isArray(boards)) {
+    add(errors, 'job_boards', 'job_boards must be an array when set');
+  }
+  if (Array.isArray(boards)) {
+    for (const [idx, board] of boards.entries()) {
+      const base = `job_boards[${idx}]`;
+      if (!isObject(board)) {
+        add(errors, base, 'job board entry must be an object');
+        continue;
+      }
+      if (board.enabled === false) continue;
+      if (typeof board.name !== 'string' || board.name.trim() === '') {
+        add(errors, `${base}.name`, 'enabled job board must have a non-empty string name');
+      }
+      validateUrl(board.careers_url, `${base}.careers_url`, errors);
+      validateUrl(board.api, `${base}.api`, errors);
+      if (board.provider !== undefined) {
+        if (typeof board.provider !== 'string' || board.provider.trim() === '') {
+          add(errors, `${base}.provider`, 'provider must be a non-empty string when set');
+        } else if (!providerIds.has(board.provider)) {
+          add(errors, `${base}.provider`, `unknown provider "${board.provider}"`);
+        }
+      }
+      if (board.max_pages !== undefined && (!Number.isInteger(Number(board.max_pages)) || Number(board.max_pages) <= 0)) {
+        add(errors, `${base}.max_pages`, 'max_pages must be a positive integer when set');
+      }
+      validateKeywordList(board.exclude_career_levels, `${base}.exclude_career_levels`, errors);
+    }
+  }
+
   return { errors, warnings };
 }
 
