@@ -15,7 +15,7 @@
 
 ## Candidate
 
-Jakye Amos -- Backend / AI / Product Software Engineer, New Grad (B.A. Computer Science, Case Western Reserve, expected Spring 2027; available full-time immediately).
+Jakye Amos -- Backend / AI / Product Software Engineer, New Grad (B.A. Computer Science, Case Western Reserve; available full-time immediately).
 
 - Location: Buffalo, NY (America/New_York). Open to remote, hybrid, on-site, and relocation.
 - Work authorization: US citizen. No visa, no sponsorship needed for US roles.

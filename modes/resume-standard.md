@@ -106,8 +106,8 @@ project block is evidence selection, not a popularity ranking.
 - Describe RemodelVision as a working but incomplete product pipeline.
 - Do not claim Salesforce certification, Snowflake, named AWS services, or
   other job requirements unless they appear in the evidence base.
-- Resume education may state Spring 2027 completion and immediate availability;
-  LinkedIn-facing copy follows its separate rule and omits graduation timing.
+- Resume education states immediate availability without graduation timing,
+  matching LinkedIn-facing copy's existing rule of omitting graduation dates.
 
 ## Quality gate
 

@@ -37,7 +37,8 @@ test('artifact generation selects verified lane evidence and writes a truthful c
     assert.deepEqual(result.selectedProjects.map((project) => project.name), ['Tenure', 'BidCamp', 'Quality Runner']);
     const resume = readFileSync(result.resumeMarkdown, 'utf8');
     const cover = readFileSync(result.coverLetterText, 'utf8');
-    assert.match(resume, /Expected completion: Spring 2027/);
+    assert.match(resume, /Available for full-time work immediately/);
+    assert.doesNotMatch(resume, /Spring 2027/);
     assert.match(resume, /Amazon/);
     assert.match(resume, /LaunchNY Cohort Venture/);
     assert.match(cover, /Example AI/);

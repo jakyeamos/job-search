@@ -401,7 +401,7 @@ function buildSummary(profile, item, lane, projects, keywords) {
   const focus = keywords.slice(0, 2).join(' and ') || LANE_PHRASES[lane] || 'backend and product systems';
   const projectText = projects.slice(0, 3).join(', ');
   const role = normalize(String(item.title || 'software engineering'));
-  return `Software engineer targeting ${role} roles, with three Amazon SDE internships and CTO-level client delivery experience. Builds ${focus} across ${projectText}. Available full-time now; degree completion Spring 2027.`;
+  return `Software engineer targeting ${role} roles, with three Amazon SDE internships and CTO-level client delivery experience. Builds ${focus} across ${projectText}. Available full-time now.`;
 }
 
 /** @param {Array<Record<string, string>>} jobs */
@@ -512,7 +512,7 @@ function buildResumeHtml({ profile, item, lane, summary, competencies, jobs, pro
   const template = readRootFile('templates/resume-template.html');
   const htmlJobs = jobs.map((job) => `<div class="job"><div class="job-header"><span class="job-company">${htmlEscape(job.company)}</span><span class="job-period">${htmlEscape(job.period)}</span></div><div class="job-role">${htmlEscape(job.role)}</div><ul>${job.bullets.map((bullet) => `<li>${htmlEscape(bullet)}</li>`).join('')}</ul></div>`).join('\n');
   const htmlProjects = projects.filter((project) => !project.missing).map((project) => `<div class="project"><div><span class="project-title">${htmlEscape(project.name)}</span><span class="project-badge">${htmlEscape(project.badge || 'Selected project')}</span></div><div class="project-desc">${htmlEscape(resumeProjectDescription(project))}</div>${project.tech ? `<div class="project-tech">Stack: ${htmlEscape(compactText(project.tech, 140))}</div>` : ''}</div>`).join('\n');
-  const htmlEducation = `<div class="edu-item"><div class="edu-header"><span class="edu-title">B.A. in Computer Science</span><span class="edu-year">Expected Spring 2027</span></div><div class="edu-org">Case Western Reserve University, Cleveland, OH</div><div class="edu-desc">Minors: Artificial Intelligence, Applied Data Science, Statistics | Available for full-time work immediately</div></div>`;
+  const htmlEducation = `<div class="edu-item"><div class="edu-header"><span class="edu-title">B.A. in Computer Science</span></div><div class="edu-org">Case Western Reserve University, Cleveland, OH</div><div class="edu-desc">Minors: Artificial Intelligence, Applied Data Science, Statistics | Available for full-time work immediately</div></div>`;
   const htmlSkills = skills.filter((line) => normalize(line) && !/English \(Fluent\)/i.test(line)).slice(0, 2).map((line) => {
     const [category, ...rest] = line.split(':');
     return `<div class="skill-item"><span class="skill-category">${htmlEscape(category)}:</span> ${htmlEscape(rest.join(':').trim())}</div>`;
