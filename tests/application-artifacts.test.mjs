@@ -64,6 +64,38 @@ test('artifact generation caches by job and evidence hashes', async () => {
   }
 });
 
+test('artifact generation uses a public ATS description before the browserless page fallback', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-ats-description-'));
+  const previousFetch = globalThis.fetch;
+  try {
+    const apiDescription = '<h2>What you will do</h2><p>Build reliable Python and TypeScript services for a production platform. Work with product and engineering partners to ship tested APIs, data workflows, observability, and applied AI capabilities.</p>';
+    globalThis.fetch = async (input, init) => {
+      assert.equal(String(input), 'https://boards-api.greenhouse.io/v1/boards/example/jobs/123');
+      assert.equal(init?.redirect, 'error');
+      return new Response(JSON.stringify({ content: apiDescription }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    const result = await generateApplicationArtifacts(fixtureItem({
+      id: 'ats-description-role',
+      description: 'Short listing.',
+      applyUrl: 'https://boards.greenhouse.io/example/jobs/123',
+    }), {
+      outputRoot: root,
+      renderPdf: false,
+    });
+    assert.equal(result.ok, true);
+    const manifest = JSON.parse(readFileSync(result.manifestPath, 'utf8'));
+    assert.equal(manifest.job.descriptionSource, 'ats-api');
+    assert.equal(manifest.job.descriptionEndpoint, 'https://boards-api.greenhouse.io/v1/boards/example/jobs/123');
+    assert.match(result.jobDescription, /Build reliable Python and TypeScript services/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('lane inference prefers data roles over the default backend lane', () => {
   assert.equal(laneForItem({ title: 'Data Platform Engineer', description: 'Build SQL analytics pipelines.' }, {}), 'data_analytics');
   assert.equal(laneForItem({ title: 'Frontend Product Engineer', description: 'Own the customer product surface.' }, {}), 'product_full_stack');

@@ -27,6 +27,25 @@ description: Run Career Ops' authorized, human-accountable application queue. Us
 5. Treat `submitted` and `submission_unknown` as terminal until the external
    state is verified. Never retry an unknown submission automatically.
 
+## Browser-free intake and artifact retrieval
+
+The queue keeps the browser for the form interaction, but it uses public ATS
+HTTP endpoints first when a supported posting needs a fuller job description.
+The generated manifest records `descriptionSource: ats-api` and the public
+endpoint when that path succeeds; an unavailable or too-short response falls
+back to the existing posting-page fetch and then fails closed if the description
+is still insufficient.
+
+When a new public job source needs a browser-free path, use the `$derive-api-client`
+skill before adding or changing a provider. The derived client belongs in the
+existing `providers/` contract, reuses `providers/_http.mjs`, records endpoint
+provenance, and returns normalized listings for `scan.mjs`. Derive only public,
+read-only listing or description requests. Never derive application POSTs,
+login/MFA flows, CAPTCHA controls, or any request that changes external state.
+After a provider change, run `node validate-portals.mjs`, a scoped
+`node scan.mjs --dry-run --company <name>`, and its focused contract tests before
+using the application queue.
+
 ## Safety contract
 
 - Never invent answers, experience, dates, certifications, salary, work status,

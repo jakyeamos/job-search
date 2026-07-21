@@ -34,6 +34,10 @@ sources (`cv.md`, `article-digest.md`, `config/profile.yml`, and
 `modes/_profile.md`) plus the queue posting, then caches artifacts by the
 posting and evidence hashes. It refuses to generate when the job description
 is missing/too short or fewer than two verified lane projects are available.
+When the queued description is short, supported Greenhouse, Lever, and Ashby
+URLs are checked through their public ATS JSON endpoint before the existing
+posting-page fallback. The artifact manifest records whether the description
+came from the queue, `ats-api`, or the live posting page.
 
 ```bash
 node resume.mjs plan --limit 6

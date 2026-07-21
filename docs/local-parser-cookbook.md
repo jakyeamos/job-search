@@ -2,6 +2,21 @@
 
 Local parsers let `scan.mjs` read SSR or static career pages without asking an agent to browse the page. The parser runs as a local command, prints normalized jobs JSON to stdout, and lets the scanner keep using the same title filtering, deduplication, and pipeline output flow.
 
+## Prefer a public API client when one exists
+
+If the site exposes a documented or clearly public JSON/RSS endpoint, use the
+`$derive-api-client` skill before writing a parser. It should produce the
+smallest read-only client that fits the existing `providers/*.mjs` contract and
+reuses `providers/_http.mjs`; do not add a browser, a login flow, or an
+application-submission request. Record the endpoint provenance in the provider
+or its focused documentation, keep secrets out of config and logs, and verify
+the returned title, URL, and pagination behavior against the public source.
+
+Use a local parser only when the page or feed needs custom extraction and no
+stable public API is available. The application queue may use these same public
+ATS paths to retrieve a fuller description, but it never uses a derived client
+to fill or submit an application.
+
 ## When To Use This
 
 Use `scan_method: local_parser` when a company career page has stable HTML, a documented endpoint, or another deterministic source that is easier to parse locally than with Playwright. The parser can be written in JavaScript, Python, shell, Go, or any executable available on the user's machine. `career-ops` does not bundle company-specific parser scripts; users bring their own script and point `portals.yml` at it.

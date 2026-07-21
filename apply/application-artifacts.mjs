@@ -16,6 +16,7 @@ import { load as loadYaml } from 'js-yaml';
 
 import { renderHtmlToPdf } from '../generate-pdf.mjs';
 import { auditResume } from '../resume-audit.mjs';
+import { fetchAtsJobDescription } from './public-job-description.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const DEFAULT_ARTIFACT_ROOT = path.join(ROOT, 'output', 'application-artifacts');
@@ -603,16 +604,33 @@ export async function generateApplicationArtifacts(item, options = {}) {
   const digest = readRootFile('article-digest.md');
   const profile = /** @type {Record<string, unknown>} */ (loadYaml(readRootFile('config/profile.yml')) || {});
   let description = normalize(String(item.description || ''));
+  let descriptionSource = description.length >= 120 ? 'queue' : 'missing';
+  let descriptionEndpoint = '';
   if (description.length < 120 && options.fetchJobDescription !== false && item.applyUrl) {
+    const atsResult = await fetchAtsJobDescription(String(item.applyUrl));
+    if (atsResult) {
+      description = atsResult.description;
+      descriptionSource = 'ats-api';
+      descriptionEndpoint = atsResult.endpoint;
+    }
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12_000);
-      const response = await fetch(String(item.applyUrl), { signal: controller.signal, redirect: 'follow' });
-      clearTimeout(timeout);
-      if (response.ok) {
-        const html = await response.text();
-        const fetched = normalize(html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
-        if (fetched.length > description.length) description = fetched.slice(0, 40_000);
+      if (description.length < 120) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12_000);
+        try {
+          const response = await fetch(String(item.applyUrl), { signal: controller.signal, redirect: 'follow' });
+          if (response.ok) {
+            const html = await response.text();
+            const fetched = normalize(html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
+            if (fetched.length > description.length) {
+              description = fetched.slice(0, 40_000);
+              descriptionSource = 'live-posting';
+              descriptionEndpoint = '';
+            }
+          }
+        } finally {
+          clearTimeout(timeout);
+        }
       }
     } catch { /* the queue records a missing/short description below */ }
   }
@@ -710,7 +728,8 @@ export async function generateApplicationArtifacts(item, options = {}) {
       title: item.title || '',
       location: item.location || '',
       applyUrl: item.applyUrl || item.canonicalUrl || '',
-      descriptionSource: description === normalize(String(item.description || '')) ? 'queue' : 'live-posting',
+      descriptionSource,
+      ...(descriptionEndpoint ? { descriptionEndpoint } : {}),
     },
     lane,
     jdHash: effectiveJobHash,
