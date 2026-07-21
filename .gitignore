@@ -1,5 +1,8 @@
 # Personal data (user fills these)
 .env
+cv.md
+article-digest.md
+interview-prep/story-bank.md
 config/plugins.yml
 data/applications.md
 data/search-ops.md
