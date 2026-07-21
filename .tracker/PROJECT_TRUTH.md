@@ -22,6 +22,7 @@
 - The daily clear workflow now refreshes first, selects up to six active high-fit supported-ATS roles with one role per company, generates verified resume/cover-letter artifacts, and records progress in `data/application-clear-state.json` behind a process lock.
 - Question blockers are persisted as `blocked_by_question` with role-scoped context/options and resume through the queue UI; CAPTCHA, MFA, anti-spam, and uncertain submissions use a single dedicated Chrome Beta handoff session and never trigger outreach without confirmation evidence.
 - Queue freshness now has a browserless-first `node queue.mjs health` sweep: ATS API checks, lightweight HTTP checks, optional `--browser` fallback, restricted-source skips, and explicit `--apply` before confirmed expired roles become `stale`.
+- Application artifact preparation now uses the same fixed-host public ATS mapping to fetch fuller Greenhouse, Lever, and Ashby job descriptions before the existing page fallback; manifests record `queue`, `ats-api`, or `live-posting` provenance and the derived client is explicitly read-only.
 - `cv.md` now holds the full long-form CV (published PyPI/npm/MCP packages, the complete project inventory, expanded experience bullets, and Leadership & Community / Awards & Honors sections merged in from `portfolio/dist/docs/Jakye_Amos_Comprehensive_CV.pdf`) instead of a resume-length summary; it still satisfies the `## WORK EXPERIENCE` / `## PROJECTS` header contract that `apply/application-artifacts.mjs` and `resume-contract.mjs` parse, verified by regenerating tailored resume markdown for all six lanes with zero failures.
 
 ## Current Position
@@ -37,6 +38,7 @@
 - ATS adapters now select an approved accomplishment from the project ledger using the queue lane and job description; explicit scoped answers in `data/application-question-ledger.json` override that selection.
 - The queue UI exposes `Clear today's queue`, application progress, question answers/resume, handoff tabs, and sanitized application status through `/api/applications/clear`, `/api/applications/status`, `/api/questions/answer`, `/api/handoffs`, and `/api/handoffs/open`; it reuses the existing queue tab/server surface.
 - `queue.mjs verify` remains structural; `queue.mjs health --limit 100` is a dry-run freshness report, while `queue.mjs health --all --apply` performs the explicit queue-wide stale update. LinkedIn and TeamWork Online alert URLs are never crawled.
+- The application queue remains browser-gated for form interaction; the new browser-free description path does not derive or execute login, CAPTCHA, form-fill, or submission requests.
 
 ## Next Step
 
@@ -47,10 +49,11 @@
 
 ## Validation
 
-- 80 of 82 repository tests pass; the same pre-existing live contact-discovery fixture fails at `tests/contact-discovery.test.mjs:109` (`no_contacts` vs `found`) and one Greenhouse localhost test is sandbox-skipped. The focused queue/application/health slice passes, including five new health tests.
+- 84 of 86 repository tests pass; the same pre-existing live contact-discovery fixture fails at `tests/contact-discovery.test.mjs:109` (`no_contacts` vs `found`) and one Greenhouse localhost test is sandbox-skipped. The focused public-ATS/application/queue/health slice passes (22 tests).
 - The adapter/application syntax checks, `git diff --check`, anti-spam detection tests, queue handoff guard, and state readback pass.
 - Live discovery against the current valid Amazon record completed with 2 public searches, 4 warm-network searches, 19 retained source URLs, 8 ranked candidates, and 0 emails sent.
 - JavaScript syntax checks, `git diff --check`, queue verification, application status, project-ledger source validation, and the no-network application clear and queue health dry runs pass; neither dry run submitted applications or sent outreach.
+- A live read-only smoke against the current Vercel Greenhouse queue item returned 6,585 description characters from `https://boards-api.greenhouse.io/v1/boards/vercel/jobs/6105394004`; no browser or submission path was used.
 - Doctor reports the existing Playwright Chromium installation issue and Playwright MCP warning; the adapters can still target the user’s installed Chrome Beta for visible handoffs, but a bundled Chromium install remains a prerequisite for the fallback browser path.
 - `cv-sync-check.mjs`, `resume-audit.mjs`, and the `resume-audit`/`resume-contract` test suites pass against the rewritten full `cv.md`.
 - New script `generate-full-cv.mjs` renders `cv.md` verbatim (no lane truncation) to `output/Jakye_Amos_Full_CV.pdf` via the same `renderHtmlToPdf` ATS-safe pipeline `apply/application-artifacts.mjs` uses, reusing `templates/cv-template.html`'s CSS; it intentionally bypasses `generate-pdf.mjs`'s CLI-only section-order check (mirroring how the tailored-resume path already calls `renderHtmlToPdf` directly) since the full CV keeps Skills near the top rather than the tailored templates' Skills-last convention.
