@@ -193,6 +193,16 @@ mailboxes, LinkedIn scraping, and TeamWork Online crawling are blocked. LinkedIn
 messages remain drafts for manual sending. Dry-run mode performs no web
 discovery and no network send.
 
+Discovery may also infer a review-only company email convention when it sees
+multiple named employees using the same employer domain across multiple public
+source URLs. It can apply that convention to a separately discovered name as an
+`unverified-hypothesis`, but the hypothesis is deliberately kept out of
+`record.contacts` and the outbox. It becomes eligible only after the exact
+address is independently observed in a public employer-domain source or in a
+first-party Gmail header with its source message ID. Do not validate hypotheses
+by sending test mail, probing SMTP, using data brokers, or scraping blocked
+sites.
+
 ```bash
 node outreach.mjs prepare --application <queue-id> --dry-run
 node outreach.mjs discover --application <queue-id> --dry-run

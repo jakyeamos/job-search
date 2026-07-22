@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { normalizeText, normalizeUrl } from './queue-lib.mjs';
 import { resolveAndValidate } from './plugins/_net.mjs';
+import { buildEmailHypotheses, inferEmailConventions } from './email-conventions.mjs';
 
 const DEFAULT_API_URL = 'https://api.firecrawl.dev';
 const MAX_QUERIES = 2;
@@ -233,6 +234,36 @@ function contactsFromResult(result, item) {
   return contacts;
 }
 
+/** @param {Record<string, unknown>} result @param {Record<string, unknown>} item */
+function candidateFromResult(result, item) {
+  const url = normalizeUrl(stringValue(result.url));
+  if (!url || (!isLinkedInUrl(url) && !parsedUrl(url))) return null;
+  const title = stringValue(result.title);
+  const description = stringValue(result.description);
+  const markdown = stringValue(result.markdown);
+  const evidence = `${title}\n${description}\n${markdown}`;
+  if (!hasEmployerEvidence(evidence, stringValue(item.company))) return null;
+  const identity = isLinkedInUrl(url)
+    ? identityFromText(title, description)
+    : identityFromText(title, markdown || description);
+  if (!identity.name || !identity.title) return null;
+  const sourceType = sourceTypeForUrl(url);
+  return {
+    name: identity.name,
+    title: identity.title,
+    company: stringValue(item.company),
+    email: null,
+    emailVerified: false,
+    guessed: false,
+    private: false,
+    publicProfessional: true,
+    sourceType,
+    sourceUrl: url,
+    profileUrl: isLinkedInUrl(url) ? url : null,
+    roleRelevance: 'high',
+  };
+}
+
 /** @param {Record<string, unknown>} item */
 export function isDiscoverableApplication(item) {
   const company = stringValue(item.company);
@@ -338,6 +369,21 @@ export function extractPublicContacts(results, item) {
   return dedupeContacts(contacts);
 }
 
+/** @param {Array<Record<string, unknown>>} results @param {Record<string, unknown>} item */
+export function extractPublicContactCandidates(results, item) {
+  const candidates = [];
+  for (const result of results) {
+    const namedContacts = contactsFromResult(result, item).filter((contact) => contact.name !== 'Recruiting Team');
+    if (namedContacts.length) {
+      candidates.push(...namedContacts);
+      continue;
+    }
+    const candidate = candidateFromResult(result, item);
+    if (candidate) candidates.push(candidate);
+  }
+  return dedupeContacts(candidates);
+}
+
 /** @param {Array<Record<string, unknown>>} contacts */
 function dedupeContacts(contacts) {
   const deduped = new Map();
@@ -359,6 +405,7 @@ export async function discoverContactsForApplication(item, options = {}) {
     return { status: 'dry_run', reason: 'dry-run does not perform public web discovery', queries, sources: [], contacts: [], errors: [] };
   }
   const contacts = [];
+  const candidates = [];
   const sources = [];
   const errors = [];
   const fetchFn = options.fetchFn || globalThis.fetch;
@@ -381,19 +428,29 @@ export async function discoverContactsForApplication(item, options = {}) {
           } catch { /* search metadata remains useful when a page cannot be scraped */ }
         }
       }
-      contacts.push(...extractPublicContacts([...results, ...hydrated], item));
+      const batch = [...results, ...hydrated];
+      contacts.push(...extractPublicContacts(batch, item));
+      candidates.push(...extractPublicContactCandidates(batch, item));
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error));
     }
   }
   const uniqueSources = [...new Set(sources)].slice(0, 20);
   const uniqueContacts = dedupeContacts(contacts);
+  const uniqueCandidates = dedupeContacts(candidates);
+  const emailConventions = inferEmailConventions(uniqueContacts);
+  const emailHypotheses = buildEmailHypotheses(emailConventions, uniqueCandidates);
+  const reason = uniqueContacts.length
+    ? `found ${uniqueContacts.length} public contact candidate(s)`
+    : 'no eligible public contact found';
   return {
     status: uniqueContacts.length ? 'found' : 'no_contacts',
-    reason: uniqueContacts.length ? `found ${uniqueContacts.length} public contact candidate(s)` : 'no eligible public contact found',
+    reason: `${reason}${emailConventions.length ? `; inferred ${emailConventions.length} review-only email convention(s)` : ''}${emailHypotheses.length ? `; generated ${emailHypotheses.length} unverified email hypothesis/hypotheses` : ''}`,
     queries,
     sources: uniqueSources,
     contacts: uniqueContacts,
+    emailConventions,
+    emailHypotheses,
     errors,
   };
 }

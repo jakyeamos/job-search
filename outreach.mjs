@@ -57,7 +57,7 @@ const APPLICATION_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
 const STATE_PATH = path.join(ROOT, OUTREACH_STATE_PATH);
 const CONTACTS_PATH = path.join(ROOT, OUTREACH_CONTACTS_PATH);
 const CONFIRMATION_QUERY = 'in:anywhere {subject:"application received" subject:"thank you for applying" subject:"thanks for applying" subject:"application submitted" subject:"we received your application"} newer_than:30d';
-const DISCOVERY_PIPELINE_VERSION = 7;
+const DISCOVERY_PIPELINE_VERSION = 8;
 
 /** @typedef {{
  *  verifyAccount: () => Promise<string>,
@@ -104,6 +104,20 @@ function contactsForItem(item, manifest) {
   });
   const embedded = Array.isArray(item.outreach?.contacts) ? item.outreach.contacts : [];
   return Array.isArray(match?.contacts) ? match.contacts : embedded;
+}
+
+/** @param {unknown} previous @param {unknown} fresh @param {string} key */
+function mergeDiscoveryEvidence(previous, fresh, key) {
+  const merged = [];
+  const seen = new Set();
+  for (const value of [...(Array.isArray(previous) ? previous : []), ...(Array.isArray(fresh) ? fresh : [])]) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const identity = String(value[key] || '');
+    if (!identity || seen.has(identity)) continue;
+    seen.add(identity);
+    merged.push(value);
+  }
+  return merged;
 }
 
 /** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {boolean} dryRun @param {Array<Record<string, unknown>>} [discoveredContacts] */
@@ -158,7 +172,7 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
 /** @param {Record<string, unknown>} record @param {Record<string, unknown>} item @param {boolean} dryRun @param {{ gmailClient?: RelationshipClient | null }} [options] */
 async function discoverForRecord(record, item, dryRun, options = {}) {
   if (record.status === 'paused' || record.status === 'suppressed' || record.status === 'needs_application_identity') {
-    return { status: 'skipped', reason: `record status is ${record.status}`, contacts: [], sources: [], queries: [], errors: [] };
+    return { status: 'skipped', reason: `record status is ${record.status}`, contacts: [], emailConventions: [], emailHypotheses: [], sources: [], queries: [], errors: [] };
   }
   if (!isDiscoverableApplication(item)) {
     record.status = 'needs_application_identity';
@@ -170,7 +184,7 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
       sourceCount: 0,
       reason: 'application identity is not specific enough for contact discovery',
     };
-    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', contacts: [], sources: [], queries: [], errors: [] };
+    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', contacts: [], emailConventions: [], emailHypotheses: [], sources: [], queries: [], errors: [] };
   }
   const attemptedAt = String(record.discovery?.attemptedAt || '');
   const attemptedAtMs = new Date(attemptedAt).getTime();
@@ -186,6 +200,8 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
       status: String(record.discovery?.status || 'cached'),
       reason: `cached until ${new Date(cacheExpiresAtMs).toISOString()}`,
       contacts: record.discoveredContacts,
+      emailConventions: Array.isArray(record.discovery?.emailConventions) ? record.discovery.emailConventions : [],
+      emailHypotheses: Array.isArray(record.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [],
       sources: Array.isArray(record.discovery?.sources) ? record.discovery.sources : [],
       queries: Array.isArray(record.discovery?.queries) ? record.discovery.queries : [],
       errors: Array.isArray(record.discovery?.errors) ? record.discovery.errors : [],
@@ -204,11 +220,26 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
       ? 'unavailable'
       : publicResult.status === 'error' || warmResult.status === 'error' || publicResult.errors.length || warmResult.errors.length
         ? 'error'
-        : 'no_contacts';
+      : 'no_contacts';
+  const preservePreviousDiscoveryEvidence = publicResult.status === 'unavailable'
+    || publicResult.status === 'error'
+    || publicResult.errors.length > 0;
+  const emailConventions = mergeDiscoveryEvidence(
+    preservePreviousDiscoveryEvidence ? record.discovery?.emailConventions : [],
+    publicResult.emailConventions,
+    'domain',
+  );
+  const emailHypotheses = mergeDiscoveryEvidence(
+    preservePreviousDiscoveryEvidence ? record.discovery?.emailHypotheses : [],
+    publicResult.emailHypotheses,
+    'email',
+  );
   const result = {
     status,
     reason: [publicResult.reason, warmResult.reason].filter(Boolean).join('; '),
     contacts,
+    emailConventions,
+    emailHypotheses,
     queries: [...publicResult.queries, ...warmResult.gmailQueries, ...warmResult.webQueries],
     sources: [...new Set([...publicResult.sources, ...warmResult.sources])],
     errors: [...new Set([...publicResult.errors, ...warmResult.errors])],
@@ -238,6 +269,8 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
       queries: result.queries,
       sources: result.sources,
       errors: result.errors,
+      emailConventions,
+      emailHypotheses,
       phases: result.phases,
     };
   }
@@ -254,6 +287,13 @@ function printPrepared(item, record) {
     console.log(`    Email: ${contact.email || 'not eligible'}${contact.emailVerified ? ' (verified public professional)' : ''}`);
     if (contact.initial?.subject) console.log(`    Email subject: ${contact.initial.subject}`);
     if (contact.linkedinDraft) console.log(`    LinkedIn draft: ${contact.linkedinDraft}`);
+  }
+  const hypotheses = Array.isArray(record.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [];
+  if (hypotheses.length) {
+    console.log(`  Review-only email hypotheses (${hypotheses.length}; exact verification required before any send):`);
+    for (const hypothesis of hypotheses) {
+      console.log(`    ${hypothesis.name} — ${hypothesis.email} (${hypothesis.convention}, ${hypothesis.conventionConfidence})`);
+    }
   }
 }
 
@@ -841,6 +881,7 @@ async function processOutreach(dryRun) {
       status: discovery.status,
       reason: discovery.reason,
       contacts: Array.isArray(discovery.contacts) ? discovery.contacts.length : 0,
+      emailHypotheses: Array.isArray(discovery.emailHypotheses) ? discovery.emailHypotheses.length : 0,
     })),
     responses,
     warnings,
@@ -937,6 +978,8 @@ function status() {
       nextAttemptAt: record.discovery.nextAttemptAt || null,
       candidateCount: record.discovery.candidateCount || 0,
       sourceCount: record.discovery.sourceCount || 0,
+      conventionCount: Array.isArray(record.discovery.emailConventions) ? record.discovery.emailConventions.length : 0,
+      hypothesisCount: Array.isArray(record.discovery.emailHypotheses) ? record.discovery.emailHypotheses.length : 0,
       reason: record.discovery.reason || '',
     } : null,
     contacts: (record.contacts || []).map((contact) => ({

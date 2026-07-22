@@ -140,3 +140,51 @@ test('live discovery preserves contacts collected from search and scrape results
   assert.equal(calls.filter((url) => url.endsWith('/v2/search')).length, 2);
   assert.equal(calls.filter((url) => url.endsWith('/v2/scrape')).length, 2);
 });
+
+test('live discovery infers a review-only convention without making hypotheses sendable', async () => {
+  const result = await discoverContactsForApplication({
+    ...item,
+    companyWebsite: 'https://example.ai',
+  }, {
+    env: { FIRECRAWL_API_KEY: 'test-key', FIRECRAWL_API_URL: 'https://203.0.113.10' },
+    fetchFn: async (input) => {
+      if (String(input).endsWith('/v2/search')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            web: [
+              {
+                url: 'https://www.linkedin.com/in/taylor-example',
+                title: 'Taylor Example - Engineering Manager - Example AI | LinkedIn',
+                description: 'Engineering Manager at Example AI. Contact: taylor.example@example.ai',
+              },
+              {
+                url: 'https://www.linkedin.com/in/jordan-example',
+                title: 'Jordan Example - Engineering Manager - Example AI | LinkedIn',
+                description: 'Engineering Manager at Example AI. Contact: jordan.example@example.ai',
+              },
+              {
+                url: 'https://www.linkedin.com/in/casey-example',
+                title: 'Casey Example - Technical Recruiter - Example AI | LinkedIn',
+                description: 'Technical Recruiter at Example AI. Contact: casey.example@example.ai',
+              },
+              {
+                url: 'https://www.linkedin.com/in/morgan-example',
+                title: 'Morgan Example - Technical Recruiter - Example AI | LinkedIn',
+                description: 'Technical Recruiter at Example AI',
+              },
+            ],
+          },
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected scrape request: ${String(input)}`);
+    },
+  });
+  assert.equal(result.status, 'found');
+  assert.equal(result.emailConventions.length, 1);
+  assert.equal(result.emailConventions[0].pattern, 'first.last');
+  assert.equal(result.emailHypotheses.length, 1);
+  assert.equal(result.emailHypotheses[0].email, 'morgan.example@example.ai');
+  assert.equal(result.emailHypotheses[0].emailVerified, false);
+  assert.equal(result.emailHypotheses[0].guessed, true);
+});

@@ -113,6 +113,13 @@ uncertain. LinkedIn output remains a manual draft. If discovery cannot identify
 a specific employer from the application evidence, the record is held for
 correction and cannot send.
 
+The processor may show a review-only email hypothesis when at least two named
+public examples support one employer-domain convention across distinct source
+URLs. A hypothesis is not a verified email: it remains marked guessed and
+unverified, is not placed in the sendable contact list, and must be checked
+against exact public evidence or a first-party Gmail header before anyone may
+add it as a contact. Never test a hypothesis by sending mail or probing SMTP.
+
 ---
 
 ## Greeting variant
