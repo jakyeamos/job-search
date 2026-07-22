@@ -44,6 +44,7 @@ import {
   outboxEntryDue,
   outboxNextAttemptAt,
   rankContacts,
+  retainDiscoveryContacts,
   saveOutreachState,
   selectContacts,
   summarizeOutbox,
@@ -195,6 +196,7 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     dryRun,
     gmailClient: options.gmailClient || null,
   });
+  const previousContacts = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
   const contacts = [...publicResult.contacts, ...warmResult.contacts];
   const status = contacts.length
     ? 'found'
@@ -218,14 +220,19 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
   if (!dryRun) {
     const attemptedAtValue = new Date().toISOString();
     const cacheExpiresAt = new Date(Date.now() + discoveryCacheTtlMs(result.status, result.contacts.length)).toISOString();
-    record.discoveredContacts = result.contacts;
+    const preservePreviousContacts = result.status === 'error'
+      || result.status === 'unavailable'
+      || result.errors.length > 0;
+    const persistedContacts = retainDiscoveryContacts(previousContacts, result.contacts, preservePreviousContacts);
+    record.discoveredContacts = persistedContacts;
     record.discovery = {
       pipelineVersion: DISCOVERY_PIPELINE_VERSION,
       status: result.status,
       attemptedAt: attemptedAtValue,
       cacheExpiresAt,
       nextAttemptAt: cacheExpiresAt,
-      candidateCount: result.contacts.length,
+      candidateCount: persistedContacts.length,
+      freshCandidateCount: result.contacts.length,
       sourceCount: result.sources.length,
       reason: result.reason,
       queries: result.queries,

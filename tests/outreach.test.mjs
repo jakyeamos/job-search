@@ -18,6 +18,7 @@ import {
   outboxNextAttemptAt,
   outreachMessageId,
   rankContacts,
+  retainDiscoveryContacts,
   recordSubmissionSignal,
   selectContacts,
   summarizeOutbox,
@@ -185,6 +186,15 @@ test('outbox IDs are deterministic and accepted entries are not recreated', () =
   assert.deepEqual(summarizeOutbox(state), { total: 1, pending: 0, sending: 0, accepted: 1, unknown: 0, failed: 0, blocked: 0 });
   assert.equal(outboxNextAttemptAt('2026-07-18T12:00:00.000Z', 1), '2026-07-18T12:15:00.000Z');
   assert.equal(discoveryCacheTtlMs('no_contacts') < discoveryCacheTtlMs('found'), true);
+  assert.equal(discoveryCacheTtlMs('error', 2), discoveryCacheTtlMs('error'));
+});
+
+test('discovery retains prior candidates when a provider fails', () => {
+  const previous = [verifiedContact({ name: 'Existing Manager', email: null, profileUrl: 'https://example.ai/team/existing' })];
+  const fresh = [verifiedContact({ name: 'Taylor Example', profileUrl: 'https://example.ai/team/taylor' })];
+  assert.equal(retainDiscoveryContacts(previous, [], true).length, 1);
+  assert.equal(retainDiscoveryContacts(previous, fresh, true).length, 2);
+  assert.equal(retainDiscoveryContacts(previous, [], false).length, 0);
 });
 
 test('follow-up date skips weekends', () => {

@@ -253,8 +253,23 @@ export function hasConfirmedSubmission(record) {
 
 /** @param {string} status @param {number} [candidateCount] */
 export function discoveryCacheTtlMs(status, candidateCount = 0) {
-  if (candidateCount > 0 || status === 'found') return DISCOVERY_CACHE_TTLS_MS.found;
+  if (status === 'found' || (candidateCount > 0 && !['error', 'unavailable'].includes(status))) {
+    return DISCOVERY_CACHE_TTLS_MS.found;
+  }
   return DISCOVERY_CACHE_TTLS_MS[status] || DISCOVERY_CACHE_TTLS_MS.error;
+}
+
+/** @param {Array<Record<string, unknown>>} previous @param {Array<Record<string, unknown>>} fresh @param {boolean} preservePrevious */
+export function retainDiscoveryContacts(previous, fresh, preservePrevious) {
+  const candidates = preservePrevious ? [...previous, ...fresh] : fresh;
+  const seen = new Set();
+  return candidates.filter((contact) => {
+    if (!isRecord(contact)) return false;
+    const key = lower(asString(contact.email) || normalizeUrl(asString(contact.profileUrl)) || asString(contact.name));
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** @param {string} recordKey @param {string} contactId @param {'initial'|'followup'} kind @param {string} messageHashValue */
@@ -442,7 +457,11 @@ export function selectContacts(contacts, limit = 2) {
   const selected = [];
   let recruiterSelected = false;
   let hiringManagerSelected = false;
-  for (const contact of contacts) {
+  const ordered = [...contacts].sort((left, right) => {
+    const emailPriority = Number(right.emailEligible === true) - Number(left.emailEligible === true);
+    return emailPriority || (Number(right.score) || 0) - (Number(left.score) || 0);
+  });
+  for (const contact of ordered) {
     if (selected.length >= Math.min(2, Math.max(1, limit))) break;
     if (contact.type === 'recruiter') {
       if (recruiterSelected) continue;

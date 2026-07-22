@@ -7,6 +7,7 @@ import {
   extractPublicContacts,
   isDiscoverableApplication,
 } from '../contact-discovery.mjs';
+import { rankContacts, selectContacts } from '../outreach-lib.mjs';
 
 const item = {
   company: 'Example AI',
@@ -82,10 +83,37 @@ test('LinkedIn result snippets preserve explicitly published employer emails', (
   assert.equal(contacts[0].emailVerified, true);
 });
 
+test('discovery selects an email duo when a public-profile candidate has no email', () => {
+  const contacts = extractPublicContacts([
+    {
+      url: 'https://example.ai/team/taylor',
+      title: 'Taylor Example | Engineering Manager | Example AI',
+      markdown: 'Taylor Example\nEngineering Manager\ntaylor@example.ai',
+    },
+    {
+      url: 'https://example.ai/careers',
+      title: 'Example AI careers',
+      markdown: 'Recruiting team: recruiting@example.ai',
+    },
+    {
+      url: 'https://www.linkedin.com/in/jordan-example',
+      title: 'Jordan Example - Technical Recruiter - Example AI | LinkedIn',
+      description: 'Technical Recruiter at Example AI',
+    },
+  ], item);
+  const selected = selectContacts(rankContacts(contacts, item), 2);
+  assert.equal(selected.length, 2);
+  assert.equal(selected.filter((contact) => contact.emailEligible).length, 2);
+  assert.deepEqual(selected.map((contact) => contact.email).sort(), [
+    'recruiting@example.ai',
+    'taylor@example.ai',
+  ]);
+});
+
 test('live discovery preserves contacts collected from search and scrape results', async () => {
   const calls = [];
   const result = await discoverContactsForApplication(item, {
-    env: { FIRECRAWL_API_KEY: 'test-key', FIRECRAWL_API_URL: 'https://example.com' },
+    env: { FIRECRAWL_API_KEY: 'test-key', FIRECRAWL_API_URL: 'https://203.0.113.10' },
     fetchFn: async (input) => {
       calls.push(String(input));
       if (String(input).endsWith('/v2/search')) {
