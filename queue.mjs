@@ -21,6 +21,7 @@ import {
   applicationKey,
   buildQueue,
   buildQueueItem,
+  isGamblingCandidate,
   loadApplications,
   loadProfile,
   normalizeUrl,
@@ -307,10 +308,19 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
     let candidates = dedupCandidates([...pipelineCandidates, ...publicSources.candidates, ...gmail.candidates]);
     const applications = loadApplications(root);
     candidates = candidates.filter((candidate) => !applications.has(applicationKey(candidate)) && candidate.liveness !== 'expired');
+    const gamblingExcluded = candidates.filter((candidate) => isGamblingCandidate(candidate)).length;
+    candidates = candidates.filter((candidate) => !isGamblingCandidate(candidate));
+    const profile = loadProfile(root);
+    const previousForBuild = {
+      ...previous,
+      items: Array.isArray(previous.items)
+        ? previous.items.filter((item) => !isGamblingCandidate(item))
+        : [],
+    };
     const sourceErrors = [...gmail.errors, ...publicSources.errors];
-    const candidateItems = candidates.map((candidate) => buildQueueItem(candidate, loadProfile(root), root));
+    const candidateItems = candidates.map((candidate) => buildQueueItem(candidate, profile, root));
     const now = new Date().toISOString();
-    const state = buildQueue(candidateItems, previous, { limit, now, retainUnseen: true });
+    const state = buildQueue(candidateItems, previousForBuild, { limit, now, retainUnseen: true });
     const aging = applyPostingAging(state, {
       now,
       sourceScanHealthy: sourceErrors.length === 0 && !skipPublic,
@@ -325,6 +335,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
         public: { candidates: publicSources.candidates.length, errors: publicSources.errors.length },
       },
       errors: sourceErrors,
+      exclusions: { gambling: gamblingExcluded },
       aging,
     };
     if (!dryRun) saveQueue(root, state);

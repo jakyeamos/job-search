@@ -164,10 +164,12 @@ test('public liveness treats redirects as active without following them', async 
   assert.equal(calls, 1);
 });
 
-test('queue scoring excludes senior and defense roles', () => {
+test('queue scoring excludes senior, defense, and gambling roles', () => {
   const senior = scoreCandidate({ title: 'Senior Backend Engineer', location: 'Remote US', liveness: 'active' }, {});
   const defense = scoreCandidate({ title: 'Software Engineer', description: 'Requires active security clearance', location: 'Remote US', liveness: 'active' }, {});
   const defenseEmployer = scoreCandidate({ company: 'Palantir', title: 'Software Engineer - Apollo Platform', location: 'Seattle, WA', liveness: 'active' }, {});
+  const gambling = scoreCandidate({ company: 'PrizePicks', title: 'Data Engineer', url: 'https://www.teamworkonline.com/sports-technology-jobs/prize-picks/prizepicks-jobs/data-engineer-2176697', location: 'Atlanta, GA', liveness: 'active' }, {});
+  const legitimateFlutterStack = scoreCandidate({ company: 'Example AI', title: 'Software Engineer', description: 'Build mobile interfaces with Flutter', location: 'Remote US', liveness: 'active' }, {});
   const legitimateAgi = scoreCandidate({ company: 'Amazon', title: 'ML Data Associate, Artificial General Intelligence', location: 'Remote US', liveness: 'active' }, {});
   const abroad = scoreCandidate({ company: 'Example AI', title: 'Software Engineer', location: 'Dubai, United Arab Emirates', liveness: 'active' }, {});
   const stockholm = scoreCandidate({ company: 'Example AI', title: 'Data Platform Engineer', location: 'Stockholm', liveness: 'active' }, {});
@@ -176,6 +178,9 @@ test('queue scoring excludes senior and defense roles', () => {
   assert.equal(senior.eligible, false);
   assert.equal(defense.eligible, false);
   assert.equal(defenseEmployer.eligible, false);
+  assert.equal(gambling.eligible, false);
+  assert.equal(gambling.blockers.some((blocker) => blocker.includes('gambling')), true);
+  assert.equal(legitimateFlutterStack.eligible, true);
   assert.equal(legitimateAgi.blockers.some((blocker) => blocker.includes('defense')), false);
   assert.equal(abroad.eligible, false);
   assert.equal(stockholm.eligible, true);
