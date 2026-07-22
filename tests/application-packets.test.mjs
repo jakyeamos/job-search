@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildPacketMarkdown, packetFreshnessGate, packetPathsForItem } from '../apply/application-packets.mjs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { buildApplicationPacket, buildPacketMarkdown, packetFreshnessGate, packetPathsForItem } from '../apply/application-packets.mjs';
 
 test('packet paths are stable and separated from application artifacts', () => {
   const item = { id: 'q1', company: 'Acme', title: 'Backend Engineer', applyUrl: 'https://jobs.example/acme/1' };
@@ -42,4 +46,96 @@ test('packet freshness gate blocks aged roles and warns on recheck-due roles', (
   }, '2026-07-21T00:00:00.000Z');
   assert.equal(due.ok, true);
   assert.match(due.warning, /recheck is due/);
+});
+
+test('packet dry-run inspects questions without writing ledger, packet, or artifacts', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-dry-run-'));
+  try {
+    const ledgerPath = path.join(root, 'question-ledger.json');
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+    const beforeLedger = readFileSync(ledgerPath, 'utf8');
+    const item = {
+      id: 'packet-dry-run',
+      company: 'Acme',
+      title: 'Backend Engineer',
+      location: 'New York, NY',
+      applyUrl: 'https://jobs.example/acme/backend',
+      canonicalUrl: 'https://jobs.example/acme/backend',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build Python and TypeScript backend services, REST APIs, data pipelines, PostgreSQL workflows, automated tests, and reliable production systems with product and engineering partners.',
+    };
+    const inspection = {
+      url: item.applyUrl,
+      title: 'Apply — Acme',
+      heading: 'Backend Engineer',
+      formCount: 1,
+      formReady: true,
+      controls: [{
+        id: 'snack',
+        label: 'What is your preferred office snack?',
+        kind: 'text',
+        type: 'text',
+        category: 'question',
+        required: true,
+        options: [],
+      }],
+      buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+      pages: [],
+      manualSignals: [],
+      blocked: false,
+      blockedReason: '',
+    };
+
+    const packet = await buildApplicationPacket(item, {
+      inspection,
+      ledgerPath,
+      outputRoot: root,
+      dryRun: true,
+      generateArtifacts: true,
+    });
+    assert.equal(packet.ok, true);
+    assert.equal(packet.status, 'needs-user-input');
+    assert.equal(packet.unresolved.length, 1);
+    assert.match(packet.warnings.join('\n'), /dry-run/);
+    assert.equal(readFileSync(ledgerPath, 'utf8'), beforeLedger);
+    assert.equal(existsSync(packet.paths.json), false);
+    assert.deepEqual(packet.artifacts.resumePdf, '');
+    assert.deepEqual(packet.artifacts.coverLetterText, '');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('packet blocks incomplete posting evidence instead of presenting it as ready', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-blocked-'));
+  try {
+    const packet = await buildApplicationPacket({
+      id: 'packet-missing-description',
+      company: 'Acme',
+      title: 'Backend Engineer',
+      applyUrl: 'https://jobs.example/acme/backend',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Short listing.',
+    }, {
+      inspection: {
+        url: 'https://jobs.example/acme/backend',
+        title: 'Apply — Acme',
+        heading: 'Backend Engineer',
+        formCount: 1,
+        formReady: true,
+        controls: [],
+        buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+        pages: [],
+      },
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.equal(packet.ok, true);
+    assert.equal(packet.status, 'blocked');
+    assert.match(packet.warnings.join('\n'), /job description is missing or too short/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

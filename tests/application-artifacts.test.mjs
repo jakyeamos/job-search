@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
   artifactPathsForItem,
+  assessResumeReuse,
   buildCoverLetter,
   generateApplicationArtifacts,
   laneForItem,
@@ -143,4 +144,68 @@ test('cover letter builder stays grounded in selected projects', () => {
   assert.match(cover.text, /pilot-ready knowledge platform/);
   assert.match(cover.text, /REST APIs/);
   assert.doesNotMatch(cover.text, /customers|revenue|completed pilots/i);
+});
+
+test('resume reuse requires an audited artifact and current evidence', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-resume-reuse-'));
+  try {
+    const item = fixtureItem({ id: 'reuse-role', liveness: 'active' });
+    const generated = await generateApplicationArtifacts(item, {
+      outputRoot: root,
+      renderPdf: false,
+      fetchJobDescription: false,
+    });
+    const output = artifactPathsForItem(item, { outputRoot: root });
+    const manifest = JSON.parse(readFileSync(output.manifest, 'utf8'));
+    const pdf = path.join(root, 'audited-resume.pdf');
+    writeFileSync(pdf, '%PDF-1.7 fixture');
+    manifest.status = 'ready';
+    manifest.resume.pdfPath = pdf;
+    manifest.resume.audit = { passed: true, errors: [], warnings: [] };
+    writeFileSync(output.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const decision = assessResumeReuse(item, { outputRoot: root, description: item.description });
+    assert.equal(decision.decision, 'reuse');
+    assert.equal(decision.artifactPath, pdf);
+    assert.match(decision.reasonCodes.join(','), /evidence-current/);
+    assert.equal(generated.ok, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('material artifact changes create one history snapshot while same-content rebuilds do not', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-artifact-history-'));
+  try {
+    const item = fixtureItem({ id: 'history-role' });
+    const first = await generateApplicationArtifacts(item, {
+      outputRoot: root,
+      renderPdf: false,
+      fetchJobDescription: false,
+    });
+    assert.equal(first.ok, true);
+    const same = await generateApplicationArtifacts(item, {
+      outputRoot: root,
+      renderPdf: false,
+      fetchJobDescription: false,
+      force: true,
+    });
+    const sameManifest = JSON.parse(readFileSync(same.manifestPath, 'utf8'));
+    assert.equal(sameManifest.history.length, 0);
+
+    const changed = await generateApplicationArtifacts({
+      ...item,
+      description: `${item.description} Own incident response and observability for production services.`,
+    }, {
+      outputRoot: root,
+      renderPdf: false,
+      fetchJobDescription: false,
+      force: true,
+    });
+    const changedManifest = JSON.parse(readFileSync(changed.manifestPath, 'utf8'));
+    assert.equal(changedManifest.history.length, 1);
+    assert.equal(existsSync(changedManifest.history[0].paths.resumeMarkdown), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

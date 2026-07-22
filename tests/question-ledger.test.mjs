@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import test from 'node:test';
@@ -7,10 +7,12 @@ import assert from 'node:assert/strict';
 import {
   answerQuestion,
   answerTable,
+  answerReference,
   findReusableAnswer,
   isSensitiveQuestion,
   loadLedger,
   lookupAnswer,
+  pendingQuestions,
   recordQuestion,
 } from '../apply/question-ledger.mjs';
 
@@ -109,6 +111,70 @@ test('different semantic questions do not collapse into one ledger entry', () =>
     recordQuestion(file, 'Where do you plan to work from?', { fieldKind: 'text' });
     recordQuestion(file, 'What is your expected salary?', { fieldKind: 'text' });
     assert.equal(loadLedger(file).entries.length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('adapter-observed answers are not reusable until the user confirms them', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-unconfirmed-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    writeFileSync(file, JSON.stringify({
+      schemaVersion: 1,
+      entries: [{
+        id: 'q_adapter',
+        question: 'Do you require sponsorship?',
+        status: 'answered',
+        answer: 'No',
+        source: 'adapter:greenhouse',
+      }],
+    }));
+    const ledger = loadLedger(file);
+    assert.equal(ledger.entries[0].answerStatus, 'unconfirmed');
+    assert.equal(lookupAnswer('Do you require sponsorship?', ledger), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('confirmed answers receive stable versioned references and pending questions group contexts', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-refs-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const first = recordQuestion(file, 'What is your preferred start date?', {
+      company: 'Acme', role: 'Backend Engineer', url: 'https://jobs.example/acme/1', queueId: 'q1',
+    });
+    recordQuestion(file, first.question, {
+      company: 'Beta', role: 'Platform Engineer', url: 'https://jobs.example/beta/2', queueId: 'q2',
+    });
+    assert.equal(pendingQuestions(loadLedger(file)).length, 1);
+    assert.equal(pendingQuestions(loadLedger(file))[0].contexts.length, 2);
+
+    const v1 = answerQuestion(file, first.id, 'Immediately', { scope: 'question' });
+    assert.equal(v1.answerVersion, 1);
+    assert.equal(answerReference(v1), `question-ledger:${first.id}@v1`);
+    const v2 = answerQuestion(file, first.id, 'Two weeks', { scope: 'question' });
+    assert.equal(v2.answerVersion, 2);
+    assert.equal(answerReference(v2), `question-ledger:${first.id}@v2`);
+    assert.equal(findReusableAnswer(first.question, loadLedger(file))?.answerRef, `question-ledger:${first.id}@v2`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('conflicting company-scoped answers remain isolated behind one question id', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-conflicts-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const entry = recordQuestion(file, 'Which office would you work from?', {});
+    answerQuestion(file, entry.id, 'Buffalo', { scope: 'company', company: 'Acme' });
+    answerQuestion(file, entry.id, 'New York', { scope: 'company', company: 'Beta' });
+    const ledger = loadLedger(file);
+    assert.equal(lookupAnswer(entry.question, ledger, { company: 'Acme' }), 'Buffalo');
+    assert.equal(lookupAnswer(entry.question, ledger, { company: 'Beta' }), 'New York');
+    assert.equal(lookupAnswer(entry.question, ledger, { company: 'Other' }), null);
+    assert.deepEqual(answerTable(ledger, { company: 'Acme' }).map((row) => row.value), ['Buffalo']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

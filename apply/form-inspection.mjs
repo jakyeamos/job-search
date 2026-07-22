@@ -30,9 +30,10 @@ export function applicationAdapter(url) {
  * Inspect the rendered form without filling controls, selecting options,
  * uploading files, clicking buttons, or reading current values.
  * @param {import('playwright').Page} page
+ * @param {{ expectedTitle?: string }} [options]
  */
-export async function inspectApplicationPage(page) {
-  const report = await page.evaluate(() => {
+export async function inspectApplicationPage(page, options = {}) {
+  const report = await page.evaluate((expectedTitle) => {
     const compact = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const cleanLabel = (value) => compact(value).replace(/[\u2731*]+$/g, '').trim();
     const fieldContainer = (el) => el.closest(
@@ -164,15 +165,31 @@ export async function inspectApplicationPage(page) {
       controls.push(field);
     }
 
-    const buttons = Array.from(document.querySelectorAll('button, input[type="submit"]'))
+    const buttonNodes = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
+    const buttons = buttonNodes
       .filter(visible)
-      .map((el) => ({
-        text: compact(el.textContent || el.getAttribute('value') || el.getAttribute('aria-label')),
+      .map((el) => {
+        const text = compact(el.textContent || el.getAttribute('value') || el.getAttribute('aria-label'));
+        return {
+        text,
         type: el.getAttribute('type') || '',
-        submitLike: /submit|apply(?: now)?|send application/i.test(compact(el.textContent || el.getAttribute('value') || el.getAttribute('aria-label'))),
+        submitLike: /submit|apply(?: now)?|send application|finish|complete application/i.test(text),
+        nextLike: /^(next|continue|save and continue|go to next|review application|proceed)\b/i.test(text),
+        blockedLike: /captcha|recaptcha|hcaptcha|verification|multi[- ]factor|one[- ]time password|sign in|log in/i.test(text),
         disabled: Boolean(el.disabled),
-      }))
+        };
+      })
       .filter((button) => button.text);
+    const bodyText = compact(document.body?.innerText || '');
+    const titleVisible = expectedTitle
+      ? [document.title, document.querySelector('h1')?.textContent, bodyText]
+        .map(compact)
+        .some((value) => value.toLowerCase().includes(compact(expectedTitle).toLowerCase()))
+      : Boolean(compact(document.title) || compact(document.querySelector('h1')?.textContent));
+    const authRequired = /(?:sign|log)\s*in|create an account|register to apply|account required/i.test(bodyText)
+      && Boolean(document.querySelector('input[type="password"], input[autocomplete="username"], input[autocomplete="email"]'));
+    const challengeDetected = /captcha|recaptcha|hcaptcha|verify you are human|one[- ]time password|multi[- ]factor|identity verification/i.test(bodyText)
+      || controls.some((control) => Boolean(control.manualReason && /captcha|identity verification/i.test(control.manualReason)));
     const manualSignals = [...new Set([
       ...controls.map((control) => control.manualReason).filter(Boolean),
       ...buttons.map((button) => /captcha|recaptcha|hcaptcha|verification|multi[- ]factor/i.test(button.text) ? button.text : '').filter(Boolean),
@@ -184,10 +201,90 @@ export async function inspectApplicationPage(page) {
       controls,
       buttons,
       manualSignals,
+      titleVisible,
+      authRequired,
+      challengeDetected,
       formReady: controls.length > 0 && (document.querySelectorAll('form').length > 0
         || buttons.some((button) => button.submitLike)
         || Boolean(document.querySelector('[class*="application-form" i], [data-testid*="application" i]'))),
     };
-  });
+  }, String(options.expectedTitle || ''));
   return { url: page.url(), ...report };
+}
+
+/**
+ * Traverse only safe, local form steps. The traversal never reads current
+ * values and never fills, selects, uploads, submits, or follows external
+ * navigation controls.
+ * @param {import('playwright').Page} page
+ * @param {{ maxPages?: number, settleMs?: number, expectedTitle?: string }} [options]
+ */
+export async function inspectApplicationFlow(page, options = {}) {
+  const maxPages = Math.max(1, Math.min(Number(options.maxPages || 8), 20));
+  const pages = [];
+  const warnings = [];
+  const visited = new Set();
+  let blockedReason = '';
+
+  for (let index = 0; index < maxPages; index += 1) {
+    const inspection = await inspectApplicationPage(page, { expectedTitle: options.expectedTitle });
+    const identity = JSON.stringify({
+      url: inspection.url,
+      title: inspection.title,
+      heading: inspection.heading,
+      controls: (inspection.controls || []).map((control) => [control.label, control.kind, control.required]),
+      buttons: (inspection.buttons || []).map((button) => [button.text, button.nextLike, button.submitLike]),
+    });
+    if (visited.has(identity)) {
+      warnings.push('read-only form traversal stopped because the page repeated');
+      break;
+    }
+    visited.add(identity);
+    pages.push(inspection);
+
+    if (inspection.authRequired) {
+      blockedReason = 'login or account verification is required before the application form can be inspected';
+      break;
+    }
+    if (inspection.challengeDetected) {
+      blockedReason = 'CAPTCHA, MFA, or identity verification was detected; complete it manually';
+      break;
+    }
+
+    const nextIndex = (inspection.buttons || []).findIndex((button) => button.nextLike && !button.disabled && !button.submitLike && !button.blockedLike);
+    if (nextIndex < 0) break;
+    const requiredControls = (inspection.controls || []).filter((control) => control.required === true);
+    if (requiredControls.length) {
+      blockedReason = 'required application fields are present; fill them manually before continuing to the next page';
+      break;
+    }
+
+    try {
+      const buttons = page.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible');
+      const button = buttons.nth(nextIndex);
+      await button.click({ timeout: 3_000 });
+      await Promise.race([
+        page.waitForLoadState('domcontentloaded', { timeout: 2_000 }).catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, options.settleMs || 250)),
+      ]);
+    } catch (error) {
+      blockedReason = `read-only form traversal could not continue: ${error instanceof Error ? error.message : String(error)}`;
+      break;
+    }
+  }
+
+  if (pages.length >= maxPages && !blockedReason && pages.length > 0) {
+    warnings.push(`read-only form traversal stopped at the ${maxPages}-page safety limit`);
+  }
+  const current = pages[pages.length - 1] || {
+    url: page.url(), title: '', heading: '', controls: [], buttons: [], formReady: false,
+  };
+  return {
+    ...current,
+    pages,
+    pageCount: pages.length,
+    blocked: Boolean(blockedReason),
+    blockedReason,
+    warnings,
+  };
 }

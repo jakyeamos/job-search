@@ -23,11 +23,14 @@ import {
   findReusableAnswer,
   isSensitiveQuestion,
   loadLedger,
-  recordQuestion,
+  pendingQuestions,
+  recordQuestionInLedger,
+  saveLedger,
 } from './question-ledger.mjs';
 import { selectProjectAccomplishment } from '../project-accomplishment-ledger.mjs';
-import { generateApplicationArtifacts, jobHash } from './application-artifacts.mjs';
-import { inspectApplicationPage, applicationAdapter, normalizeApplicationUrl } from './form-inspection.mjs';
+import { assessResumeReuse, generateApplicationArtifacts, jobHash } from './application-artifacts.mjs';
+import { auditHumanizedText } from './application-humanizer.mjs';
+import { inspectApplicationFlow, applicationAdapter, normalizeApplicationUrl } from './form-inspection.mjs';
 import { readQueueState } from '../queue-lib.mjs';
 import { postingFreshness } from '../queue-aging.mjs';
 
@@ -54,7 +57,8 @@ function shortHash(value) {
 /** @param {Record<string, unknown>} item @param {{ outputRoot?: string }} [options] */
 export function packetPathsForItem(item, options = {}) {
   const target = `${item.company || 'company'} ${item.title || 'role'}`;
-  const identity = shortHash(`${item.id || ''}\n${item.applyUrl || item.canonicalUrl || ''}\n${item.company || ''}\n${item.title || ''}`);
+  const canonical = String(item.canonicalUrl || item.applyUrl || '').replace(/[?#].*$/, '');
+  const identity = shortHash(canonical || `${item.company || ''}\n${item.title || ''}`);
   const directory = path.join(options.outputRoot || DEFAULT_PACKET_ROOT, `${slug(target)}-${identity}`);
   return {
     directory,
@@ -116,8 +120,56 @@ function shouldRecord(control) {
   return control.category === 'question' && !EEO_LABEL_RE.test(label) && !MARKETING_RE.test(label);
 }
 
-/** @param {Record<string, unknown>} control @param {Record<string, unknown>} item @param {Record<string, unknown>} profile @param {{ entries: Array<Record<string, unknown>> }} ledger */
-function answerForControl(control, item, profile, ledger) {
+/** @param {Record<string, unknown>} control */
+function isNarrativeControl(control) {
+  if (!['text', 'textarea'].includes(String(control.kind || control.type || '').toLowerCase())) return false;
+  const label = String(control.label || '');
+  return control.category === 'question'
+    && !/first name|last name|full name|legal name|email|phone|linkedin|github|portfolio|website|location|salary|compensation|authorization|sponsor|visa|consent|gender|race|veteran|disabilit|captcha|mfa|verification|attest|background|criminal|conviction/i.test(label);
+}
+
+/** @param {string} file */
+function loadAnswerDrafts(file) {
+  if (!file || !existsSync(file)) return { questions: [], coverLetter: null };
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    return {
+      questions: Array.isArray(parsed?.questions) ? parsed.questions.filter((entry) => entry && typeof entry === 'object') : [],
+      coverLetter: parsed?.coverLetter && typeof parsed.coverLetter === 'object' ? parsed.coverLetter : null,
+    };
+  } catch {
+    return { questions: [], coverLetter: null, warning: `answer draft file could not be read: ${file}` };
+  }
+}
+
+/** @param {Record<string, unknown>} control @param {{ questions: Array<Record<string, unknown>> }} drafts */
+function draftForControl(control, drafts) {
+  const label = String(control.label || '').toLowerCase();
+  return drafts.questions.find((entry) => String(entry.questionId || '') === String(control.questionId || '')
+    || String(entry.question || '').trim().toLowerCase() === label) || null;
+}
+
+/** @param {Record<string, unknown>} draft */
+function answerFromDraft(draft) {
+  if (!draft?.draft) return null;
+  const rawAnswer = String(draft.draft);
+  const humanized = draft.humanized ? String(draft.humanized) : '';
+  const humanization = humanized ? auditHumanizedText(rawAnswer, humanized) : auditHumanizedText(rawAnswer, '');
+  const answer = humanization.passed ? humanized : rawAnswer;
+  return {
+    answer,
+    rawAnswer,
+    humanizedAnswer: humanized || null,
+    approvedAnswer: draft.approved === true && humanization.passed ? answer : null,
+    source: 'application-coaching-draft',
+    kind: humanization.passed ? 'humanized' : 'draft',
+    evidenceRefs: Array.isArray(draft.evidenceRefs) ? draft.evidenceRefs.map(String) : [],
+    humanization,
+  };
+}
+
+/** @param {Record<string, unknown>} control @param {Record<string, unknown>} item @param {Record<string, unknown>} profile @param {{ entries: Array<Record<string, unknown>> }} ledger @param {{ drafts?: { questions: Array<Record<string, unknown>> } }} [options] */
+function answerForControl(control, item, profile, ledger, options = {}) {
   const label = String(control.label || '');
   const sensitivity = isSensitiveQuestion(label) ? 'high' : 'normal';
   const reusable = findReusableAnswer(label, ledger, {
@@ -131,13 +183,21 @@ function answerForControl(control, item, profile, ledger) {
   if (reusable) {
     return {
       answer: reusable.answer,
-      source: `question-ledger:${reusable.entry.id}`,
+      source: reusable.answerRef || `question-ledger:${reusable.entry.id}`,
+      answerRef: reusable.answerRef || null,
+      kind: 'confirmed',
       reuse: {
         matchType: reusable.matchType,
         confidence: reusable.confidence,
         matchedQuestion: reusable.entry.question,
       },
     };
+  }
+
+  const coachingDraft = options.drafts ? draftForControl(control, options.drafts) : null;
+  if (coachingDraft && isNarrativeControl(control)) {
+    const drafted = answerFromDraft(coachingDraft);
+    if (drafted) return drafted;
   }
 
   const accomplishment = selectProjectAccomplishment({
@@ -151,22 +211,24 @@ function answerForControl(control, item, profile, ledger) {
     return {
       answer: String(accomplishment.answer),
       source: `project-accomplishment:${accomplishment.id}`,
+      kind: isNarrativeControl(control) ? 'draft' : 'verified-evidence',
+      evidenceRefs: [`project-accomplishment:${accomplishment.id}`],
       reuse: { matchType: 'job-aware-project-selection', confidence: Number(accomplishment.score || 0) },
     };
   }
 
   const profileValue = profileAnswer(profile, label) || profileQuestionAnswer(profile, label);
-  if (profileValue) return profileValue;
+  if (profileValue) return { ...profileValue, kind: 'verified-profile' };
 
   const common = answerFor(label, [commonQuestions(profile)]);
-  if (common !== null) return { answer: common, source: 'profile:common-question-rule', sensitive: sensitivity === 'high' };
+  if (common !== null) return { answer: common, source: 'profile:common-question-rule', kind: 'verified-profile', sensitive: sensitivity === 'high' };
   return null;
 }
 
-/** @param {Record<string, unknown>} item @param {Record<string, unknown>} control @param {Record<string, unknown>} metadata @param {string} ledgerPath */
-function recordFormQuestion(item, control, metadata, ledgerPath) {
+/** @param {Record<string, unknown>} item @param {Record<string, unknown>} control @param {Record<string, unknown>} metadata @param {{ entries: Array<Record<string, unknown>> }} ledger */
+function recordFormQuestion(item, control, metadata, ledger) {
   if (!shouldRecord(control)) return null;
-  return recordQuestion(ledgerPath, String(control.label || ''), {
+  return recordQuestionInLedger(ledger, String(control.label || ''), {
     company: item.company,
     role: item.title,
     url: item.applyUrl || item.canonicalUrl,
@@ -181,18 +243,46 @@ function recordFormQuestion(item, control, metadata, ledgerPath) {
   });
 }
 
-/** @param {Record<string, unknown>} item @param {Record<string, unknown>} inspection @param {Record<string, unknown>} profile @param {string} ledgerPath */
-function buildQuestions(item, inspection, profile, ledgerPath) {
+/** @param {Record<string, unknown>} inspection */
+function inspectionControls(inspection) {
+  const pages = Array.isArray(inspection.pages) && inspection.pages.length ? inspection.pages : [inspection];
+  return pages.flatMap((page, pageIndex) => (page.controls || []).map((control) => ({
+    ...control,
+    pageIndex,
+    pageUrl: page.url || inspection.url || '',
+  })));
+}
+
+/** @param {Record<string, unknown>} item @param {Record<string, unknown>} inspection */
+function applicationEvidenceGate(item, inspection) {
+  const pages = Array.isArray(inspection.pages) && inspection.pages.length ? inspection.pages : [inspection];
+  const expectedTitle = normalize(String(item.title || ''));
+  const titleVisible = pages.some((page) => page.titleVisible === true || (
+    expectedTitle
+      ? [page.heading, page.title].some((value) => normalize(String(value || '')).toLowerCase().includes(expectedTitle.toLowerCase()))
+      : [page.heading, page.title].some((value) => normalize(String(value || '')))
+  ));
+  const formReady = pages.some((page) => page.formReady === true);
+  const reasons = [];
+  if (!expectedTitle || !titleVisible) reasons.push('the active posting title was not visible in the inspected application flow');
+  if (normalize(String(item.description || '')).length < 120) reasons.push('the job description is missing or too short to verify this application safely');
+  if (!formReady) reasons.push('no application form or application path was detected');
+  return { ok: reasons.length === 0, reasons, titleVisible, formReady };
+}
+
+/** @param {Record<string, unknown>} item @param {Record<string, unknown>} inspection @param {Record<string, unknown>} profile @param {string} ledgerPath @param {{ persistLedger?: boolean, drafts?: { questions: Array<Record<string, unknown>> } }} [options] */
+function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
+  const ledger = loadLedger(ledgerPath);
   const recorded = [];
-  for (const control of inspection.controls || []) {
-    const entry = recordFormQuestion(item, control, { reason: manualReason(control) }, ledgerPath);
+  const controls = inspectionControls(inspection);
+  for (const control of controls) {
+    const entry = recordFormQuestion(item, control, { reason: manualReason(control) }, ledger);
     if (entry) recorded.push({ control, entry });
   }
-  const ledger = loadLedger(ledgerPath);
   const questions = [];
   const artifacts = [];
   const manual = [];
-  for (const control of inspection.controls || []) {
+  for (const control of controls) {
     const label = String(control.label || 'Unlabeled field');
     if (control.category === 'artifact' || control.kind === 'file') {
       artifacts.push({
@@ -209,8 +299,13 @@ function buildQuestions(item, inspection, profile, ledgerPath) {
     if (manualFieldReason) {
       manual.push({ label, required: control.required === true, reason: manualFieldReason, options: control.options || [] });
     }
-    const resolved = manualFieldReason ? null : answerForControl(control, item, profile, ledger);
+    const resolved = manualFieldReason ? null : answerForControl(control, item, profile, ledger, options);
     const answer = resolved?.answer || null;
+    const status = manualFieldReason ? 'manual'
+      : resolved?.approvedAnswer ? 'approved'
+        : resolved?.kind === 'humanized' ? 'humanized'
+        : resolved?.kind === 'draft' ? 'draft'
+          : answer !== null ? 'confirmed' : 'unanswered';
     questions.push({
       id: entry?.id || null,
       question: label,
@@ -219,17 +314,30 @@ function buildQuestions(item, inspection, profile, ledgerPath) {
       options: Array.isArray(control.options) ? control.options : [],
       category: control.category || 'question',
       answer,
-      status: manualFieldReason ? 'manual' : answer !== null ? 'known' : 'unanswered',
+      rawAnswer: resolved?.rawAnswer || (resolved?.kind === 'draft' ? answer : null),
+      humanizedAnswer: resolved?.humanizedAnswer || null,
+      approvedAnswer: resolved?.approvedAnswer || null,
+      status,
       source: resolved?.source || null,
+      answerRef: resolved?.answerRef || null,
+      provenance: {
+        source: resolved?.source || null,
+        evidenceRefs: resolved?.evidenceRefs || [],
+        answerRef: resolved?.answerRef || null,
+      },
+      humanization: resolved?.humanization || { status: 'not-applicable', passed: true, errors: [] },
       reuse: resolved?.reuse || null,
       sensitivity: isSensitiveQuestion(label) ? 'high' : 'normal',
       occurrence: {
         id: control.id || null,
         name: control.name || null,
         fieldPath: control.fieldPath || null,
+        pageIndex: control.pageIndex,
+        pageUrl: control.pageUrl || null,
       },
     });
   }
+  if (options.persistLedger !== false) saveLedger(ledgerPath, ledger);
   return { questions, artifacts, manual, ledger };
 }
 
@@ -270,6 +378,7 @@ export function buildPacketMarkdown(packet) {
     `- Application: ${target.url || 'Not available'}`,
     `- Adapter: ${target.adapter || 'unknown'}`,
     `- Packet status: ${packet.status || 'needs-review'}`,
+    `- Resume decision: ${packet.resumeDecision?.decision || packet.artifacts?.resumeDecision || 'not assessed'}`,
     '',
   ];
   const warnings = Array.isArray(packet.warnings) ? packet.warnings : [];
@@ -282,8 +391,11 @@ export function buildPacketMarkdown(packet) {
   if (!artifacts.resumePdf && !artifacts.coverLetterPdf && !artifacts.coverLetterText) lines.push('- No generated artifacts are available; attach them manually.');
   lines.push('', '## Copy/paste answers', '');
   const questions = Array.isArray(packet.questions) ? packet.questions : [];
-  for (const question of questions.filter((entry) => entry.status === 'known' && entry.answer !== null)) {
-    lines.push(`### ${question.question}`, '', `Answer: ${question.answer}`, `Source: ${question.source || 'verified ledger'}`, '');
+  for (const question of questions.filter((entry) => ['known', 'confirmed', 'approved', 'humanized', 'draft'].includes(entry.status) && entry.answer !== null)) {
+    lines.push(`### ${question.question}`, '', `Answer: ${question.answer}`, `Status: ${question.status}`, `Source: ${question.source || 'verified ledger'}`);
+    if (question.answerRef) lines.push(`Answer reference: ${question.answerRef}`);
+    if (question.rawAnswer && question.humanizedAnswer) lines.push(`Raw draft: ${question.rawAnswer}`, `Humanized: ${question.humanizedAnswer}`);
+    lines.push('');
   }
   const unresolved = Array.isArray(packet.unresolved) ? packet.unresolved : [];
   lines.push('## Questions waiting for you', '');
@@ -291,9 +403,18 @@ export function buildPacketMarkdown(packet) {
   for (const question of unresolved) {
     lines.push(`### ${question.question}`, '', `Required: ${question.required ? 'yes' : 'no'}`, `Answer: [your answer]`);
     if (question.options?.length) lines.push(`Options: ${question.options.join(' | ')}`);
-    if (question.id) lines.push(`Ledger id: ${question.id}`);
+    if (question.id) lines.push(`Question id: ${question.id}`);
+    if (question.answerRef) lines.push(`Canonical answer reference: ${question.answerRef}`);
     lines.push('');
   }
+  const reviewItems = Array.isArray(packet.reviewItems) ? packet.reviewItems : [];
+  if (reviewItems.length) {
+    lines.push('## Drafts needing human review', '');
+    for (const item of reviewItems) lines.push(`- ${item.question}: ${item.reason || 'review before copying'}`);
+    lines.push('');
+  }
+  const research = Array.isArray(packet.research?.references) ? packet.research.references : [];
+  if (research.length) lines.push('## Research references', '', ...research.map((reference) => `- ${reference}`), '');
   const manual = Array.isArray(packet.manualItems) ? packet.manualItems : [];
   lines.push('## Human-only checks', '');
   if (!manual.length) lines.push('- Review the form and final submission control.');
@@ -302,62 +423,125 @@ export function buildPacketMarkdown(packet) {
   return `${lines.join('\n').trim()}\n`;
 }
 
-/** @param {Record<string, unknown>} item @param {{ browser?: string, headed?: boolean, cdpEndpoint?: string, ledgerPath?: string, profilePath?: string, outputRoot?: string, generateArtifacts?: boolean }} [options] */
+/** @param {Record<string, unknown>} item @param {{ browser?: string, headed?: boolean, cdpEndpoint?: string, ledgerPath?: string, profilePath?: string, outputRoot?: string, generateArtifacts?: boolean, generateCoverLetter?: boolean, dryRun?: boolean, inspection?: Record<string, unknown>, maxPages?: number, answersPath?: string, drafts?: { questions: Array<Record<string, unknown>>, coverLetter?: Record<string, unknown> }, researchReferences?: string[], jackCoaching?: Record<string, unknown> }} [options] */
 export async function buildApplicationPacket(item, options = {}) {
   const freshnessGate = packetFreshnessGate(item);
-  if (!freshnessGate.ok) return { ok: false, reason: freshnessGate.reason };
+  if (!freshnessGate.ok) return { ok: false, status: 'stale', reason: freshnessGate.reason };
   const effectiveItem = {
     ...item,
     applyUrl: normalizeApplicationUrl(String(item.applyUrl || item.canonicalUrl || '')),
   };
   if (!effectiveItem.applyUrl) return { ok: false, reason: 'application URL is missing' };
   const profile = await loadProfile(options.profilePath || DEFAULT_PROFILE_PATH);
+  const drafts = options.drafts || loadAnswerDrafts(options.answersPath || '');
+  let inspection = options.inspection || null;
+  if (!inspection) {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium, {
+        headless: options.headed !== true,
+        channel: options.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
+        cdpEndpoint: options.cdpEndpoint,
+      });
+      const page = await browser.newPage();
+      await page.goto(effectiveItem.applyUrl, { waitUntil: 'domcontentloaded' });
+      await settle(page);
+      inspection = await inspectApplicationFlow(page, { maxPages: options.maxPages, expectedTitle: effectiveItem.title });
+    } catch (error) {
+      return {
+        ok: false,
+        status: 'blocked',
+        reason: `browser bridge or application form inspection is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        target: { ...effectiveItem, url: effectiveItem.applyUrl },
+      };
+    } finally {
+      if (browser) await browser.close();
+    }
+  }
+
+  const safeInspection = /** @type {Record<string, unknown>} */ (inspection || {});
+  const pages = Array.isArray(safeInspection.pages) && safeInspection.pages.length ? safeInspection.pages : [safeInspection];
+  if (!normalize(String(effectiveItem.title || ''))) {
+    const observedTitle = normalize(String(safeInspection.heading || safeInspection.title || ''));
+    if (observedTitle) effectiveItem.title = observedTitle;
+  }
+  const evidenceGate = applicationEvidenceGate(effectiveItem, safeInspection);
+  const allControls = inspectionControls(safeInspection);
+  const allButtons = pages.flatMap((page) => Array.isArray(page.buttons) ? page.buttons : []);
+  const allManualSignals = [...new Set(pages.flatMap((page) => Array.isArray(page.manualSignals) ? page.manualSignals : []))];
+  const coverRequired = options.generateCoverLetter === true
+    || allControls.some((control) => control.category === 'artifact' && /cover/i.test(String(control.label || '')) && control.required === true);
+  const { questions, artifacts, manual, ledger } = buildQuestions(effectiveItem, safeInspection, profile, options.ledgerPath || DEFAULT_LEDGER_PATH, {
+    persistLedger: options.dryRun !== true,
+    drafts,
+  });
+
+  let resumeDecision = options.generateArtifacts === false
+    ? { decision: 'not-generated', reasonCodes: ['artifact-generation-disabled'], reasons: ['artifact generation was disabled for this run'] }
+    : assessResumeReuse(effectiveItem, { outputRoot: options.outputRoot, description: String(effectiveItem.description || '') });
   let artifactsResult = null;
   let artifactWarning = '';
-  if (options.generateArtifacts !== false) {
+  const reusedManifest = resumeDecision.manifest || null;
+  const reusedArtifacts = resumeDecision.decision === 'reuse' ? {
+    manifestPath: resumeDecision.manifestPath || '',
+    resumePdf: resumeDecision.artifactPath || reusedManifest?.resume?.pdfPath || reusedManifest?.artifact?.path || '',
+    coverLetterPdf: reusedManifest?.coverLetter?.pdfPath || '',
+    coverLetterText: reusedManifest?.coverLetter?.textPath || '',
+    descriptionSource: reusedManifest?.job?.descriptionSource || null,
+  } : null;
+  const coverAvailable = Boolean(reusedArtifacts?.coverLetterPdf || reusedArtifacts?.coverLetterText);
+  if (options.generateArtifacts !== false && !options.dryRun && (resumeDecision.decision !== 'reuse' || (coverRequired && !coverAvailable))) {
     try {
-      artifactsResult = await generateApplicationArtifacts(effectiveItem, { includeCoverLetter: true });
+      artifactsResult = await generateApplicationArtifacts(effectiveItem, {
+        includeCoverLetter: coverRequired,
+        fetchJobDescription: false,
+        outputRoot: options.outputRoot,
+        reuseResume: resumeDecision.decision === 'reuse' ? resumeDecision : undefined,
+      });
       if (!artifactsResult.ok) artifactWarning = String(artifactsResult.reason || 'artifact generation failed');
       if (artifactsResult.jobDescription && String(artifactsResult.jobDescription).length > String(effectiveItem.description || '').length) effectiveItem.description = artifactsResult.jobDescription;
     } catch (error) {
       artifactWarning = error instanceof Error ? error.message : String(error);
     }
+  } else if (options.dryRun && options.generateArtifacts !== false) {
+    artifactWarning = 'dry-run: artifact generation was skipped';
+  } else if (resumeDecision.decision === 'reuse' && coverRequired && !coverAvailable) {
+    artifactWarning = 'existing resume is reusable; a new cover letter is required and remains to be generated';
   }
 
-  const browser = await launchBrowser(chromium, {
-    headless: options.headed !== true,
-    channel: options.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
-    cdpEndpoint: options.cdpEndpoint,
-  });
-  let inspection;
-  try {
-    const page = await browser.newPage();
-    await page.goto(effectiveItem.applyUrl, { waitUntil: 'domcontentloaded' });
-    await settle(page);
-    inspection = await inspectApplicationPage(page);
-  } finally {
-    await browser.close();
-  }
-
-  const { questions, artifacts, manual, ledger } = buildQuestions(effectiveItem, inspection, profile, options.ledgerPath || DEFAULT_LEDGER_PATH);
   const generatedArtifacts = artifactsResult?.ok ? {
     manifestPath: artifactsResult.manifestPath,
     resumePdf: artifactsResult.resumePdf,
     coverLetterPdf: artifactsResult.coverLetterPdf,
     coverLetterText: artifactsResult.coverLetterText,
     descriptionSource: artifactsResult.job?.descriptionSource || null,
-  } : {
-    manifestPath: '',
+    resumeDecision: artifactsResult.resumeDecision || resumeDecision.decision,
+  } : reusedArtifacts || {
+    manifestPath: resumeDecision.manifestPath || '',
     resumePdf: '',
     coverLetterPdf: '',
     coverLetterText: '',
     descriptionSource: null,
+    resumeDecision: resumeDecision.decision,
   };
   const packetPaths = packetPathsForItem(effectiveItem, { outputRoot: options.outputRoot });
   const unresolved = questions.filter((question) => question.status === 'unanswered' && question.required);
-  const status = unresolved.length ? 'needs-user-answers' : 'ready-for-human-review';
+  const reviewItems = questions
+    .filter((question) => ['draft', 'humanized'].includes(question.status) && question.approvedAnswer === null)
+    .map((question) => ({ question: question.question, reason: question.status === 'draft' ? 'evidence-bound draft needs humanizer review' : 'humanized response needs final human approval' }));
+  const flowBlocked = Boolean(safeInspection.blocked || safeInspection.blockedReason || safeInspection.authRequired || safeInspection.challengeDetected || !evidenceGate.ok);
+  const status = flowBlocked ? 'blocked' : unresolved.length ? 'needs-user-input' : 'ready-for-human-review';
+  const researchReferences = [...new Set([
+    effectiveItem.canonicalUrl || '',
+    effectiveItem.applyUrl || '',
+    effectiveItem.sourceUrl || '',
+    effectiveItem.reportPath || '',
+    ...(Array.isArray(options.researchReferences) ? options.researchReferences : []),
+  ].filter(Boolean).map(String))];
+  const formHash = shortHash(JSON.stringify({ pages, controls: allControls, buttons: allButtons }));
+  const humanizationWarnings = questions.flatMap((question) => question.humanization?.errors || []);
   const packet = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     type: 'application-submission-packet',
     generatedAt: new Date().toISOString(),
     status,
@@ -370,31 +554,67 @@ export async function buildApplicationPacket(item, options = {}) {
       url: effectiveItem.applyUrl,
       adapter: applicationAdapter(effectiveItem.applyUrl),
       jdHash: jobHash(effectiveItem),
+      canonicalUrl: effectiveItem.canonicalUrl || effectiveItem.applyUrl,
     },
     form: {
-      title: inspection.title || '',
-      heading: inspection.heading || '',
-      url: inspection.url || effectiveItem.applyUrl,
-      formCount: inspection.formCount || 0,
-      formReady: inspection.formReady === true,
-      submitControls: (inspection.buttons || []).filter((button) => button.submitLike),
+      title: safeInspection.title || '',
+      heading: safeInspection.heading || '',
+      url: safeInspection.url || effectiveItem.applyUrl,
+      formCount: pages.reduce((count, page) => count + Number(page.formCount || 0), 0),
+      formReady: pages.some((page) => page.formReady === true),
+      pageCount: pages.length,
+      pages,
+      submitControls: allButtons.filter((button) => button.submitLike),
     },
     artifacts: generatedArtifacts,
+    resumeDecision,
     questions,
     unresolved,
+    reviewItems,
     manualItems: manual,
     artifactFields: artifacts,
-    warnings: [freshnessGate.warning || '', artifactWarning, inspection.formReady ? '' : 'no rendered application form was detected'].filter(Boolean),
+    research: {
+      references: researchReferences,
+      coaching: options.jackCoaching || { primary: 'career-ops-local-coaching', fallback: 'jackandjill-on-demand' },
+    },
+    hashes: {
+      jd: jobHash(effectiveItem),
+      form: formHash,
+    },
+    warnings: [
+      freshnessGate.warning || '',
+      artifactWarning,
+      safeInspection.formReady ? '' : 'no rendered application form was detected',
+      ...evidenceGate.reasons,
+      safeInspection.blockedReason || '',
+      drafts.warning || '',
+      ...humanizationWarnings,
+      ...((Array.isArray(safeInspection.warnings) ? safeInspection.warnings : []).map(String)),
+    ].filter(Boolean),
     ledger: {
       path: options.ledgerPath || DEFAULT_LEDGER_PATH,
       canonicalQuestionCount: ledger.entries.length,
       unresolvedCount: unresolved.length,
+      pendingGroups: pendingQuestions(ledger, {
+        company: String(effectiveItem.company || ''),
+        role: String(effectiveItem.title || ''),
+        url: String(effectiveItem.applyUrl || ''),
+      }).length,
     },
+    checklist: [
+      'Open the canonical application URL and confirm the posting is still active.',
+      'Attach the selected resume and cover letter files when required.',
+      'Review every answer, including draft/humanized narrative text and human-only fields.',
+      'Complete EEO, consent, legal, CAPTCHA, MFA, and identity fields manually.',
+      'Perform the final Submit/Apply action yourself after review.',
+    ],
   };
   const markdown = buildPacketMarkdown(packet);
-  mkdirSync(packetPaths.directory, { recursive: true });
-  writeFileSync(packetPaths.json, `${JSON.stringify({ ...packet, paths: packetPaths }, null, 2)}\n`, 'utf8');
-  writeFileSync(packetPaths.markdown, markdown, 'utf8');
+  if (!options.dryRun) {
+    mkdirSync(packetPaths.directory, { recursive: true });
+    writeFileSync(packetPaths.json, `${JSON.stringify({ ...packet, paths: packetPaths }, null, 2)}\n`, 'utf8');
+    writeFileSync(packetPaths.markdown, markdown, 'utf8');
+  }
   return {
     ok: true,
     ...packet,
@@ -421,6 +641,10 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
       browser: { type: 'string' },
       headed: { type: 'boolean', default: false },
       headless: { type: 'boolean', default: false },
+      'dry-run': { type: 'boolean', default: false },
+      answers: { type: 'string' },
+      'max-pages': { type: 'string' },
+      cover: { type: 'boolean', default: false },
       'no-artifacts': { type: 'boolean', default: false },
       'output-root': { type: 'string' },
       profile: { type: 'string' },
@@ -443,6 +667,10 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
     browser: values.browser,
     headed: values.headed === true && values.headless !== true,
     generateArtifacts: values['no-artifacts'] !== true,
+    generateCoverLetter: values.cover === true,
+    dryRun: values['dry-run'] === true,
+    answersPath: values.answers,
+    maxPages: values['max-pages'] ? Number(values['max-pages']) : undefined,
     outputRoot: values['output-root'],
     profilePath: values.profile,
     ledgerPath: values.ledger,

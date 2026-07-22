@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const DEFAULT_LEDGER_PATH = path.join(ROOT, 'data', 'application-question-ledger.json');
+export const QUESTION_LEDGER_SCHEMA_VERSION = 2;
 
 const SENSITIVE_RE = /authorization|visa|sponsor|relocat|salary|compensation|background|legal|degree|education|citizenship|demographic|gender|race|veteran|disab|self[-\s]?identif|criminal|conviction|consent/i;
 const QUESTION_STOP_WORDS = new Set([
@@ -41,16 +42,18 @@ const QUESTION_SYNONYMS = new Map([
 
 /** @param {string} file */
 export function loadLedger(file = DEFAULT_LEDGER_PATH) {
-  if (!existsSync(file)) return { schemaVersion: 1, entries: [], path: file };
+  if (!existsSync(file)) return { schemaVersion: QUESTION_LEDGER_SCHEMA_VERSION, entries: [], path: file };
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8'));
     return {
-      schemaVersion: 1,
-      entries: Array.isArray(parsed?.entries) ? parsed.entries.filter((entry) => entry && typeof entry === 'object') : [],
+      schemaVersion: QUESTION_LEDGER_SCHEMA_VERSION,
+      entries: Array.isArray(parsed?.entries)
+        ? parsed.entries.filter((entry) => entry && typeof entry === 'object').map(normalizeEntry)
+        : [],
       path: file,
     };
   } catch {
-    return { schemaVersion: 1, entries: [], path: file, loadError: 'question ledger is not valid JSON' };
+    return { schemaVersion: QUESTION_LEDGER_SCHEMA_VERSION, entries: [], path: file, loadError: 'question ledger is not valid JSON' };
   }
 }
 
@@ -58,8 +61,68 @@ export function loadLedger(file = DEFAULT_LEDGER_PATH) {
 export function saveLedger(file, ledger) {
   mkdirSync(path.dirname(file), { recursive: true });
   const temp = `${file}.tmp-${process.pid}`;
-  writeFileSync(temp, `${JSON.stringify({ schemaVersion: 1, entries: ledger.entries }, null, 2)}\n`, 'utf8');
+  writeFileSync(temp, `${JSON.stringify({ schemaVersion: QUESTION_LEDGER_SCHEMA_VERSION, entries: ledger.entries }, null, 2)}\n`, 'utf8');
   renameSync(temp, file);
+}
+
+/** @param {Record<string, unknown>} entry */
+function normalizeEntry(entry) {
+  const answer = entry.answer === null || entry.answer === undefined ? null : String(entry.answer);
+  const hasAnswer = answer !== null && answer !== '';
+  const explicitlyConfirmed = entry.answerStatus === 'confirmed'
+    || entry.answerSource === 'user'
+    || entry.source === 'profile-confirmed';
+  return {
+    ...entry,
+    answer,
+    answerVersion: hasAnswer ? Math.max(1, Number(entry.answerVersion || 1)) : 0,
+    answerStatus: hasAnswer && explicitlyConfirmed ? 'confirmed' : hasAnswer ? 'unconfirmed' : 'unanswered',
+    answerVariants: Array.isArray(entry.answerVariants)
+      ? entry.answerVariants.filter((variant) => variant && typeof variant === 'object').map((variant) => ({
+        ...variant,
+        answer: variant.answer === null || variant.answer === undefined ? null : String(variant.answer),
+        answerVersion: variant.answer === null || variant.answer === undefined || variant.answer === ''
+          ? 0
+          : Math.max(1, Number(variant.answerVersion || 1)),
+        answerStatus: variant.answerStatus === 'confirmed' || variant.answerSource === 'user' || entry.source === 'profile-confirmed'
+          ? 'confirmed'
+          : variant.answer ? 'unconfirmed' : 'unanswered',
+      }))
+      : [],
+  };
+}
+
+/** @param {Record<string, unknown>} entry @param {Record<string, unknown>} [answer] */
+export function answerReference(entry, answer = entry) {
+  if (!entry?.id || answer?.answer === null || answer?.answer === undefined || answer?.answer === '') return null;
+  return `question-ledger:${entry.id}@v${Math.max(1, Number(answer.answerVersion || 1))}`;
+}
+
+/** @param {Record<string, unknown>} entry @param {Record<string, unknown>} [answer] */
+export function isConfirmedAnswer(entry, answer = entry) {
+  return answer?.answerStatus === 'confirmed'
+    || answer?.answerSource === 'user'
+    || entry?.source === 'profile-confirmed';
+}
+
+/** @param {Record<string, unknown>} entry */
+function answerVariants(entry) {
+  if (Array.isArray(entry.answerVariants) && entry.answerVariants.length) return entry.answerVariants;
+  return entry.answer === null || entry.answer === undefined || entry.answer === '' ? [] : [entry];
+}
+
+/** @param {Record<string, unknown>} variant @param {{ company?: string, role?: string, url?: string }} options */
+function matchesAnswerScope(variant, options) {
+  if (variant.scope === 'question' || variant.scope === 'global') return true;
+  if (variant.scope === 'company') return normalizeKey(variant.company) === normalizeKey(options.company);
+  if (variant.scope === 'role') return normalizeKey(variant.role) === normalizeKey(options.role);
+  if (variant.scope === 'posting') return Boolean(variant.url && variant.url === options.url);
+  return false;
+}
+
+/** @param {Record<string, unknown>} variant */
+function answerContextKey(variant) {
+  return [variant.scope || 'question', normalizeKey(variant.company), normalizeKey(variant.role), String(variant.url || '')].join('|');
 }
 
 /** @param {string} question */
@@ -164,14 +227,16 @@ export function findQuestionMatch(question, ledger, metadata = {}) {
 }
 
 /**
- * @param {string} file
+ * Record one observed question in an already-loaded ledger. This is the
+ * packet builder's dry-run-safe path: callers can inspect the returned entry
+ * without persisting the observation.
+ * @param {{ entries: Array<Record<string, unknown>> }} ledger
  * @param {string} question
  * @param {Record<string, unknown>} [metadata]
  */
-export function recordQuestion(file, question, metadata = {}) {
+export function recordQuestionInLedger(ledger, question, metadata = {}) {
   const normalized = normalizeQuestion(question);
   if (!normalized || /^EEO\s*:/i.test(normalized)) return null;
-  const ledger = loadLedger(file);
   const matched = findQuestionMatch(normalized, ledger, {
     fieldKind: String(metadata.fieldKind || ''),
     options: Array.isArray(metadata.options) ? metadata.options.map(String) : [],
@@ -201,15 +266,16 @@ export function recordQuestion(file, question, metadata = {}) {
     .filter((item) => String(item.queueId || '') !== String(context.queueId || '')
       || String(item.url || '') !== String(context.url || ''));
   if (context.company || context.role || context.url || context.queueId) contexts.push(context);
-  const entry = {
+  const normalizedExisting = existing ? normalizeEntry(existing) : null;
+  const entry = normalizeEntry({
     id,
     question: canonicalQuestion,
     aliases,
     questionKey: canonicalQuestionKey(canonicalQuestion),
     questionFingerprint: questionFingerprint(canonicalQuestion),
     pattern: metadata.pattern || existing?.pattern || canonicalQuestion,
-    answer: existing?.answer ?? null,
-    status: existing?.status || 'unanswered',
+    answer: normalizedExisting?.answer ?? null,
+    status: normalizedExisting?.status || 'unanswered',
     scope: existing?.scope || 'question',
     sensitivity: existing?.sensitivity || (isSensitiveQuestion(normalized) ? 'high' : 'normal'),
     company: existing?.company || metadata.company || null,
@@ -228,12 +294,27 @@ export function recordQuestion(file, question, metadata = {}) {
     updatedAt: now,
     usageCount: Number(existing?.usageCount || 0),
     lastUsedAt: existing?.lastUsedAt || null,
-    expiresAt: existing?.expiresAt || metadata.expiresAt || null,
-  };
-  const nextEntries = existing
+    expiresAt: normalizedExisting?.expiresAt || metadata.expiresAt || null,
+    answerVersion: normalizedExisting?.answerVersion || 0,
+    answerStatus: normalizedExisting?.answerStatus || 'unanswered',
+    answerSource: normalizedExisting?.answerSource || null,
+    answeredAt: normalizedExisting?.answeredAt || null,
+  });
+  ledger.entries = existing
     ? ledger.entries.map((item) => (item.id === id ? entry : item))
     : [...ledger.entries, entry];
-  saveLedger(file, { entries: nextEntries });
+  return entry;
+}
+
+/**
+ * @param {string} file
+ * @param {string} question
+ * @param {Record<string, unknown>} [metadata]
+ */
+export function recordQuestion(file, question, metadata = {}) {
+  const ledger = loadLedger(file);
+  const entry = recordQuestionInLedger(ledger, question, metadata);
+  if (entry) saveLedger(file, ledger);
   return entry;
 }
 
@@ -259,10 +340,32 @@ export function answerQuestion(file, target, answer, options = {}) {
   const scope = ['question', 'global', 'company', 'role', 'posting'].includes(requestedScope)
     ? requestedScope
     : 'role';
-  const updated = {
+  const existingVariants = answerVariants(entry);
+  const maxVersion = Math.max(Number(entry.answerVersion || 0), ...existingVariants.map((variant) => Number(variant.answerVersion || 0)));
+  const nextVersion = Math.max(1, maxVersion + 1);
+  const variant = {
+    answer: String(answer),
+    answerStatus: 'confirmed',
+    answerVersion: nextVersion,
+    answerSource: 'user',
+    answeredAt: now,
+    updatedAt: now,
+    scope,
+    company: options.company || entry.company || null,
+    role: options.role || entry.role || null,
+    url: options.url || entry.url || null,
+  };
+  const matchingVariantIndex = existingVariants.findIndex((candidate) => answerContextKey(candidate) === answerContextKey(variant));
+  const variants = existingVariants.length
+    ? existingVariants.map((candidate, index) => (index === matchingVariantIndex ? { ...candidate, ...variant } : candidate))
+    : [];
+  if (existingVariants.length && matchingVariantIndex < 0) variants.push(variant);
+  const updated = normalizeEntry({
     ...entry,
     answer: String(answer),
     status: 'answered',
+    answerStatus: 'confirmed',
+    answerVersion: nextVersion,
     scope,
     company: options.company || entry.company || null,
     role: options.role || entry.role || null,
@@ -273,7 +376,8 @@ export function answerQuestion(file, target, answer, options = {}) {
     answerSource: 'user',
     answeredAt: now,
     updatedAt: now,
-  };
+    answerVariants: variants,
+  });
   saveLedger(file, { entries: ledger.entries.map((item) => (item.id === entry.id ? updated : item)) });
   return updated;
 }
@@ -297,29 +401,33 @@ export function lookupAnswer(question, ledger, context = {}) {
  */
 export function findReusableAnswer(question, ledger, context = {}) {
   const now = Date.now();
-  const candidates = ledger.entries.filter((entry) => {
-    if (entry.status !== 'answered' || entry.answer === null || entry.answer === undefined) return false;
-    if (entry.expiresAt && Date.parse(String(entry.expiresAt)) <= now) return false;
-    if (!questionMatchScore(entry, question, context)) return false;
-    return matchesScope(entry, context);
-  }).map((entry) => ({
-    entry,
-    score: questionMatchScore(entry, question, context),
-  })).sort((a, b) => b.score - a.score
-    || scopeRank(b.entry.scope) - scopeRank(a.entry.scope)
-    || String(b.entry.updatedAt || '').localeCompare(String(a.entry.updatedAt || '')));
+  const candidates = ledger.entries.flatMap((entry) => answerVariants(entry).map((answer) => ({ entry, answer })))
+    .filter(({ entry, answer }) => {
+      if (answer.answer === null || answer.answer === undefined || answer.answer === '' || !isConfirmedAnswer(entry, answer)) return false;
+      if (answer.expiresAt && Date.parse(String(answer.expiresAt)) <= now) return false;
+      if (!questionMatchScore(entry, question, context)) return false;
+      return matchesAnswerScope(answer, context);
+    }).map(({ entry, answer }) => ({
+      entry,
+      answer,
+      score: questionMatchScore(entry, question, context),
+    })).sort((a, b) => b.score - a.score
+      || scopeRank(b.answer.scope) - scopeRank(a.answer.scope)
+      || String(b.answer.updatedAt || b.entry.updatedAt || '').localeCompare(String(a.answer.updatedAt || a.entry.updatedAt || '')));
   if (!candidates.length) return null;
   const best = candidates[0];
   const competing = candidates.find((candidate) => candidate !== best
+    && scopeRank(candidate.answer.scope) === scopeRank(best.answer.scope)
     && Math.abs(candidate.score - best.score) < 0.04
-    && String(candidate.entry.answer) !== String(best.entry.answer));
+    && String(candidate.answer.answer) !== String(best.answer.answer));
   if (competing) return null;
   const chosen = best.entry;
-  chosen.usageCount = Number(chosen.usageCount || 0) + 1;
-  chosen.lastUsedAt = new Date().toISOString();
+  best.answer.usageCount = Number(best.answer.usageCount || 0) + 1;
+  best.answer.lastUsedAt = new Date().toISOString();
   return {
-    answer: String(chosen.answer),
+    answer: String(best.answer.answer),
     entry: chosen,
+    answerRef: answerReference(chosen, best.answer),
     matchType: matchTypeFor(chosen, question, best.score),
     confidence: best.score,
   };
@@ -327,17 +435,42 @@ export function findReusableAnswer(question, ledger, context = {}) {
 
 /** @param {{ entries: Array<Record<string, unknown>> }} ledger @param {{ company?: string, role?: string, url?: string }} [context] */
 export function answerTable(ledger, context = {}) {
-  return ledger.entries
-    .filter((entry) => entry.status === 'answered' && entry.answer !== null && matchesScope(entry, context))
-    .map((entry) => ({
+  return ledger.entries.flatMap((entry) => answerVariants(entry).map((answer) => ({ entry, answer })))
+    .filter(({ entry, answer }) => answer.answer !== null && isConfirmedAnswer(entry, answer) && matchesAnswerScope(answer, context))
+    .map(({ entry, answer }) => ({
       re: new RegExp(escapeRegex(String(entry.pattern || entry.question)).replace(/\s+/g, '\\s+'), 'i'),
-      value: String(entry.answer),
-      source: `question-ledger:${entry.id}`,
+      value: String(answer.answer),
+      source: answerReference(entry, answer),
       match: (question) => {
         const resolved = findReusableAnswer(question, { entries: [entry] }, context);
-        return Boolean(resolved?.entry.id === entry.id);
+        return Boolean(resolved?.entry.id === entry.id && resolved?.answerRef === answerReference(entry, answer));
       },
       questionId: entry.id,
+      answerRef: answerReference(entry, answer),
+    }));
+}
+
+/**
+ * Group unresolved or unconfirmed questions so repeated form wording is shown
+ * once while retaining every posting context that produced it.
+ * @param {{ entries: Array<Record<string, unknown>> }} ledger
+ * @param {{ company?: string, role?: string, url?: string }} [context]
+ */
+export function pendingQuestions(ledger, context = {}) {
+  return ledger.entries
+    .filter((entry) => (entry.answer === null || entry.answer === undefined || !isConfirmedAnswer(entry))
+      && (!context.company || matchesScope({ ...entry, scope: 'company' }, context) || (Array.isArray(entry.contexts) && entry.contexts.some((item) => normalizeKey(item.company) === normalizeKey(context.company)))))
+    .map((entry) => ({
+      questionId: entry.id,
+      question: entry.question,
+      answerStatus: entry.answer ? 'needs-confirmation' : 'unanswered',
+      proposedAnswer: entry.answer || null,
+      fieldKind: entry.fieldKind || null,
+      required: entry.required === true,
+      options: Array.isArray(entry.options) ? entry.options : [],
+      sensitivity: entry.sensitivity || 'normal',
+      contexts: Array.isArray(entry.contexts) ? entry.contexts : [],
+      answerRef: answerReference(entry),
     }));
 }
 
@@ -376,8 +509,13 @@ function optionKeys(values) {
 function printLedger(file) {
   const ledger = loadLedger(file);
   for (const entry of ledger.entries) {
-    console.log(`${entry.id}\t${entry.status}\t${entry.scope}\t${entry.question}${entry.answer ? `\t${entry.answer}` : ''}`);
+    console.log(`${entry.id}\t${entry.status}\t${entry.answerStatus}\t${entry.scope}\t${entry.question}${entry.answer ? `\t${entry.answer}` : ''}${answerReference(entry) ? `\t${answerReference(entry)}` : ''}`);
   }
+}
+
+/** @param {string} file */
+function printPending(file) {
+  console.log(JSON.stringify(pendingQuestions(loadLedger(file)), null, 2));
 }
 
 function matchesScope(entry, context) {
@@ -406,6 +544,8 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
   const file = process.env.CAREER_OPS_QUESTION_LEDGER || DEFAULT_LEDGER_PATH;
   if (command === 'list') {
     printLedger(file);
+  } else if (command === 'pending') {
+    printPending(file);
   } else if (command === 'answer') {
     const target = process.argv[3];
     const answer = process.argv[4];
@@ -424,7 +564,7 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
     });
     console.log(`Answered ${entry.id} (${entry.scope}).`);
   } else {
-    console.error('Usage: node apply/question-ledger.mjs list|answer');
+    console.error('Usage: node apply/question-ledger.mjs list|pending|answer');
     process.exitCode = 1;
   }
 }

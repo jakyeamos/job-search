@@ -8,7 +8,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,7 @@ import { load as loadYaml } from 'js-yaml';
 
 import { renderHtmlToPdf } from '../generate-pdf.mjs';
 import { auditResume } from '../resume-audit.mjs';
+import { resolveResumeArtifact } from '../resume-contract.mjs';
 import { fetchAtsJobDescription } from './public-job-description.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -200,8 +201,12 @@ function slug(value) {
 
 /** @param {Record<string, unknown>} item @param {{ outputRoot?: string }} [options] */
 export function artifactPathsForItem(item, options = {}) {
-  const jd = jobHash(item);
-  const directory = path.join(options.outputRoot || DEFAULT_ARTIFACT_ROOT, `${slug(`${item.company || 'company'} ${item.title || 'role'}`)}-${jd.slice(0, 12)}`);
+  const canonicalUrl = normalize(String(item.canonicalUrl || item.applyUrl || ''));
+  const stableIdentity = canonicalUrl
+    ? canonicalUrl.replace(/[?#].*$/, '')
+    : `${normalize(String(item.company || 'company'))}\n${normalize(String(item.title || 'role'))}`;
+  const stableJobHash = hash(stableIdentity).slice(0, 12);
+  const directory = path.join(options.outputRoot || DEFAULT_ARTIFACT_ROOT, `${slug(`${item.company || 'company'} ${item.title || 'role'}`)}-${stableJobHash}`);
   return {
     directory,
     resumeMarkdown: path.join(directory, 'resume.md'),
@@ -212,6 +217,168 @@ export function artifactPathsForItem(item, options = {}) {
     coverLetterPdf: path.join(directory, 'cover-letter.pdf'),
     manifest: path.join(directory, 'manifest.json'),
   };
+}
+
+/** @param {string} file */
+function fileHash(file) {
+  return hash(readFileSync(file));
+}
+
+/** @param {Record<string, unknown>} item @param {string} description */
+function coverageForItem(item, description) {
+  const evidence = `${readRootFile('cv.md')}\n${readRootFile('article-digest.md')}`;
+  const required = matchedKeywords(description, evidence);
+  const profile = /** @type {Record<string, unknown>} */ (loadYaml(readRootFile('config/profile.yml')) || {});
+  const lane = laneForItem({ ...item, description }, profile);
+  return { lane, required };
+}
+
+/** @param {Record<string, unknown>} manifest @param {Record<string, unknown>} item @param {string} description */
+function evaluateApplicationArtifactManifest(manifest, item, description) {
+  const reasons = [];
+  const coverage = coverageForItem(item, description);
+  const covered = [...new Set([
+    ...(Array.isArray(manifest.matchedKeywords) ? manifest.matchedKeywords : []),
+    ...(Array.isArray(manifest.competencies) ? manifest.competencies : []),
+  ].map((value) => normalize(String(value)).toLowerCase()))];
+  const missing = coverage.required.filter((keyword) => !covered.includes(keyword.toLowerCase()));
+  const resumePath = String(manifest.resume?.pdfPath || '');
+  if (manifest.status !== 'ready') reasons.push('artifact-manifest-not-ready');
+  if (!resumePath || !existsSync(resumePath)) reasons.push('resume-artifact-missing');
+  if (manifest.resume?.audit?.passed !== true) reasons.push('resume-audit-not-passed');
+  if (manifest.sourceHash !== sourceHash()) reasons.push('evidence-sources-changed');
+  if (manifest.lane && manifest.lane !== coverage.lane) reasons.push('resume-lane-mismatch');
+  if (missing.length) reasons.push(`coverage-missing:${missing.join(',')}`);
+  if (item.liveness && item.liveness !== 'active') reasons.push('role-not-active');
+  if (['stale', 'archived'].includes(String(item.status || ''))) reasons.push('role-not-fresh');
+  return {
+    reusable: reasons.length === 0,
+    reasons,
+    coverage: {
+      lane: coverage.lane,
+      requiredKeywords: coverage.required,
+      coveredKeywords: covered,
+      missingKeywords: missing,
+      score: coverage.required.length ? (coverage.required.length - missing.length) / coverage.required.length : 1,
+    },
+    artifactPath: resumePath,
+  };
+}
+
+/** @param {Record<string, unknown>} manifest @param {Record<string, unknown>} item @param {string} root @param {string} description */
+function evaluateResumeContractManifest(manifest, item, root, description) {
+  const reasons = [];
+  const coverage = coverageForItem(item, description);
+  const artifact = manifest.artifact || {};
+  const artifactPath = artifact.path ? path.resolve(root, String(artifact.path)) : '';
+  const selected = Array.isArray(manifest.selectedProjects) ? manifest.selectedProjects.map((value) => normalize(String(value))) : [];
+  const expected = coverage.lane ? projectNamesForLane(/** @type {Record<string, unknown>} */ (loadYaml(readRootFile('config/profile.yml')) || {}), coverage.lane) : [];
+  const overlap = expected.filter((name) => selected.some((candidate) => normalizedKey(candidate) === normalizedKey(name))).length;
+  const evidenceFresh = Array.isArray(manifest.evidenceSources) && manifest.evidenceSources.length > 0
+    && manifest.evidenceSources.every((source) => {
+      const sourcePath = String(source?.path || '');
+      return Boolean(sourcePath)
+        && existsSync(path.resolve(root, sourcePath))
+        && String(source.sha256 || '') === fileHash(path.resolve(root, sourcePath));
+    });
+  if (!artifactPath || !existsSync(artifactPath)) reasons.push('resume-artifact-missing');
+  if (manifest.auditStatus !== 'passed') reasons.push('resume-audit-not-passed');
+  if (!evidenceFresh) reasons.push('evidence-sources-changed');
+  if (manifest.lane && manifest.lane !== coverage.lane) reasons.push('resume-lane-mismatch');
+  if (overlap < Math.min(2, expected.length)) reasons.push('resume-project-coverage-insufficient');
+  if (manifest.job?.descriptionSha256 && manifest.job.descriptionSha256 !== hash(normalize(description))) reasons.push('job-description-changed');
+  if (item.liveness && item.liveness !== 'active') reasons.push('role-not-active');
+  if (['stale', 'archived'].includes(String(item.status || ''))) reasons.push('role-not-fresh');
+  return {
+    reusable: reasons.length === 0,
+    reasons,
+    coverage: { lane: coverage.lane, requiredKeywords: coverage.required, coveredKeywords: selected, missingKeywords: [], score: overlap / Math.max(1, expected.length) },
+    artifactPath,
+  };
+}
+
+/**
+ * Decide whether a current, audited resume can be reused for a live role.
+ * The decision is evidence-gated and never generates or mutates artifacts.
+ * @param {Record<string, unknown>} item
+ * @param {{ outputRoot?: string, resumeRoot?: string, description?: string }} [options]
+ */
+export function assessResumeReuse(item, options = {}) {
+  const description = normalize(String(options.description || item.description || ''));
+  const output = artifactPathsForItem(item, options);
+  const base = {
+    decision: 'tailor',
+    reasonCodes: [],
+    reasons: [],
+    manifestPath: '',
+    artifactPath: '',
+    coverage: { lane: '', requiredKeywords: [], coveredKeywords: [], missingKeywords: [], score: 0 },
+  };
+  if (description.length < 120) return { ...base, reasonCodes: ['job-description-insufficient'], reasons: ['job description is too short to verify resume coverage'] };
+  if (item.liveness && item.liveness !== 'active') return { ...base, reasonCodes: ['role-not-active'], reasons: ['role is not confirmed active'] };
+  if (['stale', 'archived'].includes(String(item.status || ''))) return { ...base, reasonCodes: ['role-not-fresh'], reasons: ['role is stale or archived'] };
+
+  if (existsSync(output.manifest)) {
+    try {
+      const manifest = JSON.parse(readFileSync(output.manifest, 'utf8'));
+      const evaluated = evaluateApplicationArtifactManifest(manifest, item, description);
+      if (evaluated.reusable) {
+        return {
+          decision: 'reuse',
+          reasonCodes: ['existing-audited-resume', 'evidence-current', 'role-active', 'coverage-satisfied'],
+          reasons: ['existing audited resume covers the current role without a new resume generation run'],
+          manifestPath: output.manifest,
+          artifactPath: evaluated.artifactPath,
+          coverage: evaluated.coverage,
+          manifest,
+        };
+      }
+      return { ...base, reasonCodes: evaluated.reasons, reasons: evaluated.reasons.map((reason) => reason.replace(/-/g, ' ')), manifestPath: output.manifest, artifactPath: evaluated.artifactPath, coverage: evaluated.coverage, manifest };
+    } catch {
+      return { ...base, reasonCodes: ['artifact-manifest-invalid'], reasons: ['existing artifact manifest could not be read safely'], manifestPath: output.manifest };
+    }
+  }
+
+  const resumeRoot = options.resumeRoot || ROOT;
+  const resolved = resolveResumeArtifact(item, resumeRoot);
+  if (resolved.ok && resolved.manifest) {
+    const evaluated = evaluateResumeContractManifest(resolved.manifest, item, resumeRoot, description);
+    if (evaluated.reusable) {
+      return {
+        decision: 'reuse',
+        reasonCodes: ['existing-audited-resume', 'evidence-current', 'role-active', 'coverage-satisfied'],
+        reasons: ['existing contract-registered resume covers the current role without a new resume generation run'],
+        manifestPath: resolved.manifestPath,
+        artifactPath: evaluated.artifactPath,
+        coverage: evaluated.coverage,
+        manifest: resolved.manifest,
+      };
+    }
+    return { ...base, reasonCodes: evaluated.reasons, reasons: evaluated.reasons.map((reason) => reason.replace(/-/g, ' ')), manifestPath: resolved.manifestPath, artifactPath: evaluated.artifactPath, coverage: evaluated.coverage, manifest: resolved.manifest };
+  }
+  return { ...base, reasonCodes: ['no-reusable-resume'], reasons: ['no current audited resume was found'] };
+}
+
+/** @param {Record<string, unknown>} manifest @param {ReturnType<typeof artifactPathsForItem>} output */
+function snapshotPreviousArtifacts(manifest, output) {
+  const snapshotId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${hash(`${manifest.jdHash || ''}|${manifest.sourceHash || ''}`).slice(0, 10)}`;
+  const directory = path.join(output.directory, 'history', snapshotId);
+  const paths = {};
+  for (const [name, file] of Object.entries({
+    resumeMarkdown: manifest.resume?.markdownPath,
+    resumeHtml: manifest.resume?.htmlPath,
+    resumePdf: manifest.resume?.pdfPath,
+    coverLetterText: manifest.coverLetter?.textPath,
+    coverLetterHtml: manifest.coverLetter?.htmlPath,
+    coverLetterPdf: manifest.coverLetter?.pdfPath,
+  })) {
+    if (!file || !existsSync(file)) continue;
+    const target = path.join(directory, path.basename(file));
+    mkdirSync(directory, { recursive: true });
+    copyFileSync(file, target);
+    paths[name] = target;
+  }
+  return { snapshotId, createdAt: new Date().toISOString(), jdHash: manifest.jdHash || null, sourceHash: manifest.sourceHash || null, paths };
 }
 
 /** @param {string} markdown */
@@ -598,7 +765,7 @@ function validateCoverText(text, company, title) {
   return errors;
 }
 
-/** @param {Record<string, unknown>} item @param {{ outputRoot?: string, renderPdf?: boolean, includeCoverLetter?: boolean, force?: boolean, fetchJobDescription?: boolean }} [options] */
+/** @param {Record<string, unknown>} item @param {{ outputRoot?: string, renderPdf?: boolean, includeCoverLetter?: boolean, force?: boolean, fetchJobDescription?: boolean, reuseResume?: Record<string, unknown> }} [options] */
 export async function generateApplicationArtifacts(item, options = {}) {
   const cv = readRootFile('cv.md');
   const digest = readRootFile('article-digest.md');
@@ -640,15 +807,17 @@ export async function generateApplicationArtifacts(item, options = {}) {
   const output = artifactPathsForItem(effectiveItem, options);
   const currentSourceHash = sourceHash();
   const effectiveJobHash = jobHash(effectiveItem);
-  if (!options.force && existsSync(output.manifest)) {
+  let previousManifest = null;
+  if (existsSync(output.manifest)) {
     try {
       const cached = JSON.parse(readFileSync(output.manifest, 'utf8'));
+      previousManifest = cached;
       const needsPdf = options.renderPdf !== false;
       const needsCoverLetter = options.includeCoverLetter !== false;
       const requiredPdfPaths = [cached.resume?.pdfPath, ...(needsCoverLetter ? [cached.coverLetter?.pdfPath] : [])];
       const filesReady = requiredPdfPaths.every((file) => !needsPdf || (file && existsSync(file)));
       const statusReady = cached.status === 'ready' || (options.renderPdf === false && cached.status === 'unrendered');
-      if (cached.jdHash === effectiveJobHash && cached.sourceHash === currentSourceHash && statusReady && filesReady) {
+      if (!options.force && cached.jdHash === effectiveJobHash && cached.sourceHash === currentSourceHash && statusReady && filesReady) {
         return {
           ok: true,
           cached: true,
@@ -692,19 +861,37 @@ export async function generateApplicationArtifacts(item, options = {}) {
   const coverErrors = options.includeCoverLetter === false ? [] : validateCoverText(cover.text, String(item.company || ''), String(item.title || ''));
   if (coverErrors.length) return { ok: false, reason: coverErrors.join('; ') };
 
+  const reusedResume = options.reuseResume || null;
+  const reusedManifest = reusedResume?.manifest || {};
+  const reusedResumeRecord = reusedManifest.resume || {};
+  const materialChange = previousManifest && (
+    previousManifest.jdHash !== effectiveJobHash
+    || previousManifest.sourceHash !== currentSourceHash
+    || previousManifest.resumeDecision !== (reusedResume ? 'reused' : 'tailored')
+  );
+  const history = materialChange
+    ? [snapshotPreviousArtifacts(previousManifest, output), ...(Array.isArray(previousManifest.history) ? previousManifest.history : [])]
+    : (Array.isArray(previousManifest?.history) ? previousManifest.history : []);
+  const resumeMarkdownPath = reusedResume ? String(reusedResumeRecord.markdownPath || '') : output.resumeMarkdown;
+  const resumeHtmlPath = reusedResume ? String(reusedResumeRecord.htmlPath || '') : output.resumeHtml;
+  const resumePdfPath = reusedResume ? String(reusedResume.artifactPath || reusedResumeRecord.pdfPath || '') : output.resumePdf;
   mkdirSync(output.directory, { recursive: true });
-  writeFileSync(output.resumeMarkdown, resumeMarkdown, 'utf8');
-  writeFileSync(output.resumeHtml, resumeHtml, 'utf8');
+  if (!reusedResume) {
+    writeFileSync(output.resumeMarkdown, resumeMarkdown, 'utf8');
+    writeFileSync(output.resumeHtml, resumeHtml, 'utf8');
+  }
   if (options.includeCoverLetter !== false) {
     writeFileSync(output.coverLetterText, cover.text, 'utf8');
     writeFileSync(output.coverLetterHtml, buildCoverLetterHtml({ profile, item: effectiveItem, lane, projects: usableProjects, cover }), 'utf8');
   }
 
-  let resumePdf = '';
+  let resumePdf = reusedResume ? resumePdfPath : '';
   let coverLetterPdf = '';
-  let resumeAudit = { passed: true, errors: [], warnings: [] };
+  let resumeAudit = reusedResume
+    ? (reusedResumeRecord.audit || { passed: true, errors: [], warnings: [] })
+    : { passed: true, errors: [], warnings: [] };
   let coverPageCount = null;
-  if (options.renderPdf !== false) {
+  if (options.renderPdf !== false && !reusedResume) {
     await renderHtmlToPdf(resumeHtml, output.resumePdf, { format: /\b(canada|europe|uk|germany|france|ireland|netherlands|spain|sweden|switzerland)\b/i.test(String(item.location || '')) ? 'a4' : 'letter', baseDir: output.directory, inputPath: output.resumeHtml });
     resumePdf = output.resumePdf;
     resumeAudit = auditResume({ cvPath: output.resumeMarkdown, htmlPath: output.resumeHtml, pdfPath: output.resumePdf, tier: 'standard' });
@@ -732,16 +919,18 @@ export async function generateApplicationArtifacts(item, options = {}) {
       ...(descriptionEndpoint ? { descriptionEndpoint } : {}),
     },
     lane,
+    resumeDecision: reusedResume ? 'reused' : 'tailored',
     jdHash: effectiveJobHash,
     sourceHash: currentSourceHash,
     sourceFiles: SOURCE_FILES,
+    history,
     selectedProjects: usableProjects.map((project) => ({ name: project.name, source: project.source, badge: project.badge || '' })),
     missingProjects: projects.filter((project) => project.missing).map((project) => project.requestedName),
     matchedKeywords: keywords,
     competencies,
     resume: {
-      markdownPath: output.resumeMarkdown,
-      htmlPath: output.resumeHtml,
+      markdownPath: resumeMarkdownPath,
+      htmlPath: resumeHtmlPath,
       pdfPath: resumePdf,
       audit: resumeAudit,
     },
@@ -758,8 +947,8 @@ export async function generateApplicationArtifacts(item, options = {}) {
     cached: false,
     ...manifest,
     jobDescription: description,
-    resumeMarkdown: output.resumeMarkdown,
-    resumeHtml: output.resumeHtml,
+    resumeMarkdown: resumeMarkdownPath,
+    resumeHtml: resumeHtmlPath,
     resumePdf,
     coverLetterHtml: output.coverLetterHtml,
     coverLetterPdf,
