@@ -13,6 +13,7 @@ import {
 import {
   discoverContactsForApplication,
   isDiscoverableApplication,
+  verifyPublicCandidateEmails,
 } from './contact-discovery.mjs';
 import { discoverWarmContactsForApplication } from './relationship-discovery.mjs';
 import { getMessageBody, isAuthenticEmail } from './plugins/gmail/_helpers.mjs';
@@ -57,7 +58,7 @@ const APPLICATION_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
 const STATE_PATH = path.join(ROOT, OUTREACH_STATE_PATH);
 const CONTACTS_PATH = path.join(ROOT, OUTREACH_CONTACTS_PATH);
 const CONFIRMATION_QUERY = 'in:anywhere {subject:"application received" subject:"thank you for applying" subject:"thanks for applying" subject:"application submitted" subject:"we received your application"} newer_than:30d';
-const DISCOVERY_PIPELINE_VERSION = 8;
+const DISCOVERY_PIPELINE_VERSION = 9;
 
 /** @typedef {{
  *  verifyAccount: () => Promise<string>,
@@ -169,10 +170,10 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
   return record;
 }
 
-/** @param {Record<string, unknown>} record @param {Record<string, unknown>} item @param {boolean} dryRun @param {{ gmailClient?: RelationshipClient | null }} [options] */
+/** @param {Record<string, unknown>} record @param {Record<string, unknown>} item @param {boolean} dryRun @param {{ gmailClient?: RelationshipClient | null, force?: boolean }} [options] */
 async function discoverForRecord(record, item, dryRun, options = {}) {
   if (record.status === 'paused' || record.status === 'suppressed' || record.status === 'needs_application_identity') {
-    return { status: 'skipped', reason: `record status is ${record.status}`, contacts: [], emailConventions: [], emailHypotheses: [], sources: [], queries: [], errors: [] };
+    return { status: 'skipped', reason: `record status is ${record.status}`, contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], candidateEmailVerification: [], sources: [], queries: [], errors: [] };
   }
   if (!isDiscoverableApplication(item)) {
     record.status = 'needs_application_identity';
@@ -184,7 +185,7 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
       sourceCount: 0,
       reason: 'application identity is not specific enough for contact discovery',
     };
-    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', contacts: [], emailConventions: [], emailHypotheses: [], sources: [], queries: [], errors: [] };
+    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], candidateEmailVerification: [], sources: [], queries: [], errors: [] };
   }
   const attemptedAt = String(record.discovery?.attemptedAt || '');
   const attemptedAtMs = new Date(attemptedAt).getTime();
@@ -195,6 +196,7 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
   if (Number.isFinite(cacheExpiresAtMs)
     && cacheExpiresAtMs > Date.now()
     && record.discovery?.pipelineVersion === DISCOVERY_PIPELINE_VERSION
+    && options.force !== true
     && Array.isArray(record.discoveredContacts)) {
     return {
       status: String(record.discovery?.status || 'cached'),
@@ -202,6 +204,8 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
       contacts: record.discoveredContacts,
       emailConventions: Array.isArray(record.discovery?.emailConventions) ? record.discovery.emailConventions : [],
       emailHypotheses: Array.isArray(record.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [],
+      emailVerification: Array.isArray(record.discovery?.emailVerification) ? record.discovery.emailVerification : [],
+      candidateEmailVerification: Array.isArray(record.discovery?.candidateEmailVerification) ? record.discovery.candidateEmailVerification : [],
       sources: Array.isArray(record.discovery?.sources) ? record.discovery.sources : [],
       queries: Array.isArray(record.discovery?.queries) ? record.discovery.queries : [],
       errors: Array.isArray(record.discovery?.errors) ? record.discovery.errors : [],
@@ -212,8 +216,14 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     dryRun,
     gmailClient: options.gmailClient || null,
   });
+  const candidateEmailResult = warmResult.contacts?.length
+    ? await verifyPublicCandidateEmails(
+      warmResult.contacts.filter((contact) => !String(contact.email || '').trim()),
+      item,
+    )
+    : { contacts: [], queries: [], sources: [], verifications: [], errors: [] };
   const previousContacts = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
-  const contacts = [...publicResult.contacts, ...warmResult.contacts];
+  const contacts = [...publicResult.contacts, ...warmResult.contacts, ...candidateEmailResult.contacts];
   const status = contacts.length
     ? 'found'
     : publicResult.status === 'unavailable' || warmResult.status === 'unavailable'
@@ -234,18 +244,31 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     publicResult.emailHypotheses,
     'email',
   );
+  const emailVerification = mergeDiscoveryEvidence(
+    preservePreviousDiscoveryEvidence ? record.discovery?.emailVerification : [],
+    publicResult.emailVerification,
+    'email',
+  );
+  const candidateEmailVerification = mergeDiscoveryEvidence(
+    preservePreviousDiscoveryEvidence ? record.discovery?.candidateEmailVerification : [],
+    candidateEmailResult.verifications,
+    'name',
+  );
   const result = {
     status,
     reason: [publicResult.reason, warmResult.reason].filter(Boolean).join('; '),
     contacts,
     emailConventions,
     emailHypotheses,
-    queries: [...publicResult.queries, ...warmResult.gmailQueries, ...warmResult.webQueries],
-    sources: [...new Set([...publicResult.sources, ...warmResult.sources])],
-    errors: [...new Set([...publicResult.errors, ...warmResult.errors])],
+    emailVerification,
+    candidateEmailVerification,
+    queries: [...publicResult.queries, ...warmResult.gmailQueries, ...warmResult.webQueries, ...candidateEmailResult.queries],
+    sources: [...new Set([...publicResult.sources, ...warmResult.sources, ...candidateEmailResult.sources])],
+    errors: [...new Set([...publicResult.errors, ...warmResult.errors, ...candidateEmailResult.errors])],
     phases: {
       public: publicResult,
       warmNetwork: warmResult,
+      candidateEmailVerification: candidateEmailResult,
     },
   };
   if (!dryRun) {
@@ -271,6 +294,8 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
       errors: result.errors,
       emailConventions,
       emailHypotheses,
+      emailVerification,
+      candidateEmailVerification,
       phases: result.phases,
     };
   }
@@ -292,7 +317,10 @@ function printPrepared(item, record) {
   if (hypotheses.length) {
     console.log(`  Review-only email hypotheses (${hypotheses.length}; exact verification required before any send):`);
     for (const hypothesis of hypotheses) {
-      console.log(`    ${hypothesis.name} — ${hypothesis.email} (${hypothesis.convention}, ${hypothesis.conventionConfidence})`);
+      const verification = hypothesis.emailVerificationState === 'verified-exact-public-source'
+        ? '; exact public evidence found; verified contact created'
+        : '';
+      console.log(`    ${hypothesis.name} — ${hypothesis.email} (${hypothesis.convention}, ${hypothesis.conventionConfidence}${verification})`);
     }
   }
 }
@@ -908,8 +936,8 @@ async function processOutreach(dryRun) {
   return { state, confirmation, sent, errors, summary, ok: summary.ok };
 }
 
-/** @param {string} applicationId @param {boolean} dryRun */
-async function discover(applicationId, dryRun) {
+/** @param {string} applicationId @param {boolean} dryRun @param {boolean} force */
+async function discover(applicationId, dryRun, force) {
   await loadDotenvOnce();
   const queue = readQueueState(QUEUE_PATH);
   const items = Array.isArray(queue.items) ? queue.items : [];
@@ -921,7 +949,7 @@ async function discover(applicationId, dryRun) {
     at: new Date().toISOString(),
   });
   const relationshipClient = await createRelationshipClient(dryRun);
-  const result = await discoverForRecord(record, item, dryRun, { gmailClient: relationshipClient });
+  const result = await discoverForRecord(record, item, dryRun, { gmailClient: relationshipClient, force });
   if (!dryRun) {
     prepareRecord(state, item, true, Array.isArray(record.discoveredContacts) ? record.discoveredContacts : []);
     saveOutreachState(STATE_PATH, state);
@@ -980,6 +1008,8 @@ function status() {
       sourceCount: record.discovery.sourceCount || 0,
       conventionCount: Array.isArray(record.discovery.emailConventions) ? record.discovery.emailConventions.length : 0,
       hypothesisCount: Array.isArray(record.discovery.emailHypotheses) ? record.discovery.emailHypotheses.length : 0,
+      exactVerifiedEmailCount: (record.contacts || []).filter((contact) => contact.emailVerificationType === 'exact-public-source' && contact.emailVerified === true).length,
+      candidateEmailVerificationCount: Array.isArray(record.discovery.candidateEmailVerification) ? record.discovery.candidateEmailVerification.length : 0,
       reason: record.discovery.reason || '',
     } : null,
     contacts: (record.contacts || []).map((contact) => ({
@@ -1003,7 +1033,7 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'status';
   if (command === 'prepare') { prepare(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
-  if (command === 'discover') { await discover(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
+  if (command === 'discover') { await discover(readFlag(args, '--application'), hasFlag(args, '--dry-run'), hasFlag(args, '--force')); return; }
   if (command === 'process') {
     const result = await processOutreach(hasFlag(args, '--dry-run'));
     if (!result.ok && !result.summary.dryRun) process.exitCode = 2;
@@ -1021,7 +1051,7 @@ async function main() {
   }
   if (command === 'ramp-complete') { setRamp(true); return; }
   if (command === 'ramp-reset') { setRamp(false); return; }
-  throw new Error('Usage: node outreach.mjs prepare|discover|process|status|pause|enable-email|disable-email|ramp-complete|ramp-reset');
+  throw new Error('Usage: node outreach.mjs prepare|discover [--force]|process|status|pause|enable-email|disable-email|ramp-complete|ramp-reset');
 }
 
 main().catch((error) => {

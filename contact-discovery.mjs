@@ -11,6 +11,8 @@ import { buildEmailHypotheses, inferEmailConventions } from './email-conventions
 const DEFAULT_API_URL = 'https://api.firecrawl.dev';
 const MAX_QUERIES = 2;
 const MAX_SCRAPES_PER_QUERY = 2;
+const MAX_EXACT_VERIFICATION_QUERIES = 6;
+const MAX_CANDIDATE_EMAIL_QUERIES = 8;
 const FREE_EMAIL_DOMAINS = new Set([
   'gmail.com', 'googlemail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
   'live.com', 'icloud.com', 'proton.me', 'protonmail.com', 'aol.com',
@@ -19,6 +21,11 @@ const BLOCKED_SOURCE_HOSTS = new Set([
   'linkedin.com', 'www.linkedin.com', 'teamworkonline.com', 'www.teamworkonline.com',
   'glassdoor.com', 'www.glassdoor.com', 'glassdoor.co.uk', 'www.glassdoor.co.uk',
   'indeed.com', 'www.indeed.com', 'ziprecruiter.com', 'www.ziprecruiter.com',
+  'rocketreach.co', 'www.rocketreach.co', 'idcrawl.com', 'www.idcrawl.com',
+  'contactout.com', 'www.contactout.com', 'lusha.com', 'www.lusha.com',
+  'apollo.io', 'www.apollo.io', 'zoominfo.com', 'www.zoominfo.com',
+  'signalhire.com', 'www.signalhire.com', 'hunter.io', 'www.hunter.io',
+  'clearbit.com', 'www.clearbit.com',
 ]);
 const ATS_HOSTS = [
   'ashbyhq.com', 'greenhouse.io', 'lever.co', 'workable.com', 'myworkdayjobs.com',
@@ -131,6 +138,25 @@ function linesOf(text) {
 /** @param {string} text */
 function extractEmails(text) {
   return [...new Set((text.match(EMAIL_RE) || []).map((value) => value.toLowerCase()))];
+}
+
+/** @param {string} value */
+function nameTokens(value) {
+  return normalizeText(value)
+    .normalize('NFKD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/** @param {string} left @param {string} right */
+function samePersonName(left, right) {
+  const leftTokens = nameTokens(left);
+  const rightTokens = nameTokens(right);
+  return leftTokens.length >= 2
+    && leftTokens.length === rightTokens.length
+    && leftTokens.every((token, index) => token === rightTokens[index]);
 }
 
 /** @param {string} value @param {string} itemCompany */
@@ -384,6 +410,234 @@ export function extractPublicContactCandidates(results, item) {
   return dedupeContacts(candidates);
 }
 
+/** @param {Record<string, unknown>} hypothesis @param {Record<string, unknown>} item */
+export function buildExactEmailVerificationQuery(hypothesis, item) {
+  const email = stringValue(hypothesis.email).replaceAll('"', '');
+  const name = stringValue(hypothesis.name).replaceAll('"', '');
+  const company = stringValue(hypothesis.company || item.company).replaceAll('"', '');
+  return `"${email}" "${name}" "${company}"`;
+}
+
+/** @param {Record<string, unknown>} item */
+function candidateEmailDomain(item) {
+  const company = lower(stringValue(item.company));
+  for (const [token, aliases] of COMPANY_EMAIL_ALIASES) {
+    if (company.includes(token)) return aliases[0];
+  }
+  const urls = [item.companyWebsite, item.companyUrl, item.employerUrl, item.applyUrl, item.canonicalUrl]
+    .map(stringValue)
+    .filter(Boolean);
+  for (const url of urls) {
+    try {
+      const host = rootHost(new URL(url).hostname);
+      if (host) return host;
+    } catch { /* non-URL metadata is ignored */ }
+  }
+  return '';
+}
+
+/** @param {Record<string, unknown>} candidate @param {Record<string, unknown>} item */
+export function buildCandidateEmailVerificationQuery(candidate, item) {
+  const name = stringValue(candidate.name).replaceAll('"', '');
+  const company = stringValue(candidate.company || item.company).replaceAll('"', '');
+  return `"${name}" "${company}" email contact`;
+}
+
+/** @typedef {{
+ *  searchFn?: typeof searchPublicWeb,
+ *  scrapeFn?: (url: string, options?: { env?: Record<string, string | undefined>, fetchFn?: (input: string, init?: RequestInit) => Promise<Response> }) => Promise<Record<string, unknown>>,
+ *  env?: Record<string, string | undefined>,
+ *  fetchFn?: (input: string, init?: RequestInit) => Promise<Response>,
+ * }} ExactVerificationOptions */
+
+/** @param {Array<Record<string, unknown>>} hypotheses @param {Record<string, unknown>} item @param {ExactVerificationOptions} [options] */
+export async function verifyPublicEmailHypotheses(hypotheses, item, options = {}) {
+  const searchFn = options.searchFn || searchPublicWeb;
+  const queries = [];
+  const sources = [];
+  const errors = [];
+  const verifications = [];
+  const verifiedContacts = [];
+  const seenEmails = new Set();
+  const credentials = credentialsFromEnv(options.env);
+
+  for (const hypothesis of Array.isArray(hypotheses) ? hypotheses : []) {
+    if (!hypothesis || typeof hypothesis !== 'object' || Array.isArray(hypothesis)) continue;
+    const email = lower(stringValue(hypothesis.email));
+    const name = stringValue(hypothesis.name);
+    const title = stringValue(hypothesis.title);
+    if (!email || !name || !title || seenEmails.has(email)) continue;
+    if (queries.length >= MAX_EXACT_VERIFICATION_QUERIES) break;
+    seenEmails.add(email);
+    const query = buildExactEmailVerificationQuery(hypothesis, item);
+    queries.push(query);
+    try {
+      const results = await searchFn(query, { limit: 5, env: options.env, fetchFn: options.fetchFn });
+      const batch = [];
+      let scrapeCount = 0;
+      for (const result of Array.isArray(results) ? results : []) {
+        if (!result || typeof result !== 'object' || Array.isArray(result)) continue;
+        const entry = /** @type {Record<string, unknown>} */ (result);
+        const url = normalizeUrl(stringValue(entry.url));
+        if (url && parsedUrl(url)) sources.push(url);
+        batch.push(entry);
+        const evidence = `${stringValue(entry.title)}\n${stringValue(entry.description)}\n${stringValue(entry.markdown)}`;
+        if (credentials && url && isSearchScrapeCandidate(url) && scrapeCount < 1 && !lower(evidence).includes(email)) {
+          scrapeCount += 1;
+          try {
+            const scraped = options.scrapeFn
+              ? await options.scrapeFn(url, { env: options.env, fetchFn: options.fetchFn })
+              : await scrapePublicPage(url, { credentials, fetchFn: options.fetchFn });
+            batch.push({ ...entry, ...scraped });
+          } catch { /* search metadata remains the only evidence when hydration fails */ }
+        }
+      }
+      const matches = extractPublicContacts(batch, item).filter((contact) =>
+        lower(stringValue(contact.email)) === email
+        && samePersonName(stringValue(contact.name), name)
+        && stringValue(contact.title),
+      );
+      if (matches.length) {
+        const contact = {
+          ...matches[0],
+          emailVerificationType: 'exact-public-source',
+          exactEmailEvidence: true,
+          verificationQuery: query,
+          verificationSourceUrl: matches[0].sourceUrl,
+        };
+        verifiedContacts.push(contact);
+        verifications.push({
+          name,
+          title,
+          email,
+          status: 'verified-exact-public-source',
+          query,
+          sourceUrl: contact.sourceUrl,
+        });
+      } else {
+        verifications.push({ name, title, email, status: 'not_observed', query });
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      errors.push(reason);
+      verifications.push({ name, title, email, status: 'error', query, reason });
+    }
+  }
+
+  return {
+    contacts: dedupeContacts(verifiedContacts),
+    queries,
+    sources: [...new Set(sources)].slice(0, 20),
+    verifications,
+    errors: [...new Set(errors)],
+  };
+}
+
+/** @param {Array<Record<string, unknown>>} candidates @param {Record<string, unknown>} item @param {ExactVerificationOptions} [options] */
+export async function verifyPublicCandidateEmails(candidates, item, options = {}) {
+  const searchFn = options.searchFn || searchPublicWeb;
+  const queries = [];
+  const sources = [];
+  const errors = [];
+  const verifications = [];
+  const verifiedContacts = [];
+  const seenNames = new Set();
+  const credentials = credentialsFromEnv(options.env);
+
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const name = stringValue(candidate.name);
+    const title = stringValue(candidate.title);
+    if (!name || !title || seenNames.has(lower(name))) continue;
+    if (queries.length >= MAX_CANDIDATE_EMAIL_QUERIES) break;
+    seenNames.add(lower(name));
+    const domain = candidateEmailDomain(item);
+    const candidateQueries = [
+      buildCandidateEmailVerificationQuery(candidate, item),
+      ...(domain ? [`"${name}" "@${domain}" email`] : []),
+    ];
+    const attemptedQueries = [];
+    let match = null;
+    let failure = '';
+    for (const query of candidateQueries) {
+      if (queries.length >= MAX_CANDIDATE_EMAIL_QUERIES) break;
+      queries.push(query);
+      attemptedQueries.push(query);
+      try {
+        const results = await searchFn(query, { limit: 5, env: options.env, fetchFn: options.fetchFn });
+        const batch = [];
+        let scrapeCount = 0;
+        for (const result of Array.isArray(results) ? results : []) {
+          if (!result || typeof result !== 'object' || Array.isArray(result)) continue;
+          const entry = /** @type {Record<string, unknown>} */ (result);
+          const url = normalizeUrl(stringValue(entry.url));
+          if (url && parsedUrl(url)) sources.push(url);
+          batch.push(entry);
+          const evidence = `${stringValue(entry.title)}\n${stringValue(entry.description)}\n${stringValue(entry.markdown)}`;
+          if (credentials && url && isSearchScrapeCandidate(url) && scrapeCount < 1 && !extractEmails(evidence).length) {
+            scrapeCount += 1;
+            try {
+              const scraped = options.scrapeFn
+                ? await options.scrapeFn(url, { env: options.env, fetchFn: options.fetchFn })
+                : await scrapePublicPage(url, { credentials, fetchFn: options.fetchFn });
+              batch.push({ ...entry, ...scraped });
+            } catch { /* search metadata remains the only evidence when hydration fails */ }
+          }
+        }
+        const matches = extractPublicContacts(batch, item).filter((contact) =>
+          samePersonName(stringValue(contact.name), name)
+          && Boolean(stringValue(contact.email))
+          && stringValue(contact.title),
+        );
+        if (matches.length) {
+          match = { ...matches[0], verificationQuery: query };
+          break;
+        }
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error);
+        errors.push(failure);
+        break;
+      }
+    }
+    if (match) {
+      const contact = {
+        ...match,
+        emailVerificationType: 'exact-public-source',
+        exactEmailEvidence: true,
+        verificationSourceUrl: match.sourceUrl,
+      };
+      verifiedContacts.push(contact);
+      verifications.push({
+        name,
+        title,
+        email: contact.email,
+        status: 'verified-exact-public-source',
+        query: attemptedQueries.at(-1),
+        queries: attemptedQueries,
+        sourceUrl: contact.sourceUrl,
+      });
+    } else {
+      verifications.push({
+        name,
+        title,
+        email: null,
+        status: failure ? 'error' : 'not_observed',
+        query: attemptedQueries.at(-1),
+        queries: attemptedQueries,
+        ...(failure ? { reason: failure } : {}),
+      });
+    }
+  }
+
+  return {
+    contacts: dedupeContacts(verifiedContacts),
+    queries,
+    sources: [...new Set(sources)].slice(0, 20),
+    verifications,
+    errors: [...new Set(errors)],
+  };
+}
+
 /** @param {Array<Record<string, unknown>>} contacts */
 function dedupeContacts(contacts) {
   const deduped = new Map();
@@ -399,10 +653,10 @@ function dedupeContacts(contacts) {
 export async function discoverContactsForApplication(item, options = {}) {
   const queries = buildDiscoveryQueries(item);
   if (!queries.length) {
-    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', queries: [], sources: [], contacts: [], errors: [] };
+    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', queries: [], sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], errors: [] };
   }
   if (options.dryRun) {
-    return { status: 'dry_run', reason: 'dry-run does not perform public web discovery', queries, sources: [], contacts: [], errors: [] };
+    return { status: 'dry_run', reason: 'dry-run does not perform public web discovery', queries, sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], errors: [] };
   }
   const contacts = [];
   const candidates = [];
@@ -411,7 +665,7 @@ export async function discoverContactsForApplication(item, options = {}) {
   const fetchFn = options.fetchFn || globalThis.fetch;
   const credentials = credentialsFromEnv(options.env);
   if (!credentials) {
-    return { status: 'unavailable', reason: 'Firecrawl credentials are unavailable', queries, sources: [], contacts: [], errors: [] };
+    return { status: 'unavailable', reason: 'Firecrawl credentials are unavailable', queries, sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], errors: [] };
   }
   for (const query of queries) {
     try {
@@ -440,17 +694,34 @@ export async function discoverContactsForApplication(item, options = {}) {
   const uniqueCandidates = dedupeContacts(candidates);
   const emailConventions = inferEmailConventions(uniqueContacts);
   const emailHypotheses = buildEmailHypotheses(emailConventions, uniqueCandidates);
-  const reason = uniqueContacts.length
-    ? `found ${uniqueContacts.length} public contact candidate(s)`
+  const emailVerification = emailHypotheses.length
+    ? await verifyPublicEmailHypotheses(emailHypotheses, item, { env: options.env, fetchFn: options.fetchFn })
+    : { contacts: [], queries: [], sources: [], verifications: [], errors: [] };
+  const verifiedHypothesisEmails = new Map(emailVerification.verifications
+    .filter((entry) => entry.status === 'verified-exact-public-source')
+    .map((entry) => [entry.email, entry]));
+  const annotatedHypotheses = emailHypotheses.map((hypothesis) => {
+    const verification = verifiedHypothesisEmails.get(lower(stringValue(hypothesis.email)));
+    return verification
+      ? { ...hypothesis, emailVerificationState: 'verified-exact-public-source', verificationSourceUrl: verification.sourceUrl || null, verificationQuery: verification.query }
+      : hypothesis;
+  });
+  const finalContacts = dedupeContacts([...uniqueContacts, ...emailVerification.contacts]);
+  const finalQueries = [...queries, ...emailVerification.queries];
+  const finalSources = [...new Set([...uniqueSources, ...emailVerification.sources])].slice(0, 20);
+  const finalErrors = [...new Set([...errors, ...emailVerification.errors])];
+  const reason = finalContacts.length
+    ? `found ${finalContacts.length} public contact candidate(s)`
     : 'no eligible public contact found';
   return {
-    status: uniqueContacts.length ? 'found' : 'no_contacts',
-    reason: `${reason}${emailConventions.length ? `; inferred ${emailConventions.length} review-only email convention(s)` : ''}${emailHypotheses.length ? `; generated ${emailHypotheses.length} unverified email hypothesis/hypotheses` : ''}`,
-    queries,
-    sources: uniqueSources,
-    contacts: uniqueContacts,
+    status: finalContacts.length ? 'found' : 'no_contacts',
+    reason: `${reason}${emailConventions.length ? `; inferred ${emailConventions.length} review-only email convention(s)` : ''}${emailHypotheses.length ? `; generated ${emailHypotheses.length} email hypothesis/hypotheses; exact verification observed ${emailVerification.contacts.length}` : ''}`,
+    queries: finalQueries,
+    sources: finalSources,
+    contacts: finalContacts,
     emailConventions,
-    emailHypotheses,
-    errors,
+    emailHypotheses: annotatedHypotheses,
+    emailVerification: emailVerification.verifications,
+    errors: finalErrors,
   };
 }

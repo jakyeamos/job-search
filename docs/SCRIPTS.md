@@ -160,7 +160,11 @@ relevant team member, scrapes only non-LinkedIn public pages, and stores the
 source URLs and evidence locally. It also searches Gmail headers for existing
 professional relationships in the configured mailbox and searches configured
 warm networks such as Amazon and Case Western Reserve University for relevant
-public recruiter, hiring-manager, and team signals. The existing
+public recruiter, hiring-manager, and team signals. For up to four named
+public candidates without an address, it runs at most two exact-name Firecrawl
+searches (name/company/email, then name/employer-domain/email) and promotes only
+an exact named employer-domain match. Known data-broker and blocked job-board
+sources are never used as evidence. The existing
 `data/outreach-contacts.json` manifest remains a supported override/supplement
 for contacts you have already researched.
 
@@ -199,14 +203,20 @@ source URLs. It can apply that convention to a separately discovered name as an
 `unverified-hypothesis`, but the hypothesis is deliberately kept out of
 `record.contacts` and the outbox. It becomes eligible only after the exact
 address is independently observed in a public employer-domain source or in a
-first-party Gmail header with its source message ID. Do not validate hypotheses
-by sending test mail, probing SMTP, using data brokers, or scraping blocked
-sites.
+first-party Gmail header with its source message ID. The discovery pass now runs
+a bounded exact-address Firecrawl query for each hypothesis; only a result that
+contains the exact address and the same named person is promoted to a verified
+contact. The original hypothesis remains marked as derived evidence for audit.
+Use `--force` on an explicitly requested read-only discovery retry when a prior
+provider error is still inside its short cache window. Do not validate
+hypotheses by sending test mail, probing SMTP, using data brokers, or scraping
+blocked sites.
 
 ```bash
 node outreach.mjs prepare --application <queue-id> --dry-run
 node outreach.mjs discover --application <queue-id> --dry-run
 node outreach.mjs discover --application <queue-id>
+node outreach.mjs discover --application <queue-id> --force
 node outreach.mjs process --dry-run
 node outreach.mjs enable-email
 node outreach.mjs process

@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildCandidateEmailVerificationQuery,
+  buildExactEmailVerificationQuery,
   buildDiscoveryQueries,
   discoverContactsForApplication,
   extractPublicContacts,
   isDiscoverableApplication,
+  verifyPublicEmailHypotheses,
+  verifyPublicCandidateEmails,
 } from '../contact-discovery.mjs';
 import { rankContacts, selectContacts } from '../outreach-lib.mjs';
 
@@ -47,12 +51,18 @@ test('contact extraction only marks public company evidence as email-eligible', 
       title: 'Example AI team',
       markdown: 'Taylor Example\nEngineering Manager\ntaylor@example.ai',
     },
+    {
+      url: 'https://rocketreach.co/taylor-example-email_12345',
+      title: 'Taylor Example - Example AI',
+      markdown: 'Taylor Example\ntaylor@example.ai',
+    },
   ], item);
 
   assert.equal(contacts.length, 2);
   assert.equal(contacts.find((contact) => contact.name === 'Taylor Example')?.emailVerified, true);
   assert.equal(contacts.find((contact) => contact.name === 'Recruiting Team')?.email, 'recruiting@example.ai');
   assert.equal(contacts.some((contact) => contact.email === 'someone@gmail.com'), false);
+  assert.equal(contacts.some((contact) => contact.sourceUrl.includes('rocketreach.co')), false);
   assert.equal(contacts.some((contact) => contact.sourceUrl === 'https://other.example/team'), false);
 });
 
@@ -81,6 +91,80 @@ test('LinkedIn result snippets preserve explicitly published employer emails', (
   assert.equal(contacts.length, 1);
   assert.equal(contacts[0].email, 'stephanie@amazon.com');
   assert.equal(contacts[0].emailVerified, true);
+});
+
+test('exact email verification promotes only a named public match', async () => {
+  const hypothesis = {
+    name: 'Morgan Example',
+    title: 'Technical Recruiter',
+    company: 'Example AI',
+    email: 'morgan.example@example.ai',
+    sourceUrl: 'https://www.linkedin.com/in/morgan-example',
+  };
+  assert.equal(buildExactEmailVerificationQuery(hypothesis, item), '"morgan.example@example.ai" "Morgan Example" "Example AI"');
+  const verified = await verifyPublicEmailHypotheses([hypothesis], item, {
+    searchFn: async () => [{
+      url: 'https://example.ai/team/morgan',
+      title: 'Morgan Example | Technical Recruiter | Example AI',
+      markdown: 'Morgan Example\nTechnical Recruiter\nmorgan.example@example.ai',
+    }],
+  });
+  assert.equal(verified.contacts.length, 1);
+  assert.equal(verified.contacts[0].email, hypothesis.email);
+  assert.equal(verified.contacts[0].emailVerified, true);
+  assert.equal(verified.contacts[0].guessed, false);
+  assert.equal(verified.contacts[0].emailVerificationType, 'exact-public-source');
+  assert.equal(verified.verifications[0].status, 'verified-exact-public-source');
+
+  const mismatch = await verifyPublicEmailHypotheses([hypothesis], item, {
+    searchFn: async () => [{
+      url: 'https://example.ai/team/other',
+      title: 'Jordan Example | Technical Recruiter | Example AI',
+      markdown: 'Jordan Example\nTechnical Recruiter\nmorgan.example@example.ai',
+    }],
+  });
+  assert.equal(mismatch.contacts.length, 0);
+  assert.equal(mismatch.verifications[0].status, 'not_observed');
+});
+
+test('candidate email discovery searches names without inventing an address', async () => {
+  const candidate = {
+    name: 'Morgan Example',
+    title: 'Technical Recruiter',
+    company: 'Example AI',
+    email: null,
+    sourceType: 'public-profile',
+    sourceUrl: 'https://www.linkedin.com/in/morgan-example',
+  };
+  assert.equal(
+    buildCandidateEmailVerificationQuery(candidate, { ...item, companyWebsite: 'https://example.ai' }),
+    '"Morgan Example" "Example AI" email contact',
+  );
+  const result = await verifyPublicCandidateEmails([candidate], { ...item, companyWebsite: 'https://example.ai' }, {
+    searchFn: async () => [{
+      url: 'https://example.ai/team/morgan',
+      title: 'Morgan Example | Technical Recruiter | Example AI',
+      markdown: 'Morgan Example\nTechnical Recruiter\nmorgan@example.ai',
+    }],
+  });
+  assert.equal(result.contacts.length, 1);
+  assert.equal(result.contacts[0].email, 'morgan@example.ai');
+  assert.equal(result.contacts[0].emailVerificationType, 'exact-public-source');
+  assert.equal(result.verifications[0].status, 'verified-exact-public-source');
+
+  const fallbackQueries = [];
+  const fallback = await verifyPublicCandidateEmails([candidate], { ...item, companyWebsite: 'https://example.ai' }, {
+    searchFn: async (query) => {
+      fallbackQueries.push(query);
+      return query.includes('@example.ai') ? [{
+        url: 'https://example.ai/team/morgan',
+        title: 'Morgan Example | Technical Recruiter | Example AI',
+        markdown: 'Morgan Example\nTechnical Recruiter\nmorgan@example.ai',
+      }] : [];
+    },
+  });
+  assert.equal(fallback.contacts.length, 1);
+  assert.equal(fallbackQueries.length, 2);
 });
 
 test('discovery selects an email duo when a public-profile candidate has no email', () => {
@@ -187,4 +271,5 @@ test('live discovery infers a review-only convention without making hypotheses s
   assert.equal(result.emailHypotheses[0].email, 'morgan.example@example.ai');
   assert.equal(result.emailHypotheses[0].emailVerified, false);
   assert.equal(result.emailHypotheses[0].guessed, true);
+  assert.equal(result.emailVerification[0].status, 'not_observed');
 });

@@ -118,7 +118,16 @@ public examples support one employer-domain convention across distinct source
 URLs. A hypothesis is not a verified email: it remains marked guessed and
 unverified, is not placed in the sendable contact list, and must be checked
 against exact public evidence or a first-party Gmail header before anyone may
-add it as a contact. Never test a hypothesis by sending mail or probing SMTP.
+add it as a contact. Discovery performs a bounded exact-address Firecrawl query
+for each hypothesis and promotes it only when the exact address and the same
+named person appear together in public evidence. Never test a hypothesis by
+sending mail or probing SMTP.
+
+When a named public candidate has no address, discovery may run at most two
+exact-name Firecrawl searches for each of the top four candidates. These are
+evidence searches, not address generation: only the same person, an exact
+employer-domain address, and an allowed public source can be promoted. Data
+brokers and blocked job boards never qualify.
 
 ---
 
