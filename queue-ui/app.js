@@ -259,6 +259,22 @@ function renderHandoffs() {
   elements.handoffList.innerHTML = pages.map((page) => `<article class="handoff-card"><div><h3>${escapeHtml(page.title || 'Application')}</h3><p>${escapeHtml(page.company || '')}</p></div><span class="tag ${page.status === 'submitted' ? 'tag-status-ready' : ''}">${escapeHtml(humanize(page.status || 'waiting'))}</span></article>`).join('');
 }
 
+function contactDiscoveryMarkup(item) {
+  const discovery = item.outreach?.discovery;
+  if (!discovery) {
+    return '<details class="queue-details"><summary>Email discovery</summary><p>Queued for the next queue refresh.</p></details>';
+  }
+  const contacts = Array.isArray(discovery.contacts) ? discovery.contacts : [];
+  const hypotheses = Array.isArray(discovery.emailHypotheses) ? discovery.emailHypotheses : [];
+  const contactRows = contacts.length
+    ? contacts.map((contact) => `<li><strong>${escapeHtml(contact.name || 'Contact')}</strong> — ${escapeHtml(contact.title || 'Role signal')}${contact.email ? ` · <code>${escapeHtml(contact.email)}</code>${contact.emailVerified ? ' <span class="tag tag-status-ready">verified</span>' : ''}` : ' · no exact email observed'}</li>`).join('')
+    : '<li>No public or first-party contact email was observed.</li>';
+  const hypothesisRows = hypotheses.length
+    ? `<p><strong>Review-only hypotheses</strong> — not eligible for sending:</p><ul>${hypotheses.map((hypothesis) => `<li>${escapeHtml(hypothesis.name || 'Named candidate')} · <code>${escapeHtml(hypothesis.email || 'unknown')}</code> · ${escapeHtml(hypothesis.convention || 'inferred convention')}</li>`).join('')}</ul>`
+    : '';
+  return `<details class="queue-details"><summary>Contact discovery · ${escapeHtml(humanize(discovery.status || 'pending'))}</summary><p>${escapeHtml(discovery.reason || 'Discovery completed without a summary.')}</p><ul>${contactRows}</ul>${hypothesisRows}</details>`;
+}
+
 function renderItem(item) {
   const reasons = Array.isArray(item.fitReasons) ? item.fitReasons : [];
   const company = item.company || 'Company not parsed';
@@ -291,6 +307,7 @@ function renderItem(item) {
           ${reasonsMarkup}
           <p>Evidence: ${escapeHtml(item.fitConfidence || 'limited')} confidence · ${escapeHtml(item.liveness || 'unknown')} link</p>
         </details>
+        ${contactDiscoveryMarkup(item)}
       </div>
         <div class="queue-actions">
           <a class="button button-primary" href="${escapeHtml(safeHref(item.applyUrl || item.canonicalUrl))}" target="_blank" rel="noopener">Open role</a>

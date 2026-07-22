@@ -482,7 +482,7 @@ export async function runClearQueue(options = {}) {
     const refresh = await execFileAsync(process.execPath, refreshArgs, {
       cwd: ROOT,
       env: { ...process.env, CAREER_OPS_QUEUE_PREVIEW: '1' },
-      timeout: 300_000,
+      timeout: 1_800_000,
       maxBuffer: 12 * 1024 * 1024,
     });
     const refreshRawOutput = `${refresh.stdout || ''}\n${refresh.stderr || ''}`;

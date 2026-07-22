@@ -312,6 +312,8 @@ export function buildQueueItem(candidate, profile, root) {
   const canonicalUrl = normalizeUrl(String(candidate.canonicalUrl || candidate.url || ''));
   const source = normalizeText(String(candidate.source || inferSourceFromUrl(canonicalUrl))).toLowerCase() || 'manual';
   const now = new Date().toISOString();
+  const configuredCompanyWebsite = normalizeText(String(candidate.companyWebsite || candidate.companyUrl || candidate.employerUrl || ''));
+  const careersUrlDomain = normalizeText(String(candidate.careersUrlDomain || ''));
   const observedAt = isoTimestamp(candidate.observedAt) || isoTimestamp(candidate.lastSeenAt);
   const firstSeenAt = isoTimestamp(candidate.firstSeenAt)
     || isoTimestamp(candidate.postedAt)
@@ -327,6 +329,7 @@ export function buildQueueItem(candidate, profile, root) {
     applyUrl: candidate.applyUrl || canonicalUrl,
     title: normalizeText(String(candidate.title || 'Job lead')),
     company: normalizeText(String(candidate.company || '')),
+    companyWebsite: configuredCompanyWebsite || (careersUrlDomain ? `https://${careersUrlDomain}` : null),
     location: normalizeText(String(candidate.location || '')),
     description: normalizeText(String(candidate.description || '')),
     postedAt: candidate.postedAt || null,
@@ -425,8 +428,14 @@ export function buildQueue(candidates, previous = {}, options = {}) {
       ...candidate,
       status: preservedStatus,
       snoozeUntil: old?.snoozeUntil || candidate.snoozeUntil || null,
+      companyWebsite: candidate.companyWebsite || old?.companyWebsite || null,
       updatedAt: now,
     };
+    const oldOutreach = old?.outreach && typeof old.outreach === 'object' ? old.outreach : null;
+    const candidateOutreach = candidate.outreach && typeof candidate.outreach === 'object' ? candidate.outreach : null;
+    if (oldOutreach?.discovery && !candidateOutreach?.discovery) {
+      mergedItem.outreach = { ...candidateOutreach, discovery: oldOutreach.discovery };
+    }
     if (old?.firstSeenAt) mergedItem.firstSeenAt = old.firstSeenAt;
     if (!observedNow && old?.lastSeenAt) mergedItem.lastSeenAt = old.lastSeenAt;
     if (!observedNow && old?.lastConfirmedActiveAt) mergedItem.lastConfirmedActiveAt = old.lastConfirmedActiveAt;
@@ -509,6 +518,23 @@ function markdown(value) {
   return normalizeText(value).replace(/[|\r\n]/g, ' ');
 }
 
+/** @param {Record<string, unknown>} item */
+function contactDiscoveryMarkdown(item) {
+  const discovery = item.outreach?.discovery;
+  if (!discovery || typeof discovery !== 'object') return '- Email discovery: queued on the next refresh';
+  const contacts = Array.isArray(discovery.contacts) ? discovery.contacts : [];
+  const hypotheses = Array.isArray(discovery.emailHypotheses) ? discovery.emailHypotheses : [];
+  const observed = contacts
+    .filter((contact) => contact && typeof contact === 'object' && contact.email)
+    .map((contact) => markdown(`${contact.name || 'Contact'} <${contact.email}>`));
+  const inferred = hypotheses
+    .filter((hypothesis) => hypothesis && typeof hypothesis === 'object' && hypothesis.email)
+    .map((hypothesis) => markdown(`${hypothesis.name || 'Named candidate'} <${hypothesis.email}> (review-only hypothesis)`));
+  const entries = [...observed, ...inferred].slice(0, 10);
+  if (!entries.length) return `- Email discovery: ${markdown(discovery.status || 'no contacts')} — ${markdown(discovery.reason || 'no email candidate recorded')}`;
+  return `- Email candidates: ${entries.join('; ')}`;
+}
+
 /** @param {Record<string, unknown>} state */
 export function renderQueueMarkdown(state) {
   const selected = Array.isArray(state.items)
@@ -537,6 +563,7 @@ export function renderQueueMarkdown(state) {
       `- Apply: ${item.applyUrl || item.canonicalUrl}`,
       `- Why: ${(item.fitReasons || []).map(markdown).join('; ') || 'Fit review needed'}`,
       item.outreach?.suggested ? `- Optional outreach search: ${markdown(item.outreach.searchQuery)}` : '- Outreach: optional',
+      contactDiscoveryMarkdown(item),
       '',
     );
   }

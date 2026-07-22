@@ -47,6 +47,7 @@ node queue.mjs health --all --apply        # sweep all eligible non-restricted U
 node queue.mjs install-schedule --dry-run
 node queue.mjs install-schedule
 node queue-ui.mjs
+node outreach.mjs discover-queue --limit 10 # read-only contact discovery for imported roles
 node outreach.mjs process --dry-run
 node outreach.mjs status
 ```
@@ -65,6 +66,16 @@ and posting dates stay separate rather than being guessed.
 
 Queue state is kept in the local ignored files `data/job-queue.json` and
 `data/job-queue.md`.
+
+Every non-dry-run `queue.mjs refresh` now runs the bounded `discover-queue`
+pass before any existing outreach processing. It attaches a cached discovery
+snapshot to each attempted queue item, including public and first-party contact
+evidence, observed employer conventions, and review-only email hypotheses; the
+queue UI and Markdown queue render the same snapshot. Selected roles are tried
+first, up to the refresh limit (capped at 20), and remaining due roles stay
+queued for a later refresh. The pass never sends email. Imported evidence is
+reused when an application record is prepared, followed by the normal
+post-application revalidation and existing verified-email/send gates.
 
 ### 8 AM source-only boundary
 

@@ -306,7 +306,7 @@ function applyQueueAction(payload) {
 async function refreshQueue() {
   const result = await execFileAsync(process.execPath, [path.join(ROOT, 'queue.mjs'), 'refresh', '--limit', '6'], {
     cwd: ROOT,
-    timeout: 300_000,
+    timeout: 1_800_000,
     maxBuffer: 8 * 1024 * 1024,
   });
   return {

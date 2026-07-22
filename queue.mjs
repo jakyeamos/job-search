@@ -320,7 +320,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
     const sourceErrors = [...gmail.errors, ...publicSources.errors];
     const candidateItems = candidates.map((candidate) => buildQueueItem(candidate, profile, root));
     const now = new Date().toISOString();
-    const state = buildQueue(candidateItems, previousForBuild, { limit, now, retainUnseen: true });
+    let state = buildQueue(candidateItems, previousForBuild, { limit, now, retainUnseen: true });
     const aging = applyPostingAging(state, {
       now,
       sourceScanHealthy: sourceErrors.length === 0 && !skipPublic,
@@ -339,6 +339,21 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       aging,
     };
     if (!dryRun) saveQueue(root, state);
+    const discoveryArgs = ['discover-queue', '--limit', String(Math.min(20, Math.max(1, limit)))];
+    if (dryRun) discoveryArgs.push('--dry-run');
+    const contactDiscovery = await runNodeScript('outreach.mjs', discoveryArgs, { timeoutMs: 900_000 });
+    if (!dryRun) {
+      const discoveredState = readQueueState(QUEUE_JSON);
+      if (Array.isArray(discoveredState.items)) state = { ...state, items: discoveredState.items };
+    }
+    if (!contactDiscovery.ok) {
+      sourceErrors.push(`queue contact discovery failed: ${contactDiscovery.error}`);
+    }
+    state.lastRun.contactDiscovery = {
+      ok: contactDiscovery.ok,
+      output: `${contactDiscovery.stdout || ''}${contactDiscovery.stderr || ''}`.trim().slice(0, 4000),
+    };
+    state.lastRun.errors = sourceErrors;
     if (skipOutreach) {
       state.lastRun.outreach = { ok: true, skipped: true, output: 'outreach deferred until a confirmed application submission' };
     } else {
@@ -351,6 +366,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
         output: `${outreach.stdout || ''}${outreach.stderr || ''}`.trim().slice(0, 4000),
       };
     }
+    state.lastRun.errors = sourceErrors;
     if (!dryRun) saveQueue(root, state);
     const selected = state.items.filter((item) => item.selectedForToday);
     console.log(`Queue refresh${dryRun ? ' (dry run)' : ''}: ${selected.length} role(s) selected, ${state.items.length} total retained.`);

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,8 @@ import {
   applicationKey,
   loadProfile,
   readQueueState,
+  renderQueueMarkdown,
+  writeQueueState,
 } from './queue-lib.mjs';
 import {
   OUTREACH_CONTACTS_PATH,
@@ -54,6 +56,7 @@ import {
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const QUEUE_PATH = path.join(ROOT, 'data', 'job-queue.json');
+const QUEUE_MARKDOWN_PATH = path.join(ROOT, 'data', 'job-queue.md');
 const APPLICATION_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
 const STATE_PATH = path.join(ROOT, OUTREACH_STATE_PATH);
 const CONTACTS_PATH = path.join(ROOT, OUTREACH_CONTACTS_PATH);
@@ -131,10 +134,12 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
   const profile = loadProfile(ROOT);
   const policy = loadOutreachPolicy(profile);
   const persistedContacts = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
+  const importedContacts = Array.isArray(item.outreach?.discovery?.contacts) ? item.outreach.discovery.contacts : [];
   const contacts = selectContacts(rankContacts([
     ...contactsForItem(item, loadContactManifest()),
     ...persistedContacts,
     ...discoveredContacts,
+    ...importedContacts,
   ], item), policy.maxContactsPerApplication);
   const existing = new Map((record.contacts || []).map((contact) => [contact.id, contact]));
   record.contacts = contacts.map((contact) => {
@@ -305,6 +310,145 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
   return result;
 }
 
+/** @param {Record<string, unknown>} item @param {boolean} force */
+function queueDiscoveryDue(item, force) {
+  if (force) return true;
+  const discovery = item.outreach?.discovery;
+  if (!discovery || typeof discovery !== 'object') return true;
+  if (discovery.pipelineVersion !== DISCOVERY_PIPELINE_VERSION) return true;
+  const expiresAt = new Date(String(discovery.cacheExpiresAt || '')).getTime();
+  return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
+}
+
+/** @param {Record<string, unknown>} record */
+function queueDiscoverySnapshot(record) {
+  const discovery = record.discovery && typeof record.discovery === 'object' ? record.discovery : {};
+  return {
+    pipelineVersion: DISCOVERY_PIPELINE_VERSION,
+    mode: 'queue-import',
+    status: discovery.status || 'error',
+    attemptedAt: discovery.attemptedAt || new Date().toISOString(),
+    cacheExpiresAt: discovery.cacheExpiresAt || null,
+    nextAttemptAt: discovery.nextAttemptAt || discovery.cacheExpiresAt || null,
+    candidateCount: Number(discovery.candidateCount || 0),
+    freshCandidateCount: Number(discovery.freshCandidateCount || 0),
+    sourceCount: Number(discovery.sourceCount || 0),
+    reason: discovery.reason || '',
+    queries: Array.isArray(discovery.queries) ? discovery.queries : [],
+    sources: Array.isArray(discovery.sources) ? discovery.sources : [],
+    errors: Array.isArray(discovery.errors) ? discovery.errors : [],
+    contacts: Array.isArray(record.discoveredContacts) ? record.discoveredContacts.slice(0, 25) : [],
+    emailConventions: Array.isArray(discovery.emailConventions) ? discovery.emailConventions : [],
+    emailHypotheses: Array.isArray(discovery.emailHypotheses) ? discovery.emailHypotheses : [],
+    emailVerification: Array.isArray(discovery.emailVerification) ? discovery.emailVerification : [],
+    candidateEmailVerification: Array.isArray(discovery.candidateEmailVerification) ? discovery.candidateEmailVerification : [],
+  };
+}
+
+/** @param {boolean} dryRun @param {number} requestedLimit @param {boolean} force */
+async function discoverQueue(dryRun, requestedLimit, force) {
+  await loadDotenvOnce();
+  const queue = readQueueState(QUEUE_PATH);
+  const items = Array.isArray(queue.items) ? queue.items : [];
+  const limit = Math.min(20, Math.max(1, Number(requestedLimit || 10)));
+  const due = items
+    .filter((item) => ['ready', 'in_review'].includes(String(item.status || '')))
+    .filter((item) => isDiscoverableApplication(item) && queueDiscoveryDue(item, force))
+    .sort((left, right) => {
+      const selected = Number(right.selectedForToday === true) - Number(left.selectedForToday === true);
+      if (selected) return selected;
+      return Number(left.queueRank || 999) - Number(right.queueRank || 999)
+        || String(left.firstSeenAt || '').localeCompare(String(right.firstSeenAt || ''));
+    });
+  const batch = due.slice(0, limit);
+  const relationshipClient = batch.length ? await createRelationshipClient(dryRun) : null;
+  const results = [];
+  const errors = [];
+
+  for (const item of batch) {
+    const imported = item.outreach?.discovery;
+    const record = {
+      status: 'awaiting_submission_confirmation',
+      discoveredContacts: Array.isArray(imported?.contacts) ? imported.contacts : [],
+    };
+    try {
+      const result = await discoverForRecord(record, item, dryRun, {
+        gmailClient: relationshipClient,
+        force: true,
+      });
+      const discoveryErrors = Array.isArray(result.errors) ? result.errors.filter(Boolean) : [];
+      if (result.status === 'error' || discoveryErrors.length) {
+        errors.push(`${item.company || 'Unknown'} / ${item.title || 'Job lead'}: ${discoveryErrors.join('; ') || result.reason || 'contact discovery returned an error'}`);
+      }
+      if (!dryRun) {
+        item.outreach = {
+          ...(item.outreach && typeof item.outreach === 'object' ? item.outreach : {}),
+          discovery: queueDiscoverySnapshot(record),
+        };
+      }
+      results.push({
+        id: item.id,
+        company: item.company,
+        title: item.title,
+        status: result.status,
+        contacts: Array.isArray(record.discoveredContacts) ? record.discoveredContacts.length : 0,
+        emails: Array.isArray(record.discoveredContacts) ? record.discoveredContacts.filter((contact) => contact.email).length : 0,
+        hypotheses: Array.isArray(result.emailHypotheses) ? result.emailHypotheses.length : 0,
+        reason: result.reason || '',
+        errors: discoveryErrors,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      errors.push(`${item.company || 'Unknown'} / ${item.title || 'Job lead'}: ${reason}`);
+      if (!dryRun) {
+        item.outreach = {
+          ...(item.outreach && typeof item.outreach === 'object' ? item.outreach : {}),
+          discovery: {
+            pipelineVersion: DISCOVERY_PIPELINE_VERSION,
+            mode: 'queue-import',
+            status: 'error',
+            attemptedAt: new Date().toISOString(),
+            cacheExpiresAt: new Date(Date.now() + discoveryCacheTtlMs('error')).toISOString(),
+            nextAttemptAt: new Date(Date.now() + discoveryCacheTtlMs('error')).toISOString(),
+            candidateCount: 0,
+            freshCandidateCount: 0,
+            sourceCount: 0,
+            reason,
+            queries: [],
+            sources: [],
+            errors: [reason],
+            contacts: [],
+            emailConventions: [],
+            emailHypotheses: [],
+            emailVerification: [],
+            candidateEmailVerification: [],
+          },
+        };
+      }
+    }
+  }
+
+  if (!dryRun && batch.length) {
+    queue.generatedAt = new Date().toISOString();
+    writeQueueState(QUEUE_PATH, queue);
+    writeFileSync(QUEUE_MARKDOWN_PATH, renderQueueMarkdown(queue), 'utf8');
+  }
+  const summary = {
+    ok: errors.length === 0,
+    dryRun,
+    attempted: batch.length,
+    deferred: Math.max(0, due.length - batch.length),
+    results,
+    errors,
+  };
+  console.log(`Queue contact discovery${dryRun ? ' (dry run)' : ''}: ${batch.length} role(s) attempted, ${summary.deferred} deferred.`);
+  for (const result of results) {
+    console.log(`  ${result.company || 'Unknown'} / ${result.title || 'Job lead'} — ${result.status}; ${result.emails} email(s), ${result.hypotheses} review-only hypothesis/hypotheses`);
+  }
+  for (const error of errors) console.log(`  ⚠️ ${error}`);
+  return summary;
+}
+
 /** @param {Record<string, unknown>} item @param {Record<string, unknown>} record */
 function printPrepared(item, record) {
   console.log(`${item.company || 'Unknown company'} | ${item.title || 'Job lead'} | ${record.status}`);
@@ -435,16 +579,24 @@ async function createRelationshipClient(dryRun) {
   }
 }
 
+/** @param {Record<string, unknown>} record @param {Record<string, unknown>} item */
+function seedImportedDiscovery(record, item) {
+  const imported = item.outreach?.discovery;
+  if (!imported || typeof imported !== 'object' || !Array.isArray(imported.contacts)) return;
+  const existing = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
+  record.discoveredContacts = retainDiscoveryContacts(existing, imported.contacts, true);
+}
+
 /** @param {Record<string, unknown>} state @param {Array<Record<string, unknown>>} items @param {boolean} dryRun */
 function ensureAppliedRecords(state, items, dryRun) {
   for (const item of items.filter((candidate) => candidate.status === 'applied')) {
-    if (!findOutreachRecord(state, applicationKey(item))) {
-      upsertSubmissionSignal(state, item, {
+    const existing = findOutreachRecord(state, applicationKey(item));
+    const record = existing || upsertSubmissionSignal(state, item, {
         source: 'queue_applied',
         at: item.appliedAt || new Date().toISOString(),
         confirmed: false,
       });
-    }
+    seedImportedDiscovery(record, item);
   }
   if (!dryRun) saveOutreachState(STATE_PATH, state);
 }
@@ -1037,6 +1189,11 @@ async function main() {
   const command = args[0] || 'status';
   if (command === 'prepare') { prepare(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
   if (command === 'discover') { await discover(readFlag(args, '--application'), hasFlag(args, '--dry-run'), hasFlag(args, '--force')); return; }
+  if (command === 'discover-queue') {
+    const result = await discoverQueue(hasFlag(args, '--dry-run'), Number(readFlag(args, '--limit', '10')), hasFlag(args, '--force'));
+    if (!result.ok && !result.dryRun) process.exitCode = 2;
+    return;
+  }
   if (command === 'process') {
     const result = await processOutreach(hasFlag(args, '--dry-run'));
     if (!result.ok && !result.summary.dryRun) process.exitCode = 2;
@@ -1054,7 +1211,7 @@ async function main() {
   }
   if (command === 'ramp-complete') { setRamp(true); return; }
   if (command === 'ramp-reset') { setRamp(false); return; }
-  throw new Error('Usage: node outreach.mjs prepare|discover [--force]|process|status|pause|enable-email|disable-email|ramp-complete|ramp-reset');
+  throw new Error('Usage: node outreach.mjs prepare|discover [--force]|discover-queue [--limit N]|process|status|pause|enable-email|disable-email|ramp-complete|ramp-reset');
 }
 
 main().catch((error) => {
