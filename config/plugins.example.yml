@@ -5,3 +5,6 @@ plugins:
     label: "Job Leads"
     days_back: 30
     max_messages: 1000
+  jackandjill:
+    enabled: false
+    cache_file: "data/jackandjill-recommendations.json"

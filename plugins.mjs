@@ -87,6 +87,7 @@ async function runIngest(id, dryRun, noPipeline) {
     root: ROOT,
     dryRun,
     timeoutMs: id === 'gmail' ? GMAIL_INGEST_TIMEOUT_MS : undefined,
+    onlyIds: [id],
   });
   const selected = results.find((result) => result.id === id);
   if (!selected) throw new Error(`plugin "${id}" was skipped by the plugin engine`);

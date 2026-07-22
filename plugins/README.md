@@ -66,6 +66,27 @@ node plugins.mjs run notion search "platform"    # search
 node plugins.mjs run notion export [--dry-run]   # export
 ```
 
+### Jack & Jill (authenticated, read-only)
+
+Jack & Jill is an opt-in recommendation and coaching source. Its private
+OpenCLI adapter uses the authorized Chrome Beta session through the browser
+bridge; it does not store credentials, inspect cookies, or submit applications:
+
+```bash
+opencli jackandjill jobs -f json
+opencli jackandjill job --url 'https://www.jackandjill.ai/jobs/<uuid>' -f json
+node jackandjill.mjs coach --job-url 'https://www.jackandjill.ai/jobs/<uuid>'
+node jackandjill.mjs sync --write
+node plugins.mjs run jackandjill --dry-run
+```
+
+`sync --write` stores normalized recommendations in the ignored
+`data/jackandjill-recommendations.json` cache. The ingest plugin reads that
+cache, canonicalizes Jack UUID URLs (including Gmail tracking wrappers), keeps
+`sourceMessageId` provenance, and leaves incomplete records as
+`source-alert` items. Coaching output remains a local review artifact and is
+never an application submission.
+
 ### The `ctx` object
 
 - `fetch(url, opts)` — the **guarded** primitive: HTTPS-only, pinned to your

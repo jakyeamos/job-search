@@ -27,6 +27,25 @@
         "skill": true,
         "allowsLocalhost": false
       }
+    },
+    "jackandjill": {
+      "source": "bundled",
+      "version": "1.0.0",
+      "integrity": "sha256-e1cafe58814e2c66a3a3052bd8989599d1edbc324e9146df0ffe32a7bf0970b6",
+      "files": {
+        "index.mjs": "sha256-29b9f75d62f28e528f33208033f9bb7de0027b29e2dc17bf25166c90e80b3355",
+        "manifest.json": "sha256-e986667845a58b3fd0faefaa9f25c36d241a742a958da114791c4bcc7f50af88",
+        "skill.md": "sha256-11931ab74ff7503dd0ede6dadf8c951c1194abce502477d8171d162e7ecc03d7"
+      },
+      "consent": {
+        "hooks": [
+          "ingest"
+        ],
+        "requiredEnv": [],
+        "allowedHosts": [],
+        "skill": true,
+        "allowsLocalhost": false
+      }
     }
   }
 }

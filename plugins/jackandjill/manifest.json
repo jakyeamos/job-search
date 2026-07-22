@@ -1,0 +1,13 @@
+{
+  "id": "jackandjill",
+  "name": "Jack & Jill recommendations",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "Ingest user-refreshed Jack & Jill job recommendations into the review queue without submitting applications.",
+  "hooks": ["ingest"],
+  "requiredEnv": [],
+  "allowedHosts": [],
+  "skill": "skill.md",
+  "humanInTheLoop": true,
+  "homepage": "https://www.jackandjill.ai/"
+}

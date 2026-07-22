@@ -154,11 +154,19 @@ async function discoverPublic(options) {
 async function ingestGmail(options) {
   const errors = [];
   const candidates = [];
+  const sourceCounts = {};
+  const sourceErrors = /** @type {Record<string, string[]>} */ ({ gmail: [], jackandjill: [] });
   try {
     const organized = await organizeGmail({ root: ROOT, dryRun: options.dryRun, limit: Math.max(1000, options.limit * 20) });
-    if (!organized.authenticated) errors.push('Gmail organizer skipped: OAuth credentials are not configured');
+    if (!organized.authenticated) {
+      const message = 'Gmail organizer skipped: OAuth credentials are not configured';
+      errors.push(message);
+      sourceErrors.gmail.push(message);
+    }
   } catch (error) {
-    errors.push(`Gmail organizer failed: ${error instanceof Error ? error.message : String(error)}`);
+    const message = `Gmail organizer failed: ${error instanceof Error ? error.message : String(error)}`;
+    errors.push(message);
+    sourceErrors.gmail.push(message);
   }
 
   try {
@@ -168,13 +176,16 @@ async function ingestGmail(options) {
       timeoutMs: 120_000,
     });
     for (const result of results) {
-      if (result.id !== 'gmail') continue;
+      if (!['gmail', 'jackandjill'].includes(result.id)) continue;
       if (!result.ok) {
-        errors.push(`Gmail ingest failed: ${result.error || 'unknown error'}`);
+        const message = `${result.id} ingest failed: ${result.error || 'unknown error'}`;
+        errors.push(message);
+        sourceErrors[result.id].push(message);
         continue;
       }
       if (Array.isArray(result.result)) {
         const observedAt = new Date().toISOString();
+        sourceCounts[result.id] = result.result.length;
         for (const candidate of result.result) {
           if (!candidate || typeof candidate !== 'object') continue;
           candidates.push({
@@ -185,22 +196,35 @@ async function ingestGmail(options) {
         }
       }
     }
-    if (!candidates.length && !hasGmailCredentials()) errors.push('Gmail queue ingest unavailable until .env OAuth values are configured');
+    if (!sourceCounts.gmail && !hasGmailCredentials()) {
+      const message = 'Gmail queue ingest unavailable until .env OAuth values are configured';
+      errors.push(message);
+      sourceErrors.gmail.push(message);
+    }
   } catch (error) {
-    errors.push(`Gmail plugin failed: ${error instanceof Error ? error.message : String(error)}`);
+    const message = `Gmail plugin failed: ${error instanceof Error ? error.message : String(error)}`;
+    errors.push(message);
+    sourceErrors.gmail.push(message);
   }
-  return { candidates, errors };
+  return { candidates, errors, sourceCounts, sourceErrors };
 }
 
 /** @param {Array<Record<string, unknown>>} input */
-function dedupCandidates(input) {
+export function dedupCandidates(input) {
   const byUrl = new Map();
   for (const candidate of input) {
     const url = normalizeUrl(String(candidate.url || candidate.canonicalUrl || ''));
     if (!url) continue;
     const current = byUrl.get(url);
     if (!current || (candidate.description && !current.description) || candidate.liveness === 'active') {
-      byUrl.set(url, { ...current, ...candidate, url, canonicalUrl: url });
+      const merged = { ...current, ...candidate, url, canonicalUrl: url };
+      if (candidate.sourceMessageId == null && current?.sourceMessageId != null) {
+        merged.sourceMessageId = current.sourceMessageId;
+      }
+      if (candidate.sourceUrl == null && current?.sourceUrl != null) {
+        merged.sourceUrl = current.sourceUrl;
+      }
+      byUrl.set(url, merged);
     }
   }
   return [...byUrl.values()];
@@ -296,7 +320,8 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       scheduled,
       dryRun,
       sources: {
-        gmail: { candidates: gmail.candidates.length, errors: gmail.errors.length },
+        gmail: { candidates: gmail.sourceCounts.gmail || 0, errors: gmail.sourceErrors.gmail.length },
+        jackandjill: { candidates: gmail.sourceCounts.jackandjill || 0, errors: gmail.sourceErrors.jackandjill.length },
         public: { candidates: publicSources.candidates.length, errors: publicSources.errors.length },
       },
       errors: sourceErrors,

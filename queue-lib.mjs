@@ -6,6 +6,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { buildResumeRequest } from './resume-contract.mjs';
 import { freshnessPenalty } from './queue-aging.mjs';
+import { normalizeJackJobUrl } from './jackandjill-lib.mjs';
 
 export const QUEUE_SCHEMA_VERSION = 1;
 export const DEFAULT_QUEUE_LIMIT = 10;
@@ -77,6 +78,8 @@ export function normalizeKey(value) {
 
 /** @param {string} value */
 export function normalizeUrl(value) {
+  const jackUrl = normalizeJackJobUrl(value);
+  if (jackUrl) return jackUrl;
   try {
     const url = new URL(String(value || '').trim());
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';

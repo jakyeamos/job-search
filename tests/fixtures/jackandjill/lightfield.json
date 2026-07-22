@@ -1,0 +1,20 @@
+{
+  "case": "lightfield",
+  "job": {
+    "url": "https://www.jackandjill.ai/jobs/22222222-2222-4222-8222-222222222222-founding-engineer",
+    "title": "Founding Software Engineer",
+    "company": "Lightfield",
+    "location": "Remote US",
+    "description": "Own an AI-native product from first principles and move quickly from prototype to production.",
+    "applyUrl": "https://app.jackandjill.ai/jobs/22222222-2222-4222-8222-222222222222/post",
+    "liveness": "active"
+  },
+  "resumeEvidence": "Three Amazon SDE internships; 0 to 1 shipping speed; Tenure AI-native organizational intelligence platform; Forward Automations production timelines and organic views.",
+  "expectedAdviceSignals": [
+    "Summary/Headline",
+    "0 to 1",
+    "Tenure",
+    "Forward Automations",
+    "cover letter"
+  ]
+}
