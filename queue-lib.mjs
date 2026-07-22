@@ -10,6 +10,7 @@ import { normalizeJackJobUrl } from './jackandjill-lib.mjs';
 
 export const QUEUE_SCHEMA_VERSION = 1;
 export const DEFAULT_QUEUE_LIMIT = 10;
+export const DEFAULT_CONTACT_DISCOVERY_LIMIT = 20;
 export const APPLY_THRESHOLD = 4.0;
 
 const SOURCE_WEIGHTS = {

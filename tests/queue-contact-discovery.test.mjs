@@ -2,8 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildQueue, buildQueueItem, renderQueueMarkdown, stableQueueId } from '../queue-lib.mjs';
+import { buildContactDiscoveryArgs, normalizeContactDiscoveryLimit } from '../queue.mjs';
 
 const ROOT = process.cwd();
+
+test('contact discovery has an independent bounded batch limit', () => {
+  assert.equal(normalizeContactDiscoveryLimit(6), 6);
+  assert.equal(normalizeContactDiscoveryLimit(999), 20);
+  assert.deepEqual(buildContactDiscoveryArgs(6), ['discover-queue', '--limit', '6']);
+  assert.deepEqual(buildContactDiscoveryArgs(999, true), ['discover-queue', '--limit', '20', '--dry-run']);
+});
 
 test('queue refresh carries employer domain metadata into contact discovery', () => {
   const item = buildQueueItem({

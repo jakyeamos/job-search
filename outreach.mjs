@@ -19,6 +19,7 @@ import { discoverWarmContactsForApplication } from './relationship-discovery.mjs
 import { getMessageBody, isAuthenticEmail } from './plugins/gmail/_helpers.mjs';
 import { loadDotenvOnce } from './plugins/_engine.mjs';
 import {
+  DEFAULT_CONTACT_DISCOVERY_LIMIT,
   applicationKey,
   loadProfile,
   readQueueState,
@@ -350,13 +351,18 @@ async function discoverQueue(dryRun, requestedLimit, force) {
   await loadDotenvOnce();
   const queue = readQueueState(QUEUE_PATH);
   const items = Array.isArray(queue.items) ? queue.items : [];
-  const limit = Math.min(20, Math.max(1, Number(requestedLimit || 10)));
+  const parsedLimit = Number(requestedLimit);
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0
+    ? Math.min(DEFAULT_CONTACT_DISCOVERY_LIMIT, Math.max(1, parsedLimit))
+    : DEFAULT_CONTACT_DISCOVERY_LIMIT;
   const due = items
     .filter((item) => ['ready', 'in_review'].includes(String(item.status || '')))
     .filter((item) => isDiscoverableApplication(item) && queueDiscoveryDue(item, force))
     .sort((left, right) => {
       const selected = Number(right.selectedForToday === true) - Number(left.selectedForToday === true);
       if (selected) return selected;
+      const withoutSnapshot = Number(Boolean(left.outreach?.discovery)) - Number(Boolean(right.outreach?.discovery));
+      if (withoutSnapshot) return withoutSnapshot;
       return Number(left.queueRank || 999) - Number(right.queueRank || 999)
         || String(left.firstSeenAt || '').localeCompare(String(right.firstSeenAt || ''));
     });
@@ -1190,7 +1196,7 @@ async function main() {
   if (command === 'prepare') { prepare(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
   if (command === 'discover') { await discover(readFlag(args, '--application'), hasFlag(args, '--dry-run'), hasFlag(args, '--force')); return; }
   if (command === 'discover-queue') {
-    const result = await discoverQueue(hasFlag(args, '--dry-run'), Number(readFlag(args, '--limit', '10')), hasFlag(args, '--force'));
+    const result = await discoverQueue(hasFlag(args, '--dry-run'), Number(readFlag(args, '--limit', String(DEFAULT_CONTACT_DISCOVERY_LIMIT))), hasFlag(args, '--force'));
     if (!result.ok && !result.dryRun) process.exitCode = 2;
     return;
   }

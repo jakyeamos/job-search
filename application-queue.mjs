@@ -8,6 +8,7 @@ import { promisify } from 'util';
 
 import { recordApplication } from './apply/record-application.mjs';
 import {
+  DEFAULT_CONTACT_DISCOVERY_LIMIT,
   normalizeUrl,
   readQueueState,
   renderQueueMarkdown,
@@ -476,7 +477,14 @@ export async function runClearQueue(options = {}) {
     startedAt: new Date().toISOString(),
   });
   try {
-    const refreshArgs = [path.join(ROOT, 'queue.mjs'), 'refresh', '--limit', String(limit)];
+    const refreshArgs = [
+      path.join(ROOT, 'queue.mjs'),
+      'refresh',
+      '--limit',
+      String(limit),
+      '--discovery-limit',
+      String(DEFAULT_CONTACT_DISCOVERY_LIMIT),
+    ];
     if (dryRun) refreshArgs.push('--dry-run');
     refreshArgs.push('--skip-outreach');
     const refresh = await execFileAsync(process.execPath, refreshArgs, {

@@ -17,6 +17,7 @@ import { hasGmailCredentials, organizeGmail } from './gmail.mjs';
 import { loadDotenvOnce, runHook } from './plugins/_engine.mjs';
 import { OUTREACH_STATE_PATH, recordSubmissionSignal } from './outreach-lib.mjs';
 import {
+  DEFAULT_CONTACT_DISCOVERY_LIMIT,
   DEFAULT_QUEUE_LIMIT,
   applicationKey,
   buildQueue,
@@ -47,6 +48,20 @@ const UI_SERVER_LABEL = 'com.jakyeamos.career-ops.queue-ui';
 /** @param {string} value */
 function flagValue(value, fallback) {
   return value && !value.startsWith('--') ? value : fallback;
+}
+
+/** @param {number|string|null|undefined} value @returns {number} */
+export function normalizeContactDiscoveryLimit(value = DEFAULT_CONTACT_DISCOVERY_LIMIT) {
+  const parsed = Number(value);
+  const requested = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTACT_DISCOVERY_LIMIT;
+  return Math.min(DEFAULT_CONTACT_DISCOVERY_LIMIT, Math.max(1, requested));
+}
+
+/** @param {number|string|null|undefined} discoveryLimit @param {boolean} [dryRun] @returns {string[]} */
+export function buildContactDiscoveryArgs(discoveryLimit = DEFAULT_CONTACT_DISCOVERY_LIMIT, dryRun = false) {
+  const args = ['discover-queue', '--limit', String(normalizeContactDiscoveryLimit(discoveryLimit))];
+  if (dryRun) args.push('--dry-run');
+  return args;
 }
 
 /** @param {string[]} args @param {string} flag @param {string} fallback */
@@ -284,8 +299,8 @@ function acquireLock(root, scheduled) {
   return () => { try { unlinkSync(LOCK_FILE); } catch { /* no-op */ } };
 }
 
-/** @param {string} root @param {number} limit @param {boolean} dryRun @param {boolean} scheduled @param {boolean} skipPublic @param {boolean} skipOutreach */
-async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach = false) {
+/** @param {string} root @param {number} limit @param {boolean} dryRun @param {boolean} scheduled @param {boolean} skipPublic @param {boolean} skipOutreach @param {number} discoveryLimit */
+async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach = false, discoveryLimit = DEFAULT_CONTACT_DISCOVERY_LIMIT) {
   const release = acquireLock(root, scheduled);
   try {
     await loadDotenvOnce();
@@ -339,8 +354,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       aging,
     };
     if (!dryRun) saveQueue(root, state);
-    const discoveryArgs = ['discover-queue', '--limit', String(Math.min(20, Math.max(1, limit)))];
-    if (dryRun) discoveryArgs.push('--dry-run');
+    const discoveryArgs = buildContactDiscoveryArgs(discoveryLimit, dryRun);
     const contactDiscovery = await runNodeScript('outreach.mjs', discoveryArgs, { timeoutMs: 900_000 });
     if (!dryRun) {
       const discoveredState = readQueueState(QUEUE_JSON);
@@ -351,6 +365,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
     }
     state.lastRun.contactDiscovery = {
       ok: contactDiscovery.ok,
+      limit: normalizeContactDiscoveryLimit(discoveryLimit),
       output: `${contactDiscovery.stdout || ''}${contactDiscovery.stderr || ''}`.trim().slice(0, 4000),
     };
     state.lastRun.errors = sourceErrors;
@@ -521,8 +536,9 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'list';
   const limit = Math.max(1, Math.min(10, Number(readFlag(args, '--limit', String(DEFAULT_QUEUE_LIMIT))) || DEFAULT_QUEUE_LIMIT));
+  const discoveryLimit = normalizeContactDiscoveryLimit(readFlag(args, '--discovery-limit', String(DEFAULT_CONTACT_DISCOVERY_LIMIT)));
   if (command === 'refresh') {
-    await refresh(ROOT, limit, args.includes('--dry-run'), args.includes('--scheduled'), args.includes('--skip-public'), args.includes('--skip-outreach'));
+    await refresh(ROOT, limit, args.includes('--dry-run'), args.includes('--scheduled'), args.includes('--skip-public'), args.includes('--skip-outreach'), discoveryLimit);
     return;
   }
   if (command === 'list' || command === 'today') { listQueue(ROOT); return; }

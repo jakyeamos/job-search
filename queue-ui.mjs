@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { recordApplication, saveQueue } from './queue.mjs';
-import { normalizeUrl, readQueueState } from './queue-lib.mjs';
+import { DEFAULT_CONTACT_DISCOVERY_LIMIT, normalizeUrl, readQueueState } from './queue-lib.mjs';
 import { OUTREACH_STATE_PATH, loadOutreachState, recordSubmissionSignal, summarizeOutbox } from './outreach-lib.mjs';
 import { loadLedger, answerQuestion, findQuestionMatch, isSensitiveQuestion, questionId } from './apply/question-ledger.mjs';
 import { selectProjectAccomplishment } from './project-accomplishment-ledger.mjs';
@@ -304,7 +304,14 @@ function applyQueueAction(payload) {
 }
 
 async function refreshQueue() {
-  const result = await execFileAsync(process.execPath, [path.join(ROOT, 'queue.mjs'), 'refresh', '--limit', '6'], {
+  const result = await execFileAsync(process.execPath, [
+    path.join(ROOT, 'queue.mjs'),
+    'refresh',
+    '--limit',
+    '6',
+    '--discovery-limit',
+    String(DEFAULT_CONTACT_DISCOVERY_LIMIT),
+  ], {
     cwd: ROOT,
     timeout: 1_800_000,
     maxBuffer: 8 * 1024 * 1024,

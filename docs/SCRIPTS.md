@@ -36,7 +36,7 @@ separate, opt-in workflow that only sends to verified public professional
 addresses after a confirmed application signal.
 
 ```bash
-node queue.mjs refresh --limit 10
+node queue.mjs refresh --limit 10 --discovery-limit 20
 node queue.mjs list
 node queue.mjs clear
 node queue.mjs status
@@ -47,7 +47,7 @@ node queue.mjs health --all --apply        # sweep all eligible non-restricted U
 node queue.mjs install-schedule --dry-run
 node queue.mjs install-schedule
 node queue-ui.mjs
-node outreach.mjs discover-queue --limit 10 # read-only contact discovery for imported roles
+node outreach.mjs discover-queue --limit 20 # read-only contact discovery for imported roles
 node outreach.mjs process --dry-run
 node outreach.mjs status
 ```
@@ -71,11 +71,14 @@ Every non-dry-run `queue.mjs refresh` now runs the bounded `discover-queue`
 pass before any existing outreach processing. It attaches a cached discovery
 snapshot to each attempted queue item, including public and first-party contact
 evidence, observed employer conventions, and review-only email hypotheses; the
-queue UI and Markdown queue render the same snapshot. Selected roles are tried
-first, up to the refresh limit (capped at 20), and remaining due roles stay
-queued for a later refresh. The pass never sends email. Imported evidence is
-reused when an application record is prepared, followed by the normal
-post-application revalidation and existing verified-email/send gates.
+queue UI and Markdown queue render the same snapshot. Application selection is
+controlled by `--limit` (the UI and application flow use 6), while contact
+discovery has its own `--discovery-limit` batch (default and safety ceiling 20).
+Selected roles are tried first, then roles without a discovery snapshot, and
+remaining due roles stay queued for a later refresh. The pass never sends email
+or marks a role applied. Imported evidence is reused when an application record
+is prepared, followed by the normal post-application revalidation and existing
+verified-email/send gates.
 
 ### 8 AM source-only boundary
 
