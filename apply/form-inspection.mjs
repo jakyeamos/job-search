@@ -90,7 +90,8 @@ export async function inspectApplicationPage(page, options = {}) {
     const optionText = (option) => cleanLabel(option.textContent || option.getAttribute('aria-label') || option.getAttribute('data-label'));
     const categoryFor = (label, kind) => {
       if (kind === 'file' || /resume|résumé|curriculum vitae|cover letter|cover note/i.test(label)) return 'artifact';
-      if (/first name|last name|full name|legal name|email|phone|linkedin|github|portfolio|website/i.test(label)) return 'standard';
+      if (/first name|last name|full name|legal name|preferred name|email|phone|linkedin|github|portfolio|website/i.test(label)
+        || /^(?:country|country\/region|country of residence)$/i.test(label)) return 'standard';
       return 'question';
     };
     const manualReason = (label) => {

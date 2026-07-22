@@ -364,7 +364,13 @@ function publicPlan(plan) {
 function summarizePacketResult(result, candidate) {
   const record = result && typeof result === 'object' ? /** @type {Record<string, unknown>} */ (result) : {};
   const questions = Array.isArray(record.questions) ? record.questions : [];
+  const simpleFields = Array.isArray(record.simpleFields) ? record.simpleFields : [];
+  const standardFields = Array.isArray(record.standardFields) ? record.standardFields : [];
   const unresolved = Array.isArray(record.unresolved) ? record.unresolved : [];
+  const simpleUnresolved = Array.isArray(record.simpleUnresolved) ? record.simpleUnresolved : [];
+  const answerPrep = record.answerPrep && typeof record.answerPrep === 'object' ? record.answerPrep : {};
+  const prepQuestionCount = Number(answerPrep.questionCount ?? questions.length) || 0;
+  const prepUnresolvedCount = Number(answerPrep.unresolvedCount ?? unresolved.length) || 0;
   const warnings = Array.isArray(record.warnings) ? record.warnings.map(String) : [];
   return {
     id: candidate.id,
@@ -374,9 +380,14 @@ function summarizePacketResult(result, candidate) {
     title: normalizedText(candidate.item.title),
     ok: record.ok === true,
     status: normalized(record.status) || (record.ok === false ? 'error' : 'unknown'),
-    questionCount: questions.length,
-    unresolvedCount: unresolved.length,
-    requiredUnresolvedCount: unresolved.filter((question) => question && question.required === true).length,
+    questionCount: prepQuestionCount,
+    prepQuestionCount,
+    unresolvedCount: prepUnresolvedCount,
+    prepUnresolvedCount,
+    requiredUnresolvedCount: Number(answerPrep.requiredUnresolvedCount ?? [...unresolved, ...simpleUnresolved].filter((question) => question && question.required === true).length) || 0,
+    simpleFieldCount: Number(answerPrep.simpleFieldCount ?? simpleFields.length) || 0,
+    simpleUnresolvedCount: Number(answerPrep.simpleUnresolvedCount ?? simpleUnresolved.length) || 0,
+    standardFieldCount: Number(answerPrep.standardFieldCount ?? standardFields.length) || 0,
     descriptionLength: Number(record.target && typeof record.target === 'object' ? record.target.descriptionLength : 0) || 0,
     descriptionSource: record.target && typeof record.target === 'object'
       ? normalizedText(record.target.descriptionSource)
@@ -489,8 +500,13 @@ export async function runLedgerDogfood(options = {}) {
         ok: false,
         status: 'error',
         questionCount: 0,
+        prepQuestionCount: 0,
         unresolvedCount: 0,
+        prepUnresolvedCount: 0,
         requiredUnresolvedCount: 0,
+        simpleFieldCount: 0,
+        simpleUnresolvedCount: 0,
+        standardFieldCount: 0,
         pendingGroups: 0,
         warnings: [],
         reason: error instanceof Error ? error.message : String(error),
@@ -504,6 +520,7 @@ export async function runLedgerDogfood(options = {}) {
   report.ledger.delta = {
     ...summarizeLedgerDelta(before, after),
     observedQuestionCount: runs.reduce((total, run) => total + Number(run.questionCount || 0), 0),
+    observedPrepQuestionCount: runs.reduce((total, run) => total + Number(run.prepQuestionCount || run.questionCount || 0), 0),
   };
   report.sourceQueueHashBefore = sourceQueueHashBefore;
   report.sourceQueueHashAfter = fileHash(queuePath);

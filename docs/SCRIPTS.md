@@ -134,6 +134,11 @@ humanized, audited, and approved states. Canonical reusable answers live in
 `data/application-question-ledger.json` and only explicit user confirmations
 or verified profile values can be reused.
 
+Packet counts and copy/paste output cover only nontrivial answer preparation.
+Standard profile fields are retained as form evidence but excluded from the
+count; simple eligibility/profile fields and human-only fields remain separate
+so required-field gating is still accurate.
+
 Each retained posting also carries `firstSeenAt`, `lastSeenAt`, and freshness
 metadata. A role is down-ranked after 14 days, marked `recheck_due` after 30
 days, and becomes `stale` after 45 days without observation or positive

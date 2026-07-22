@@ -117,6 +117,15 @@ the legacy adapter's fill or submit commands. It performs this bounded sequence:
 6. Render a packet with a final manual checklist. Submission stays outside
    Career Ops.
 
+The packet's preparation count is intentionally narrow: `questions` and the
+Markdown copy/paste section contain only nontrivial answer work, such as
+evidence-backed narrative responses. Standard profile fields (name, email,
+phone, links, and country) are retained in the inspected form evidence but do
+not count or produce copy/paste entries. Simple eligibility/profile fields and
+human-only EEO, legal, consent, CAPTCHA, and MFA fields are tracked in their
+own sections so required-field gating still works without inflating the
+preparation count.
+
 ```bash
 # Selected queue role; this is the normal explicit invocation.
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id>

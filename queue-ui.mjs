@@ -347,16 +347,25 @@ async function runPacketQueue(limit = 6) {
     });
     try {
       const packet = await buildApplicationPacket(item);
+      const answerPrep = packet.answerPrep || {};
       item.applicationPacket = packet.ok
         ? {
           status: packet.status,
           generatedAt: packet.generatedAt,
           markdownPath: packet.paths.markdown,
           jsonPath: packet.paths.json,
-          unresolvedCount: packet.unresolved.length,
+          prepQuestionCount: Number(answerPrep.questionCount ?? packet.questions.length),
+          unresolvedCount: Number(answerPrep.unresolvedCount ?? packet.unresolved.length),
+          simpleUnresolvedCount: Number(answerPrep.simpleUnresolvedCount || 0),
+          requiredUnresolvedCount: Number(answerPrep.requiredUnresolvedCount || 0),
         }
         : { status: 'blocked', reason: packet.reason };
-      report.push({ id: item.id, company: item.company, title: item.title, action: packet.ok ? 'packet-ready' : 'blocked', status: packet.ok ? packet.status : null, reason: packet.ok ? `${packet.unresolved.length} required question(s) unresolved` : packet.reason });
+      const requiredUnresolved = Number(answerPrep.requiredUnresolvedCount || 0);
+      const prepQuestionCount = Number(answerPrep.questionCount ?? packet.questions.length);
+      const reason = requiredUnresolved
+        ? `${requiredUnresolved} required field(s) need input; ${prepQuestionCount} nontrivial answer(s) prepared`
+        : `${prepQuestionCount} nontrivial answer(s) prepared`;
+      report.push({ id: item.id, company: item.company, title: item.title, action: packet.ok ? 'packet-ready' : 'blocked', status: packet.ok ? packet.status : null, reason: packet.ok ? reason : packet.reason });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       item.applicationPacket = { status: 'blocked', reason };
@@ -406,12 +415,16 @@ async function buildQueuePacket(payload) {
   if (!item) throw new Error('queue item not found; refresh the page and try again');
   const packet = await buildApplicationPacket(item);
   if (!packet.ok) throw new Error(packet.reason);
+  const answerPrep = packet.answerPrep || {};
   item.applicationPacket = {
     status: packet.status,
     generatedAt: packet.generatedAt,
     markdownPath: packet.paths.markdown,
     jsonPath: packet.paths.json,
-    unresolvedCount: packet.unresolved.length,
+    prepQuestionCount: Number(answerPrep.questionCount ?? packet.questions.length),
+    unresolvedCount: Number(answerPrep.unresolvedCount ?? packet.unresolved.length),
+    simpleUnresolvedCount: Number(answerPrep.simpleUnresolvedCount || 0),
+    requiredUnresolvedCount: Number(answerPrep.requiredUnresolvedCount || 0),
   };
   state.generatedAt = new Date().toISOString();
   saveQueue(ROOT, state);

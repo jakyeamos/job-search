@@ -76,7 +76,11 @@ export function packetPathsForItem(item, options = {}) {
 
 /** @param {Record<string, unknown>} packet */
 function canonicalAnswerShape(packet) {
-  return (Array.isArray(packet.questions) ? packet.questions : []).map((question) => ({
+  const fields = [
+    ...(Array.isArray(packet.questions) ? packet.questions : []),
+    ...(Array.isArray(packet.simpleFields) ? packet.simpleFields : []),
+  ];
+  return fields.map((question) => ({
     id: question.id || null,
     question: question.question || '',
     status: question.status || '',
@@ -173,9 +177,16 @@ function manualReason(control) {
 }
 
 /** @param {Record<string, unknown>} control */
-function shouldRecord(control) {
+function isStandardControl(control) {
+  if (control.category === 'standard') return true;
   const label = String(control.label || '');
-  return control.category === 'question' && !EEO_LABEL_RE.test(label) && !MARKETING_RE.test(label);
+  return /first name|last name|full name|legal name|preferred name|email|phone|mobile|linkedin|github|portfolio|personal site|website/i.test(label)
+    || /^(?:country|country\/region|country of residence)$/i.test(label.trim());
+}
+
+/** @param {Record<string, unknown>} control */
+function shouldRecord(control) {
+  return control.category === 'question' && !isStandardControl(control) && !manualReason(control);
 }
 
 /** @param {Record<string, unknown>} control */
@@ -183,7 +194,7 @@ function isNarrativeControl(control) {
   if (!['text', 'textarea'].includes(String(control.kind || control.type || '').toLowerCase())) return false;
   const label = String(control.label || '');
   return control.category === 'question'
-    && !/first name|last name|full name|legal name|email|phone|linkedin|github|portfolio|website|location|salary|compensation|authorization|sponsor|visa|consent|gender|race|veteran|disabilit|captcha|mfa|verification|attest|background|criminal|conviction/i.test(label);
+    && !/first name|last name|full name|legal name|preferred name|email|phone|linkedin|github|portfolio|website|country|location|address|city|state|zip|postal|salary|compensation|authorization|sponsor|visa|consent|gender|race|veteran|disabilit|captcha|mfa|verification|attest|background|criminal|conviction|earliest|start date|availability|deadline|timeline|relocat|in[- ]person|on[- ]site|onsite|remote|work from/i.test(label);
 }
 
 /** @param {string} file */
@@ -399,6 +410,8 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
     if (entry) recorded.push({ control, entry });
   }
   const questions = [];
+  const simpleFields = [];
+  const standardFields = [];
   const artifacts = [];
   const manual = [];
   for (const control of controls) {
@@ -413,19 +426,34 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
       });
       continue;
     }
+    if (isStandardControl(control)) {
+      standardFields.push({
+        label,
+        required: control.required === true,
+        fieldKind: control.kind || control.type || 'text',
+        occurrence: {
+          id: control.id || null,
+          name: control.name || null,
+          fieldPath: control.fieldPath || null,
+          pageIndex: control.pageIndex,
+          pageUrl: control.pageUrl || null,
+        },
+      });
+      continue;
+    }
     const entry = recorded.find((candidate) => candidate.control === control)?.entry || null;
     const manualFieldReason = manualReason(control);
     if (manualFieldReason) {
       manual.push({ label, required: control.required === true, reason: manualFieldReason, options: control.options || [] });
+      continue;
     }
-    const resolved = manualFieldReason ? null : answerForControl(control, item, profile, ledger, options);
+    const resolved = answerForControl(control, item, profile, ledger, options);
     const answer = resolved?.answer || null;
-    const status = manualFieldReason ? 'manual'
-      : resolved?.approvedAnswer ? 'approved'
+    const status = resolved?.approvedAnswer ? 'approved'
         : resolved?.kind === 'humanized' ? 'humanized'
         : resolved?.kind === 'draft' ? 'draft'
           : answer !== null ? 'confirmed' : 'unanswered';
-    questions.push({
+    const field = {
       id: entry?.id || null,
       question: label,
       required: control.required === true,
@@ -455,10 +483,12 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
         pageIndex: control.pageIndex,
         pageUrl: control.pageUrl || null,
       },
-    });
+    };
+    if (isNarrativeControl(control) || ['draft', 'humanized', 'approved'].includes(status)) questions.push(field);
+    else simpleFields.push(field);
   }
   if (options.persistLedger !== false) saveLedger(ledgerPath, ledger);
-  return { questions, artifacts, manual, ledger };
+  return { questions, simpleFields, standardFields, artifacts, manual, ledger };
 }
 
 /**
@@ -518,8 +548,15 @@ export function buildPacketMarkdown(packet) {
     if (coverLetter.approvedAnswer) lines.push('', 'Approved copy:', '', coverLetter.approvedAnswer);
     lines.push('');
   }
-  lines.push('', '## Copy/paste answers', '');
   const questions = Array.isArray(packet.questions) ? packet.questions : [];
+  const manualItems = Array.isArray(packet.manualItems) ? packet.manualItems : [];
+  const answerPrep = packet.answerPrep || {};
+  lines.push('', '## Preparation summary', '');
+  lines.push(`- Nontrivial answers prepared: ${Number(answerPrep.questionCount ?? questions.length)}`);
+  lines.push(`- Simple fields excluded from copy/paste: ${Number(answerPrep.simpleFieldCount || 0)}`);
+  lines.push(`- Standard profile fields excluded from copy/paste: ${Number(answerPrep.standardFieldCount || 0)}`);
+  lines.push(`- Human-only fields: ${Number(answerPrep.manualFieldCount ?? manualItems.length)}`, '');
+  lines.push('## Copy/paste answers', '');
   for (const question of questions.filter((entry) => ['known', 'confirmed', 'approved', 'humanized', 'draft'].includes(entry.status) && entry.answer !== null)) {
     lines.push(`### ${question.question}`, '', `Answer: ${question.answer}`, `Status: ${question.status}`, `Source: ${question.source || 'verified ledger'}`);
     if (question.answerRef) lines.push(`Answer reference: ${question.answerRef}`);
@@ -537,6 +574,14 @@ export function buildPacketMarkdown(packet) {
     if (question.answerRef) lines.push(`Canonical answer reference: ${question.answerRef}`);
     lines.push('');
   }
+  const simpleUnresolved = Array.isArray(packet.simpleUnresolved) ? packet.simpleUnresolved : [];
+  lines.push('## Simple fields to complete in the form', '');
+  if (!simpleUnresolved.length) lines.push('- None recorded.');
+  for (const question of simpleUnresolved) {
+    lines.push(`- ${question.question} (${question.required ? 'required' : 'optional'})`);
+    if (question.options?.length) lines.push(`  Options: ${question.options.join(' | ')}`);
+  }
+  lines.push('');
   const reviewItems = Array.isArray(packet.reviewItems) ? packet.reviewItems : [];
   if (reviewItems.length) {
     lines.push('## Drafts needing human review', '');
@@ -613,7 +658,7 @@ export async function buildApplicationPacket(item, options = {}) {
   const allManualSignals = [...new Set(pages.flatMap((page) => Array.isArray(page.manualSignals) ? page.manualSignals : []))];
   const coverRequired = options.generateCoverLetter === true
     || allControls.some((control) => control.category === 'artifact' && /cover/i.test(String(control.label || '')) && control.required === true);
-  const { questions, artifacts, manual, ledger } = buildQuestions(effectiveItem, safeInspection, profile, options.ledgerPath || DEFAULT_LEDGER_PATH, {
+  const { questions, simpleFields, standardFields, artifacts, manual, ledger } = buildQuestions(effectiveItem, safeInspection, profile, options.ledgerPath || DEFAULT_LEDGER_PATH, {
     persistLedger: options.dryRun !== true,
     drafts,
     draftsPath: options.answersPath || drafts.sourcePath || '',
@@ -669,7 +714,9 @@ export async function buildApplicationPacket(item, options = {}) {
   };
   const packetPaths = packetPathsForItem(effectiveItem, { outputRoot: options.outputRoot });
   const unresolved = questions.filter((question) => question.status === 'unanswered');
-  const requiredUnresolved = unresolved.filter((question) => question.required);
+  const simpleUnresolved = simpleFields.filter((question) => question.status === 'unanswered');
+  const allUnresolved = [...unresolved, ...simpleUnresolved];
+  const requiredUnresolved = allUnresolved.filter((question) => question.required);
   const packetResumeDecision = { ...resumeDecision };
   delete packetResumeDecision.manifest;
   const coverLetter = coverLetterReview(drafts.coverLetter, generatedArtifacts.coverLetterText || '');
@@ -721,15 +768,33 @@ export async function buildApplicationPacket(item, options = {}) {
       pages,
       submitControls: allButtons.filter((button) => button.submitLike),
       manualSignals: allManualSignals,
+      prepQuestionCount: questions.length,
+      simpleFieldCount: simpleFields.length,
+      standardFieldCount: standardFields.length,
+      manualFieldCount: manual.length,
+      artifactFieldCount: artifacts.length,
     },
     artifacts: generatedArtifacts,
     resumeDecision: packetResumeDecision,
     coverLetter,
     questions,
+    simpleFields,
+    standardFields,
     unresolved,
+    simpleUnresolved,
     reviewItems,
     manualItems: manual,
     artifactFields: artifacts,
+    answerPrep: {
+      questionCount: questions.length,
+      unresolvedCount: unresolved.length,
+      simpleFieldCount: simpleFields.length,
+      simpleUnresolvedCount: simpleUnresolved.length,
+      standardFieldCount: standardFields.length,
+      manualFieldCount: manual.length,
+      artifactFieldCount: artifacts.length,
+      requiredUnresolvedCount: requiredUnresolved.length,
+    },
     research: {
       references: researchReferences,
       coaching: options.jackCoaching || { primary: 'career-ops-local-coaching', fallback: 'jackandjill-on-demand' },
@@ -753,7 +818,9 @@ export async function buildApplicationPacket(item, options = {}) {
     ledger: {
       path: options.ledgerPath || DEFAULT_LEDGER_PATH,
       canonicalQuestionCount: ledger.entries.length,
-      unresolvedCount: unresolved.length,
+      unresolvedCount: allUnresolved.length,
+      prepUnresolvedCount: unresolved.length,
+      simpleUnresolvedCount: simpleUnresolved.length,
       pendingGroups: pendingQuestions(ledger, {
         company: String(effectiveItem.company || ''),
         role: String(effectiveItem.title || ''),
@@ -763,7 +830,8 @@ export async function buildApplicationPacket(item, options = {}) {
     checklist: [
       'Open the canonical application URL and confirm the posting is still active.',
       'Attach the selected resume and cover letter files when required.',
-      'Review every answer, including draft/humanized narrative text and human-only fields.',
+      'Review each prepared nontrivial answer, including draft/humanized narrative text.',
+      'Complete simple profile and eligibility fields directly in the form.',
       'Complete EEO, consent, legal, CAPTCHA, MFA, and identity fields manually.',
       'Perform the final Submit/Apply action yourself after review.',
     ],
@@ -848,8 +916,13 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
     queueId: result.target.id,
     company: result.target.company,
     title: result.target.title,
-    questionCount: result.questions.length,
-    unresolvedCount: result.unresolved.length,
+    questionCount: result.answerPrep?.questionCount ?? result.questions.length,
+    prepQuestionCount: result.answerPrep?.questionCount ?? result.questions.length,
+    unresolvedCount: result.answerPrep?.unresolvedCount ?? result.unresolved.length,
+    simpleFieldCount: result.answerPrep?.simpleFieldCount || 0,
+    simpleUnresolvedCount: result.answerPrep?.simpleUnresolvedCount || 0,
+    standardFieldCount: result.answerPrep?.standardFieldCount || 0,
+    requiredUnresolvedCount: result.answerPrep?.requiredUnresolvedCount || 0,
     markdownPath: result.paths.markdown,
     jsonPath: result.paths.json,
   })}`);

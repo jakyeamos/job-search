@@ -107,6 +107,73 @@ test('packet dry-run inspects questions without writing ledger, packet, or artif
   }
 });
 
+test('packet counts only nontrivial answer preparation and keeps standard fields separate', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-prep-counts-'));
+  try {
+    const ledgerPath = path.join(root, 'question-ledger.json');
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+    const item = {
+      id: 'packet-prep-counts',
+      company: 'Acme',
+      title: 'Backend Engineer',
+      applyUrl: 'https://jobs.example/acme/backend-prep-counts',
+      canonicalUrl: 'https://jobs.example/acme/backend-prep-counts',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build Python and TypeScript backend services, REST APIs, data pipelines, PostgreSQL workflows, automated tests, and reliable production systems with product and engineering partners.',
+    };
+    const packet = await buildApplicationPacket(item, {
+      inspection: {
+        url: item.applyUrl,
+        title: 'Apply — Acme',
+        heading: 'Backend Engineer',
+        formCount: 1,
+        formReady: true,
+        controls: [
+          { id: 'first-name', label: 'First Name', kind: 'text', category: 'standard', required: true },
+          { id: 'country', label: 'Country', kind: 'combobox', category: 'question', required: false, options: [] },
+          { id: 'email', label: 'Email', kind: 'text', category: 'standard', required: true },
+          { id: 'why', label: 'Why Acme?', kind: 'textarea', category: 'question', required: true, options: [] },
+          { id: 'office', label: 'Are you open to working in person?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+          { id: 'gender', label: 'Gender', kind: 'combobox', category: 'question', required: false, options: ['Prefer not to say'] },
+        ],
+        buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+        pages: [],
+        manualSignals: [],
+        blocked: false,
+        blockedReason: '',
+      },
+      ledgerPath,
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.equal(packet.status, 'needs-user-input');
+    assert.deepEqual(packet.questions.map((question) => question.question), ['Why Acme?']);
+    assert.deepEqual(packet.simpleFields.map((question) => question.question), ['Are you open to working in person?']);
+    assert.equal(packet.standardFields.length, 3);
+    assert.equal(packet.manualItems.length, 1);
+    assert.deepEqual(packet.unresolved.map((question) => question.question), ['Why Acme?']);
+    assert.deepEqual(packet.simpleUnresolved.map((question) => question.question), ['Are you open to working in person?']);
+    assert.deepEqual(packet.answerPrep, {
+      questionCount: 1,
+      unresolvedCount: 1,
+      simpleFieldCount: 1,
+      simpleUnresolvedCount: 1,
+      standardFieldCount: 3,
+      manualFieldCount: 1,
+      artifactFieldCount: 0,
+      requiredUnresolvedCount: 2,
+    });
+    assert.equal(packet.ledger.canonicalQuestionCount, 2);
+    assert.equal(packet.ledger.unresolvedCount, 2);
+    assert.doesNotMatch(packet.markdown, /First Name/);
+    assert.match(packet.markdown, /Why Acme\?/);
+    assert.match(packet.markdown, /Simple fields to complete in the form/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('packet blocks incomplete posting evidence instead of presenting it as ready', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-blocked-'));
   try {
