@@ -309,7 +309,7 @@
       "publicStatus": "Standalone local eval runtime; first slice is report-only",
       "publicClaims": ["eval-run evidence", "paired comparisons", "model-selection records", "benchmark contracts", "explicit empty-state handling"],
       "doNotClaim": ["measured adoption", "non-empty eval corpus", "automatic provider execution"],
-      "publicSurfaces": ["https://github.com/jakyeamos/agent-eval-runtime"],
+      "publicSurfaces": [],
       "videoEligible": false
     },
     {
@@ -320,7 +320,7 @@
       "publicStatus": "Standalone local context and session-intelligence runtime with report-only boundaries",
       "publicClaims": ["context compilation", "knowledge packets", "handoffs", "versioned signal exports", "private evidence separation"],
       "doNotClaim": ["provider invocation", "public knowledge publishing", "direct AIOS database access"],
-      "publicSurfaces": ["https://github.com/jakyeamos/ai-context-runtime"],
+      "publicSurfaces": [],
       "videoEligible": false
     },
     {
@@ -331,7 +331,7 @@
       "publicStatus": "Evidence-bounded workflow-leverage runtime with review-gated execution",
       "publicClaims": ["bounded reproductions", "review-gated runs", "acceptance evidence", "cross-repository scorecards", "redacted public projections"],
       "doNotClaim": ["automatic merge or deploy", "unsandboxed provider execution", "public publication without review"],
-      "publicSurfaces": ["https://github.com/jakyeamos/ai-workflow-leverage"],
+      "publicSurfaces": [],
       "videoEligible": false
     },
     {
@@ -342,7 +342,7 @@
       "publicStatus": "Command-first macOS control plane with owner-only transport and explicit blocked states",
       "publicClaims": ["owner-only daemon", "guarded GUI workflows", "local receipts", "accessibility boundaries", "machine-readable release checks"],
       "doNotClaim": ["unverified GUI success", "available daemon evidence when the socket is blocked", "automatic approval"],
-      "publicSurfaces": ["https://github.com/jakyeamos/mac-control"],
+      "publicSurfaces": [],
       "videoEligible": false
     },
     {
@@ -353,7 +353,7 @@
       "publicStatus": "Evidence-bounded weekly SEO/AEO research loop with fail-closed publication controls",
       "publicClaims": ["fixed prompt profiles", "source-freshness checks", "shadow runs", "research packets", "apply/verify separation"],
       "doNotClaim": ["automatic new-claim publishing", "unverified visibility gains", "scheduler ownership"],
-      "publicSurfaces": ["https://github.com/jakyeamos/marketing-autoresearch"],
+      "publicSurfaces": [],
       "videoEligible": false
     },
     {
@@ -364,7 +364,7 @@
       "publicStatus": "Private keyboard-first native macOS workbench for local AI coding workflows",
       "publicClaims": ["local session discovery", "Playbook intelligence", "derived Usage metrics", "guarded file transactions", "local-first privacy boundary"],
       "doNotClaim": ["Relay-operated backend", "provider quota values without adapter evidence", "background file changes without confirmation"],
-      "publicSurfaces": ["https://github.com/jakyeamos/Relay"],
+      "publicSurfaces": [],
       "videoEligible": false
     },
     {
@@ -372,10 +372,10 @@
       "name": "Agent Router",
       "lane": "engineering-systems",
       "tier": "planning",
-      "publicStatus": "Foundation-phase adaptive-routing workspace; not an approved accomplishment claim",
+      "publicStatus": "Planning-only adaptive-routing workspace; not an approved accomplishment claim",
       "publicClaims": ["routing contracts", "replayable planning cases", "capability-aligned decomposition", "unknown-safe usage probes"],
       "doNotClaim": ["completed execution layers", "production adoption", "approved resume or application accomplishment"],
-      "publicSurfaces": ["https://github.com/jakyeamos/agent-router"],
+      "publicSurfaces": [],
       "videoEligible": false
     },
     {
