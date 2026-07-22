@@ -69,15 +69,17 @@ Queue state is kept in the local ignored files `data/job-queue.json` and
 ### 8 AM source-only boundary
 
 The installed 8 AM launchd path runs `scripts/queue-ui-launch.mjs`, which
-invokes `queue.mjs refresh --scheduled`. That refresh ingests the cached Jack &
-Jill recommendation source alongside Gmail and configured public sources,
-applies deduplication, liveness, fit scoring, and posting aging, then refreshes
-the local queue UI. Its `lastRun.sources.jackandjill` counters make the Jack
-source result visible.
+invokes `queue.mjs refresh --scheduled`, then runs a bounded
+`queue.mjs health --limit 100 --apply --browser` sweep. The refresh ingests the
+cached Jack & Jill recommendation source alongside Gmail and configured public
+sources, applies deduplication, fit scoring, and posting aging; the health
+sweep rechecks the oldest eligible queue URLs using ATS APIs, HTTP, and browser
+fallback where needed. Its `lastRun.sources.jackandjill` and
+`lastHealthCheck` records make both source and liveness results visible.
 
-The scheduled path does not traverse application forms and does not generate
-submission packets, resumes, cover letters, or application answers. Packet
-generation is an explicit selected-role action:
+The scheduled path does not traverse application forms, generate submission
+packets, resumes, cover letters, or application answers, and it never submits
+applications. Packet generation is an explicit selected-role action:
 
 ```bash
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id>

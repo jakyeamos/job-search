@@ -9,6 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const UI_URL = 'http://127.0.0.1:47831/';
 const STATE_PATH = path.join(ROOT, 'data', 'queue-ui-launch-state.json');
 const BROWSER_APPS = ['Google Chrome Beta', 'Google Chrome'];
+export const SCHEDULED_HEALTH_LIMIT = 100;
 
 function localDateKey(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -111,6 +112,17 @@ export function decideLaunchAction({ tabStatus, alreadyOpenedToday }) {
   return 'open';
 }
 
+export function buildScheduledHealthArgs(limit = SCHEDULED_HEALTH_LIMIT) {
+  return [
+    path.join(ROOT, 'queue.mjs'),
+    'health',
+    '--limit',
+    String(limit),
+    '--apply',
+    '--browser',
+  ];
+}
+
 async function main() {
   const date = localDateKey();
   if (localHour() < 8) {
@@ -125,6 +137,14 @@ async function main() {
   });
   if (refresh.status !== 0) {
     console.error(`Queue refresh exited with status ${refresh.status ?? 'unknown'}; opening the last available queue.`);
+  }
+
+  const health = spawnSync(process.execPath, buildScheduledHealthArgs(), {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  if (health.status !== 0) {
+    console.error(`Queue health recheck exited with status ${health.status ?? 'unknown'}; keeping the refreshed queue available.`);
   }
 
   const ready = await waitForUi();

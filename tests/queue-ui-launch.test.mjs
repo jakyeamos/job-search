@@ -2,10 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildScheduledHealthArgs,
   buildChromeRefreshScript,
   decideLaunchAction,
   refreshExistingQueueTab,
+  SCHEDULED_HEALTH_LIMIT,
 } from '../scripts/queue-ui-launch.mjs';
+
+test('scheduled launcher rechecks the oldest queue URLs without entering the application flow', () => {
+  const args = buildScheduledHealthArgs();
+  assert.match(args[0], /[\\/]queue\.mjs$/);
+  assert.deepEqual(args.slice(1), [
+    'health',
+    '--limit',
+    String(SCHEDULED_HEALTH_LIMIT),
+    '--apply',
+    '--browser',
+  ]);
+  assert.equal(SCHEDULED_HEALTH_LIMIT, 100);
+});
 
 test('existing queue tab is refreshed instead of opened again', () => {
   assert.equal(decideLaunchAction({ tabStatus: 'refreshed', alreadyOpenedToday: true }), 'refresh');
