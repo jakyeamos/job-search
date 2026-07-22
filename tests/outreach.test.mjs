@@ -9,11 +9,18 @@ import {
   addBusinessDays,
   buildEmailMessage,
   buildLinkedInDraft,
+  discoveryCacheTtlMs,
+  ensureOutboxEntry,
+  hasConfirmedSubmission,
   loadOutreachState,
   matchesApplicationConfirmation,
+  outboxEntryDue,
+  outboxNextAttemptAt,
+  outreachMessageId,
   rankContacts,
   recordSubmissionSignal,
   selectContacts,
+  summarizeOutbox,
   followUpSuppressed,
   validateMessage,
 } from '../outreach-lib.mjs';
@@ -112,11 +119,15 @@ test('submission signals are idempotent and confirmation emails must match the r
   const file = path.join(directory, 'outreach-state.json');
   try {
     recordSubmissionSignal(file, item, { source: 'queue_applied', at: '2026-07-18T12:00:00.000Z' });
-    recordSubmissionSignal(file, item, { source: 'browser_confirmation', at: '2026-07-18T12:01:00.000Z' });
-    recordSubmissionSignal(file, item, { source: 'gmail_confirmation', at: '2026-07-18T12:02:00.000Z', messageId: 'confirmation-1' });
+    const draftState = loadOutreachState(file);
+    assert.equal(hasConfirmedSubmission(draftState.records[0]), false);
+    recordSubmissionSignal(file, item, { source: 'browser_confirmation', at: '2026-07-18T12:01:00.000Z', confirmed: true, submissionId: 'run-1' });
+    recordSubmissionSignal(file, item, { source: 'gmail_confirmation', at: '2026-07-18T12:02:00.000Z', messageId: 'confirmation-1', confirmed: true });
     const state = loadOutreachState(file);
     assert.equal(state.records.length, 1);
     assert.equal(state.records[0].submission.signals.length, 3);
+    assert.equal(hasConfirmedSubmission(state.records[0]), true);
+    assert.equal(state.records[0].submission.confirmedSource, 'browser_confirmation');
     assert.equal(matchesApplicationConfirmation('Thank you for applying to Backend AI Engineer', 'Recruiting <jobs@example.ai>', 'Example AI received your application.', item), true);
     assert.equal(matchesApplicationConfirmation('Thank you for applying', 'Recruiting <jobs@other.ai>', 'Other Co received your application.', item), false);
     assert.equal(matchesApplicationConfirmation(
@@ -125,9 +136,55 @@ test('submission signals are idempotent and confirmation emails must match the r
       'Thank you for your interest in the AI & Innovation Intern role with Utah Jazz.',
       { ...item, company: 'Triplenet Pricing and 7 more jobs in New York, NY for you. Apply Now.', title: 'ASP.NET Developer' },
     ), false);
+    assert.equal(matchesApplicationConfirmation(
+      'Application received',
+      'Recruiting <jobs@example.ai>',
+      'We received your application. Reference: backend-ai.',
+      { ...item, title: 'Role not included in subject' },
+      { applicationUrl: item.applyUrl },
+    ), true);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('legacy confirmation sources remain untrusted without explicit evidence', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'career-ops-outreach-legacy-'));
+  const file = path.join(directory, 'outreach-state.json');
+  try {
+    recordSubmissionSignal(file, item, { source: 'gmail_confirmation', at: '2026-07-18T12:00:00.000Z', messageId: 'legacy-1' });
+    const state = loadOutreachState(file);
+    assert.equal(hasConfirmedSubmission(state.records[0]), false);
+    assert.equal(state.records[0].status, 'awaiting_submission_confirmation');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('outbox IDs are deterministic and accepted entries are not recreated', () => {
+  const state = { records: [], outbox: [] };
+  const payload = {
+    recordKey: 'example-ai::backend-ai-engineer',
+    contactId: 'contact-1',
+    kind: 'initial',
+    to: 'taylor@example.ai',
+    subject: 'Applied for Backend AI Engineer',
+    body: 'Hello\n\nhttps://jakye.netlify.app/',
+    hash: 'message-hash',
+    now: '2026-07-18T12:00:00.000Z',
+  };
+  const first = ensureOutboxEntry(state, payload);
+  const second = ensureOutboxEntry(state, payload);
+  assert.equal(first.id, outreachMessageId(payload.recordKey, payload.contactId, payload.kind, payload.hash));
+  assert.equal(first.id, second.id);
+  assert.equal(state.outbox.length, 1);
+  assert.equal(outboxEntryDue(first, '2026-07-18T12:00:01.000Z'), true);
+  first.status = 'accepted';
+  first.providerStatus = 'accepted_by_gmail';
+  assert.equal(ensureOutboxEntry(state, payload).status, 'accepted');
+  assert.deepEqual(summarizeOutbox(state), { total: 1, pending: 0, sending: 0, accepted: 1, unknown: 0, failed: 0, blocked: 0 });
+  assert.equal(outboxNextAttemptAt('2026-07-18T12:00:00.000Z', 1), '2026-07-18T12:15:00.000Z');
+  assert.equal(discoveryCacheTtlMs('no_contacts') < discoveryCacheTtlMs('found'), true);
 });
 
 test('follow-up date skips weekends', () => {
@@ -165,13 +222,20 @@ test('Gmail send verifies the target account and posts an encoded message', asyn
       return new Response('{}', { status: 200 });
     },
   });
-  const result = await client.sendMessage({ to: 'recruiter@example.ai', subject: 'Applied for Backend AI Engineer', body: 'Hello\n\nThanks.' });
+  const result = await client.sendMessage({
+    to: 'recruiter@example.ai',
+    subject: 'Applied for Backend AI Engineer',
+    body: 'Hello\n\nThanks.',
+    headers: { 'X-Career-Ops-Outreach-ID': 'career-ops-test' },
+  });
   assert.equal(result.id, 'sent-1');
   const send = calls.find((call) => String(call.input).endsWith('/messages/send'));
   assert.ok(send);
   const body = JSON.parse(String(send.init.body));
   assert.equal(typeof body.raw, 'string');
-  assert.match(Buffer.from(body.raw, 'base64url').toString('utf8'), /To: recruiter@example\.ai/);
+  const raw = Buffer.from(body.raw, 'base64url').toString('utf8');
+  assert.match(raw, /To: recruiter@example\.ai/);
+  assert.match(raw, /X-Career-Ops-Outreach-ID: career-ops-test/);
 });
 
 test('Gmail send blocks an OAuth token verified for another account', async () => {

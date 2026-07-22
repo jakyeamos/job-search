@@ -25,20 +25,28 @@ import {
 import {
   OUTREACH_CONTACTS_PATH,
   OUTREACH_STATE_PATH,
+  OUTREACH_MAX_SEND_ATTEMPTS,
+  OUTREACH_SEND_STALE_MS,
   addBusinessDays,
   buildContactSearchQuery,
   buildEmailMessage,
   buildLinkedInDraft,
   countSentForDay,
+  discoveryCacheTtlMs,
+  ensureOutboxEntry,
   findOutreachRecord,
   followUpSuppressed,
+  hasConfirmedSubmission,
   loadOutreachPolicy,
   loadOutreachState,
   matchesApplicationConfirmation,
   messageForSend,
+  outboxEntryDue,
+  outboxNextAttemptAt,
   rankContacts,
   saveOutreachState,
   selectContacts,
+  summarizeOutbox,
   upsertSubmissionSignal,
 } from './outreach-lib.mjs';
 
@@ -48,11 +56,13 @@ const APPLICATION_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
 const STATE_PATH = path.join(ROOT, OUTREACH_STATE_PATH);
 const CONTACTS_PATH = path.join(ROOT, OUTREACH_CONTACTS_PATH);
 const CONFIRMATION_QUERY = 'in:anywhere {subject:"application received" subject:"thank you for applying" subject:"thanks for applying" subject:"application submitted" subject:"we received your application"} newer_than:30d';
-const DISCOVERY_PIPELINE_VERSION = 6;
+const DISCOVERY_PIPELINE_VERSION = 7;
 
 /** @typedef {{
+ *  verifyAccount: () => Promise<string>,
  *  listMessages: (query: string, options?: { limit?: number }) => Promise<Array<{ id: string, threadId?: string }>>,
  *  getMessage: (id: string, format?: string) => Promise<Record<string, unknown>>,
+ *  sendMessage: (message: { to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }) => Promise<Record<string, unknown>>,
  * }} RelationshipClient */
 
 /** @param {string[]} args @param {string} flag @param {string} fallback */
@@ -102,7 +112,8 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
     at: item.appliedAt || new Date().toISOString(),
   });
   if (record.status === 'needs_application_identity') return record;
-  const policy = loadOutreachPolicy(loadProfile(ROOT));
+  const profile = loadProfile(ROOT);
+  const policy = loadOutreachPolicy(profile);
   const persistedContacts = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
   const contacts = selectContacts(rankContacts([
     ...contactsForItem(item, loadContactManifest()),
@@ -112,12 +123,16 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
   const existing = new Map((record.contacts || []).map((contact) => [contact.id, contact]));
   record.contacts = contacts.map((contact) => {
     const old = existing.get(contact.id);
-    const initial = old?.initial?.status === 'sent'
-      ? old.initial
-      : contact.emailEligible
-        ? { ...buildEmailMessage(loadProfile(ROOT), item, contact, 'initial'), status: 'pending', sentAt: null, gmailMessageId: null }
-        : { status: 'no_verified_email', subject: null, body: null, hash: null, sentAt: null, gmailMessageId: null };
-    const followUp = old?.followUp || { status: 'not_scheduled', dueAt: null, subject: null, body: null, hash: null, sentAt: null, gmailMessageId: null };
+    const generatedInitial = contact.emailEligible
+      ? { ...buildEmailMessage(profile, item, contact, 'initial'), status: 'pending', sentAt: null, gmailMessageId: null, threadId: null, outboxId: null }
+      : { status: 'no_verified_email', subject: null, body: null, hash: null, sentAt: null, gmailMessageId: null, threadId: null, outboxId: null };
+    const existingInitialStatus = String(old?.initial?.status || '');
+    const initial = old?.initial && ['sent', 'pending', 'sending', 'unknown', 'failed'].includes(existingInitialStatus)
+      ? { ...generatedInitial, ...old.initial }
+      : generatedInitial;
+    const followUp = old?.followUp
+      ? { status: 'not_scheduled', dueAt: null, subject: null, body: null, hash: null, sentAt: null, gmailMessageId: null, threadId: null, outboxId: null, ...old.followUp }
+      : { status: 'not_scheduled', dueAt: null, subject: null, body: null, hash: null, sentAt: null, gmailMessageId: null, threadId: null, outboxId: null };
     return {
       ...contact,
       profileUrl: contact.profileUrl,
@@ -131,7 +146,9 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
     };
   });
   record.searchQuery = buildContactSearchQuery(item);
-  record.status = record.contacts.length ? 'drafted' : 'awaiting_contacts';
+  if (!hasConfirmedSubmission(record)) record.status = 'awaiting_submission_confirmation';
+  else if (record.contacts.length) record.status = 'drafted';
+  else record.status = 'awaiting_contacts';
   record.updatedAt = new Date().toISOString();
   if (!dryRun) saveOutreachState(STATE_PATH, state);
   return record;
@@ -155,14 +172,18 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', contacts: [], sources: [], queries: [], errors: [] };
   }
   const attemptedAt = String(record.discovery?.attemptedAt || '');
-  const age = attemptedAt ? Date.now() - new Date(attemptedAt).getTime() : Number.POSITIVE_INFINITY;
-  if (Number.isFinite(age)
-    && age < 7 * 24 * 60 * 60 * 1000
+  const attemptedAtMs = new Date(attemptedAt).getTime();
+  const legacyExpiry = Number.isFinite(attemptedAtMs)
+    ? attemptedAtMs + discoveryCacheTtlMs(String(record.discovery?.status || 'error'), Number(record.discovery?.candidateCount || 0))
+    : 0;
+  const cacheExpiresAtMs = new Date(record.discovery?.cacheExpiresAt || legacyExpiry || 0).getTime();
+  if (Number.isFinite(cacheExpiresAtMs)
+    && cacheExpiresAtMs > Date.now()
     && record.discovery?.pipelineVersion === DISCOVERY_PIPELINE_VERSION
     && Array.isArray(record.discoveredContacts)) {
     return {
       status: String(record.discovery?.status || 'cached'),
-      reason: 'recent discovery result reused',
+      reason: `cached until ${new Date(cacheExpiresAtMs).toISOString()}`,
       contacts: record.discoveredContacts,
       sources: Array.isArray(record.discovery?.sources) ? record.discovery.sources : [],
       queries: Array.isArray(record.discovery?.queries) ? record.discovery.queries : [],
@@ -174,14 +195,18 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     dryRun,
     gmailClient: options.gmailClient || null,
   });
+  const contacts = [...publicResult.contacts, ...warmResult.contacts];
+  const status = contacts.length
+    ? 'found'
+    : publicResult.status === 'unavailable' || warmResult.status === 'unavailable'
+      ? 'unavailable'
+      : publicResult.status === 'error' || warmResult.status === 'error' || publicResult.errors.length || warmResult.errors.length
+        ? 'error'
+        : 'no_contacts';
   const result = {
-    status: publicResult.contacts.length || warmResult.contacts.length
-      ? 'found'
-      : publicResult.status === 'unavailable' && warmResult.status === 'no_contacts'
-        ? 'unavailable'
-        : publicResult.status,
+    status,
     reason: [publicResult.reason, warmResult.reason].filter(Boolean).join('; '),
-    contacts: [...publicResult.contacts, ...warmResult.contacts],
+    contacts,
     queries: [...publicResult.queries, ...warmResult.gmailQueries, ...warmResult.webQueries],
     sources: [...new Set([...publicResult.sources, ...warmResult.sources])],
     errors: [...new Set([...publicResult.errors, ...warmResult.errors])],
@@ -191,11 +216,15 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     },
   };
   if (!dryRun) {
+    const attemptedAtValue = new Date().toISOString();
+    const cacheExpiresAt = new Date(Date.now() + discoveryCacheTtlMs(result.status, result.contacts.length)).toISOString();
     record.discoveredContacts = result.contacts;
     record.discovery = {
       pipelineVersion: DISCOVERY_PIPELINE_VERSION,
       status: result.status,
-      attemptedAt: new Date().toISOString(),
+      attemptedAt: attemptedAtValue,
+      cacheExpiresAt,
+      nextAttemptAt: cacheExpiresAt,
       candidateCount: result.contacts.length,
       sourceCount: result.sources.length,
       reason: result.reason,
@@ -250,10 +279,23 @@ function scanBrowserApplicationRuns(state, items, dryRun) {
         && String(candidate.title || '').toLowerCase() === title.toLowerCase()));
     if (!item) continue;
     matched += 1;
-    if (!dryRun) upsertSubmissionSignal(state, item, {
-      source: 'browser_confirmation',
-      at: String(run.finishedAt || result.finishedAt || new Date().toISOString()),
-    });
+    if (!dryRun) {
+      const submissionEvidence = result.submissionEvidence && typeof result.submissionEvidence === 'object'
+        ? result.submissionEvidence
+        : {};
+      const submissionId = String(submissionEvidence.submissionId || submissionEvidence.confirmationId || result.applicationId || run.id || run.key || '').trim() || null;
+      upsertSubmissionSignal(state, item, {
+        source: 'browser_confirmation',
+        at: String(run.finishedAt || result.finishedAt || new Date().toISOString()),
+        confirmed: true,
+        submissionId,
+        evidence: {
+          adapter: String(result.adapter || run.adapter || '').trim() || null,
+          url: String(result.url || run.url || item.applyUrl || '').trim() || null,
+          resultState: String(result.state || run.state || '').trim() || 'submitted',
+        },
+      });
+    }
   }
   return {
     scanned: runs.length > 0,
@@ -272,6 +314,9 @@ async function scanConfirmationEmails(state, items, dryRun) {
   await client.verifyAccount();
   const messages = await client.listMessages(CONFIRMATION_QUERY, { limit: 100 });
   let matched = 0;
+  const appliedItems = items.filter((candidate) => candidate.status === 'applied'
+    || candidate.applicationState === 'submitted'
+    || candidate.applicationResult?.state === 'submitted');
   for (const summary of messages) {
     const message = await client.getMessage(summary.id, 'full');
     const headers = messageHeaders(message);
@@ -279,7 +324,10 @@ async function scanConfirmationEmails(state, items, dryRun) {
     const from = header(headers, 'from');
     const body = getMessageBody(message.payload);
     if (!isAuthenticEmail(headers)) continue;
-    const item = items.find((candidate) => matchesApplicationConfirmation(subject, from, body, candidate));
+    const item = appliedItems.find((candidate) => matchesApplicationConfirmation(subject, from, body, candidate, {
+      applicationUrl: candidate.applyUrl || candidate.canonicalUrl,
+      submissionId: candidate.applicationResult?.submissionEvidence?.submissionId,
+    }));
     if (!item) continue;
     matched += 1;
     if (!dryRun) upsertSubmissionSignal(state, item, {
@@ -287,6 +335,9 @@ async function scanConfirmationEmails(state, items, dryRun) {
       at: new Date(Number(message.internalDate || Date.now())).toISOString(),
       messageId: summary.id,
       subject,
+      confirmed: true,
+      submissionId: summary.id,
+      evidence: { from, subject, messageId: summary.id },
     });
   }
   state.scan = { ...(state.scan || {}), confirmationAt: new Date().toISOString(), confirmationCount: matched };
@@ -310,7 +361,11 @@ async function createRelationshipClient(dryRun) {
 function ensureAppliedRecords(state, items, dryRun) {
   for (const item of items.filter((candidate) => candidate.status === 'applied')) {
     if (!findOutreachRecord(state, applicationKey(item))) {
-      upsertSubmissionSignal(state, item, { source: 'queue_applied', at: item.appliedAt || new Date().toISOString() });
+      upsertSubmissionSignal(state, item, {
+        source: 'queue_applied',
+        at: item.appliedAt || new Date().toISOString(),
+        confirmed: false,
+      });
     }
   }
   if (!dryRun) saveOutreachState(STATE_PATH, state);
@@ -392,56 +447,246 @@ async function refreshResponses(state, dryRun) {
   return { checked: true, replies, bounces, rejected, reason: `checked ${state.records.length} outreach record(s)` };
 }
 
+/** @param {RelationshipClient} client */
+async function loadSentOutreachIndex(client) {
+  const messages = await client.listMessages('in:sent newer_than:30d', { limit: 200 });
+  const index = new Map();
+  for (const summary of messages) {
+    const message = await client.getMessage(summary.id, 'metadata');
+    const outreachId = header(messageHeaders(message), 'x-career-ops-outreach-id');
+    if (outreachId) index.set(outreachId, { id: summary.id, threadId: summary.threadId || message.threadId || null });
+  }
+  return index;
+}
+
+/** @param {Record<string, unknown>} state @param {Record<string, unknown>} entry */
+function outboxTarget(state, entry) {
+  const record = (state.records || []).find((candidate) => candidate.key === entry.recordKey);
+  const contact = record?.contacts?.find((candidate) => candidate.id === entry.contactId);
+  return { record, contact };
+}
+
+/** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {Record<string, unknown>} record @param {Record<string, unknown>} entry @param {Record<string, unknown>} providerResult @param {Record<string, unknown>} policy */
+function markOutboxAccepted(state, item, record, entry, providerResult, policy) {
+  const now = new Date().toISOString();
+  const gmailMessageId = typeof providerResult.id === 'string' ? providerResult.id : (entry.gmailMessageId || null);
+  const threadId = typeof providerResult.threadId === 'string' ? providerResult.threadId : (entry.threadId || null);
+  entry.status = 'accepted';
+  entry.updatedAt = now;
+  entry.nextAttemptAt = null;
+  entry.lastError = null;
+  entry.gmailMessageId = gmailMessageId;
+  entry.threadId = threadId;
+  entry.providerStatus = 'accepted_by_gmail';
+  const contact = record.contacts?.find((candidate) => candidate.id === entry.contactId);
+  if (!contact) return;
+  const eventKey = entry.kind === 'initial' ? 'initial' : 'followUp';
+  const event = contact[eventKey] || {};
+  const sentAt = event.sentAt || now;
+  contact[eventKey] = {
+    ...event,
+    status: 'sent',
+    deliveryStatus: 'provider_accepted',
+    sentAt,
+    gmailMessageId,
+    threadId,
+    outboxId: entry.id,
+  };
+  if (entry.kind === 'initial' && contact.followUp?.status !== 'sent' && !contact.followUp?.dueAt) {
+    const followUpMessage = buildEmailMessage(loadProfile(ROOT), item, contact, 'followup');
+    contact.followUp = {
+      ...contact.followUp,
+      status: 'scheduled',
+      dueAt: addBusinessDays(sentAt, policy.followUpBusinessDays),
+      threadId,
+      outboxId: null,
+      ...followUpMessage,
+    };
+  }
+  record.updatedAt = now;
+}
+
+/** @param {Record<string, unknown>} state @param {Array<Record<string, unknown>>} items @param {RelationshipClient} client */
+function reconcileOutbox(state, items, client, sentIndex) {
+  const now = Date.now();
+  for (const entry of state.outbox || []) {
+    const item = items.find((candidate) => applicationKey(candidate) === entry.recordKey);
+    const target = outboxTarget(state, entry);
+    if (!item || !target.record) continue;
+    const existingMessage = sentIndex.get(entry.id);
+    if (existingMessage) {
+      markOutboxAccepted(state, item, target.record, entry, existingMessage, loadOutreachPolicy(loadProfile(ROOT)));
+      continue;
+    }
+    if (entry.status === 'sending') {
+      const updatedAt = new Date(entry.updatedAt || entry.createdAt || 0).getTime();
+      if (Number.isFinite(updatedAt) && now - updatedAt < OUTREACH_SEND_STALE_MS) continue;
+      entry.status = Number(entry.attempts || 0) >= OUTREACH_MAX_SEND_ATTEMPTS ? 'failed' : 'unknown';
+      entry.nextAttemptAt = entry.status === 'failed' ? null : outboxNextAttemptAt(new Date().toISOString(), Number(entry.attempts || 0));
+      entry.updatedAt = new Date().toISOString();
+      entry.lastError = entry.lastError || 'previous send attempt did not reach a recorded completion';
+    }
+    if (entry.status === 'unknown' && Number(entry.attempts || 0) >= OUTREACH_MAX_SEND_ATTEMPTS) {
+      entry.status = 'failed';
+      entry.nextAttemptAt = null;
+      entry.updatedAt = new Date().toISOString();
+    }
+    if (entry.status === 'unknown' && outboxEntryDue(entry)) entry.status = 'pending';
+  }
+}
+
+/** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {Record<string, unknown>} record @param {Record<string, unknown>} policy */
+function enqueueOutboxEntries(state, item, record, policy) {
+  if (!hasConfirmedSubmission(record)) return;
+  for (const contact of record.contacts || []) {
+    if (contact.emailVerified && contact.email && ['pending', 'unknown', 'sending', 'failed'].includes(contact.initial?.status)) {
+      const initial = messageForSend(item, {
+        to: contact.email,
+        subject: contact.initial.subject,
+        body: contact.initial.body,
+        hash: contact.initial.hash,
+      });
+      const entry = ensureOutboxEntry(state, {
+        recordKey: record.key,
+        contactId: contact.id,
+        kind: 'initial',
+        ...initial,
+      });
+      contact.initial.outboxId = entry.id;
+    }
+    if (contact.emailVerified && contact.email && contact.followUp?.status === 'scheduled') {
+      const followUp = messageForSend(item, {
+        to: contact.email,
+        subject: contact.followUp.subject,
+        body: contact.followUp.body,
+        hash: contact.followUp.hash,
+      });
+      const entry = ensureOutboxEntry(state, {
+        recordKey: record.key,
+        contactId: contact.id,
+        kind: 'followup',
+        ...followUp,
+        now: contact.followUp.dueAt && new Date(contact.followUp.dueAt) > new Date() ? contact.followUp.dueAt : undefined,
+      });
+      if (contact.followUp.dueAt && new Date(contact.followUp.dueAt) > new Date() && entry.status === 'pending') entry.nextAttemptAt = contact.followUp.dueAt;
+      contact.followUp.outboxId = entry.id;
+    }
+  }
+}
+
+/** @param {Date} [date] */
+function nextUtcDay(date = new Date()) {
+  const next = new Date(date);
+  next.setUTCHours(24, 0, 0, 0);
+  return next.toISOString();
+}
+
 /** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {Record<string, unknown>} record @param {Record<string, unknown>} policy @param {boolean} dryRun */
 async function sendPending(state, item, record, policy, dryRun) {
+  const base = { sent: 0, attempted: 0, skipped: 0, retrying: 0, failed: 0, rateLimited: 0, reasons: [] };
+  if (!hasConfirmedSubmission(record)) return { ...base, skipped: 1, reason: 'waiting for explicit submission confirmation; no email was attempted' };
   const settings = state.settings || {};
-  if (dryRun || settings.emailEnabled !== true || policy.enabled !== true) return { sent: 0, skipped: 'email sending is disabled or dry-run mode is active' };
-  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) return { sent: 0, skipped: 'Gmail OAuth credentials are not configured' };
+  if (dryRun || settings.emailEnabled !== true || policy.enabled !== true) return { ...base, skipped: 1, reason: 'email sending is disabled or dry-run mode is active' };
+  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) return { ...base, skipped: 1, reason: 'Gmail OAuth credentials are not configured' };
   const initialLimit = settings.rampComplete === true ? policy.dailyInitialEmailLimit : policy.rampInitialEmailLimit;
   const followUpLimit = policy.dailyFollowUpLimit;
   let initialSent = countSentForDay(state, 'initial');
   let followUpSent = countSentForDay(state, 'followup');
   const client = await createGmailClient({ expectedAccount: TARGET_GMAIL_ACCOUNT });
   await client.verifyAccount();
-  let sent = 0;
-  for (const contact of record.contacts || []) {
-    if (contact.initial?.status === 'pending' && contact.emailVerified && initialSent < initialLimit) {
-      const message = messageForSend(item, { to: contact.email, subject: contact.initial.subject, body: contact.initial.body, hash: contact.initial.hash });
-      const result = await client.sendMessage(message);
-      contact.initial = {
-        ...contact.initial,
-        status: 'sent',
-        sentAt: new Date().toISOString(),
-        gmailMessageId: result.id || null,
-        threadId: result.threadId || null,
+  const sentIndex = await loadSentOutreachIndex(client);
+  reconcileOutbox(state, [item], client, sentIndex);
+  enqueueOutboxEntries(state, item, record, policy);
+  saveOutreachState(STATE_PATH, state);
+  const entries = (state.outbox || [])
+    .filter((entry) => entry.recordKey === record.key)
+    .sort((left, right) => (left.kind === 'initial' ? -1 : 1) - (right.kind === 'initial' ? -1 : 1) || String(left.createdAt).localeCompare(String(right.createdAt)));
+  for (const entry of entries) {
+    if (!outboxEntryDue(entry)) continue;
+    const target = outboxTarget(state, entry);
+    const contact = target.contact;
+    if (!contact) {
+      entry.status = 'failed';
+      entry.lastError = 'outbox contact no longer exists';
+      entry.updatedAt = new Date().toISOString();
+      base.failed += 1;
+      continue;
+    }
+    if (entry.kind === 'initial' && contact.initial?.status === 'sent') {
+      entry.status = 'accepted';
+      entry.providerStatus = 'legacy_record';
+      entry.updatedAt = new Date().toISOString();
+      continue;
+    }
+    if (entry.kind === 'followup' && followUpSuppressed(record, contact)) {
+      entry.status = 'blocked';
+      entry.nextAttemptAt = null;
+      entry.lastError = 'follow-up suppressed by reply, bounce, opt-out, rejection, or closed role';
+      entry.updatedAt = new Date().toISOString();
+      continue;
+    }
+    if (entry.kind === 'initial' && initialSent >= initialLimit) {
+      entry.nextAttemptAt = nextUtcDay();
+      entry.updatedAt = new Date().toISOString();
+      base.skipped += 1;
+      base.rateLimited += 1;
+      continue;
+    }
+    if (entry.kind === 'followup' && followUpSent >= followUpLimit) {
+      entry.nextAttemptAt = nextUtcDay();
+      entry.updatedAt = new Date().toISOString();
+      base.skipped += 1;
+      base.rateLimited += 1;
+      continue;
+    }
+    let message;
+    try {
+      message = messageForSend(item, entry);
+    } catch (error) {
+      entry.status = 'failed';
+      entry.nextAttemptAt = null;
+      entry.lastError = error instanceof Error ? error.message : String(error);
+      entry.updatedAt = new Date().toISOString();
+      base.failed += 1;
+      base.reasons.push(entry.lastError);
+      continue;
+    }
+    entry.status = 'sending';
+    entry.attempts = Number(entry.attempts || 0) + 1;
+    entry.updatedAt = new Date().toISOString();
+    saveOutreachState(STATE_PATH, state);
+    base.attempted += 1;
+    try {
+      const result = await client.sendMessage({
+        ...message,
+        threadId: entry.threadId || undefined,
+        headers: { 'X-Career-Ops-Outreach-ID': entry.id },
+      });
+      markOutboxAccepted(state, item, record, entry, result, policy);
+      saveOutreachState(STATE_PATH, state);
+      base.sent += 1;
+      if (entry.kind === 'initial') initialSent += 1;
+      else followUpSent += 1;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      entry.status = Number(entry.attempts || 0) >= OUTREACH_MAX_SEND_ATTEMPTS ? 'failed' : 'unknown';
+      entry.nextAttemptAt = entry.status === 'failed' ? null : outboxNextAttemptAt(new Date().toISOString(), Number(entry.attempts || 0));
+      entry.lastError = reason;
+      entry.providerStatus = 'unknown';
+      entry.updatedAt = new Date().toISOString();
+      contact[entry.kind === 'initial' ? 'initial' : 'followUp'] = {
+        ...contact[entry.kind === 'initial' ? 'initial' : 'followUp'],
+        status: entry.status,
+        deliveryStatus: 'unknown',
+        outboxId: entry.id,
       };
-      contact.followUp = {
-        ...contact.followUp,
-        status: 'scheduled',
-        dueAt: addBusinessDays(contact.initial.sentAt, policy.followUpBusinessDays),
-        ...buildEmailMessage(loadProfile(ROOT), item, contact, 'followup'),
-      };
-      initialSent += 1;
-      sent += 1;
+      record.lastError = reason;
+      base[entry.status === 'failed' ? 'failed' : 'retrying'] += 1;
+      base.reasons.push(`${entry.kind} ${contact.email}: ${reason}`);
+      saveOutreachState(STATE_PATH, state);
     }
   }
-  const now = new Date();
-  for (const contact of record.contacts || []) {
-    if (followUpSent >= followUpLimit || followUpSuppressed(record, contact)) continue;
-    if (contact.followUp?.status !== 'scheduled' || !contact.followUp.dueAt || new Date(contact.followUp.dueAt) > now) continue;
-    const message = messageForSend(item, { to: contact.email, subject: contact.followUp.subject, body: contact.followUp.body, hash: contact.followUp.hash });
-    const result = await client.sendMessage(message);
-    contact.followUp = {
-      ...contact.followUp,
-      status: 'sent',
-      sentAt: new Date().toISOString(),
-      gmailMessageId: result.id || null,
-      threadId: result.threadId || null,
-    };
-    followUpSent += 1;
-    sent += 1;
-  }
-  return { sent, initialSent, followUpSent };
+  return { ...base, initialSent, followUpSent, outbox: summarizeOutbox(state) };
 }
 
 /** @param {Record<string, unknown>} state @param {Array<Record<string, unknown>>} items */
@@ -456,12 +701,19 @@ function updateStatuses(state, items) {
       record.suppressionReason = `application status is ${item.status}`;
       continue;
     }
+    if (!hasConfirmedSubmission(record)) {
+      record.status = 'awaiting_submission_confirmation';
+      record.updatedAt = new Date().toISOString();
+      continue;
+    }
     const contacts = record.contacts || [];
     if (!contacts.length) { record.status = 'awaiting_contacts'; continue; }
     const initialSent = contacts.filter((contact) => contact.initial?.status === 'sent').length;
     const pendingFollowUp = contacts.some((contact) => contact.followUp?.status === 'scheduled');
     const pendingInitial = contacts.some((contact) => contact.initial?.status === 'pending' && contact.emailVerified);
-    record.status = pendingInitial ? 'drafted' : pendingFollowUp ? 'followup_scheduled' : initialSent ? 'complete' : 'linkedin_ready';
+    const retrying = contacts.some((contact) => ['unknown', 'sending'].includes(contact.initial?.status) || ['unknown', 'sending'].includes(contact.followUp?.status));
+    const failed = contacts.some((contact) => ['failed'].includes(contact.initial?.status) || ['failed'].includes(contact.followUp?.status));
+    record.status = failed ? 'error' : retrying ? 'retrying' : pendingInitial ? 'drafted' : pendingFollowUp ? 'followup_scheduled' : initialSent ? 'complete' : 'linkedin_ready';
     record.updatedAt = new Date().toISOString();
   }
 }
@@ -510,6 +762,8 @@ async function processOutreach(dryRun) {
       record.discovery = {
         status: 'error',
         attemptedAt: new Date().toISOString(),
+        cacheExpiresAt: new Date(Date.now() + discoveryCacheTtlMs('error')).toISOString(),
+        nextAttemptAt: new Date(Date.now() + discoveryCacheTtlMs('error')).toISOString(),
         candidateCount: 0,
         sourceCount: 0,
         reason,
@@ -534,14 +788,26 @@ async function processOutreach(dryRun) {
   }
   updateStatuses(state, items);
   let sent = 0;
+  let attempted = 0;
+  let skipped = 0;
+  let retrying = 0;
+  let failed = 0;
+  let rateLimited = 0;
   const errors = [];
+  const warnings = [];
   for (const record of state.records || []) {
     const item = items.find((candidate) => applicationKey(candidate) === record.key);
     if (!item) continue;
     try {
       const result = await sendPending(state, item, record, policy, dryRun);
       sent += Number(result.sent || 0);
-      if (!dryRun && result.sent) updateStatuses(state, items);
+      attempted += Number(result.attempted || 0);
+      skipped += Number(result.skipped || 0);
+      retrying += Number(result.retrying || 0);
+      failed += Number(result.failed || 0);
+      rateLimited += Number(result.rateLimited || 0);
+      if (Array.isArray(result.reasons)) warnings.push(...result.reasons.map((reason) => `${item.company || 'Unknown'} / ${item.title}: ${reason}`));
+      if (!dryRun && (result.sent || result.failed || result.retrying)) updateStatuses(state, items);
     } catch (error) {
       record.status = 'error';
       record.lastError = error instanceof Error ? error.message : String(error);
@@ -549,11 +815,39 @@ async function processOutreach(dryRun) {
     }
   }
   updateStatuses(state, items);
+  const summary = {
+    ok: errors.length === 0 && failed === 0,
+    at: new Date().toISOString(),
+    dryRun,
+    records: state.records.length,
+    sent,
+    attempted,
+    skipped,
+    retrying,
+    failed,
+    rateLimited,
+    browser,
+    confirmation,
+    discoveries: discoveries.map((discovery) => ({
+      company: discovery.company,
+      title: discovery.title,
+      status: discovery.status,
+      reason: discovery.reason,
+      contacts: Array.isArray(discovery.contacts) ? discovery.contacts.length : 0,
+    })),
+    responses,
+    warnings,
+    errors,
+    outbox: summarizeOutbox(state),
+  };
   if (!dryRun) {
-    state.updatedAt = new Date().toISOString();
+    state.lastProcess = summary;
+    state.updatedAt = summary.at;
     saveOutreachState(STATE_PATH, state);
   }
-  console.log(`Outreach process${dryRun ? ' (dry run)' : ''}: ${state.records.length} record(s), ${sent} email(s) sent.`);
+  console.log(`Outreach process${dryRun ? ' (dry run)' : ''}: ${state.records.length} record(s), ${sent} email(s) accepted by Gmail.`);
+  console.log(`  Outbox: ${summary.outbox.pending} pending, ${summary.outbox.unknown} uncertain, ${summary.outbox.failed} failed, ${summary.outbox.accepted} accepted.`);
+  if (rateLimited) console.log(`  Rate limit: ${rateLimited} message(s) held until the next UTC day.`);
   console.log(`  Browser application scan: ${browser.reason}`);
   console.log(`  Confirmation scan: ${confirmation.reason}`);
   for (const discovery of discoveries) {
@@ -562,7 +856,8 @@ async function processOutreach(dryRun) {
   console.log(`  Response scan: ${responses.reason}`);
   for (const record of state.records) printPrepared({ company: record.company, title: record.title }, record);
   for (const error of errors) console.log(`  ⚠️ ${error}`);
-  return { state, confirmation, sent, errors };
+  for (const warning of warnings) console.log(`  ⚠️ ${warning}`);
+  return { state, confirmation, sent, errors, summary, ok: summary.ok };
 }
 
 /** @param {string} applicationId @param {boolean} dryRun */
@@ -622,9 +917,17 @@ function status() {
     company: record.company,
     title: record.title,
     status: record.status,
+    submission: {
+      confirmed: hasConfirmedSubmission(record),
+      confirmedAt: record.submission?.confirmedAt || null,
+      confirmedSource: record.submission?.confirmedSource || null,
+      signalCount: Array.isArray(record.submission?.signals) ? record.submission.signals.length : 0,
+    },
     discovery: record.discovery ? {
       status: record.discovery.status || 'unknown',
       attemptedAt: record.discovery.attemptedAt || null,
+      cacheExpiresAt: record.discovery.cacheExpiresAt || null,
+      nextAttemptAt: record.discovery.nextAttemptAt || null,
       candidateCount: record.discovery.candidateCount || 0,
       sourceCount: record.discovery.sourceCount || 0,
       reason: record.discovery.reason || '',
@@ -635,12 +938,15 @@ function status() {
       email: contact.email,
       emailVerified: contact.emailVerified,
       initial: contact.initial?.status || 'none',
+      initialDelivery: contact.initial?.deliveryStatus || null,
       followUp: contact.followUp?.status || 'none',
+      followUpDelivery: contact.followUp?.deliveryStatus || null,
+      lastError: contact.initial?.lastError || contact.followUp?.lastError || null,
       linkedinDraft: contact.linkedinDraft || '',
     })),
     nextActionAt: record.contacts?.map((contact) => contact.followUp?.dueAt).filter(Boolean).sort()[0] || null,
   }));
-  console.log(JSON.stringify({ settings: state.settings || {}, records: summary }, null, 2));
+  console.log(JSON.stringify({ settings: state.settings || {}, lastProcess: state.lastProcess || null, outbox: summarizeOutbox(state), records: summary }, null, 2));
 }
 
 async function main() {
@@ -648,7 +954,11 @@ async function main() {
   const command = args[0] || 'status';
   if (command === 'prepare') { prepare(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
   if (command === 'discover') { await discover(readFlag(args, '--application'), hasFlag(args, '--dry-run')); return; }
-  if (command === 'process') { await processOutreach(hasFlag(args, '--dry-run')); return; }
+  if (command === 'process') {
+    const result = await processOutreach(hasFlag(args, '--dry-run'));
+    if (!result.ok && !result.summary.dryRun) process.exitCode = 2;
+    return;
+  }
   if (command === 'status') { status(); return; }
   if (command === 'pause') { pause(readFlag(args, '--application')); return; }
   if (command === 'enable-email') { await enableEmail(); return; }

@@ -10,9 +10,17 @@ import {
   normalizeUrl,
 } from './queue-lib.mjs';
 
-export const OUTREACH_SCHEMA_VERSION = 1;
+export const OUTREACH_SCHEMA_VERSION = 2;
 export const OUTREACH_STATE_PATH = 'data/outreach-state.json';
 export const OUTREACH_CONTACTS_PATH = 'data/outreach-contacts.json';
+export const OUTREACH_MAX_SEND_ATTEMPTS = 3;
+export const OUTREACH_SEND_STALE_MS = 15 * 60 * 1000;
+export const DISCOVERY_CACHE_TTLS_MS = Object.freeze({
+  found: 7 * 24 * 60 * 60 * 1000,
+  no_contacts: 24 * 60 * 60 * 1000,
+  unavailable: 2 * 60 * 60 * 1000,
+  error: 30 * 60 * 1000,
+});
 
 export const DEFAULT_OUTREACH_POLICY = Object.freeze({
   schemaVersion: 1,
@@ -57,6 +65,40 @@ function asNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+/** @param {Record<string, unknown>} signal */
+function normalizeSubmissionSignal(signal) {
+  return {
+    source: asString(signal.source) || 'unknown',
+    at: asString(signal.at) || new Date().toISOString(),
+    messageId: asString(signal.messageId) || null,
+    subject: asString(signal.subject) || null,
+    confirmed: asBoolean(signal.confirmed),
+    submissionId: asString(signal.submissionId) || null,
+    evidence: isRecord(signal.evidence) ? signal.evidence : null,
+  };
+}
+
+/** @param {Record<string, unknown>} record */
+function migrateRecord(record) {
+  const submission = isRecord(record.submission) ? record.submission : {};
+  const signals = Array.isArray(submission.signals)
+    ? submission.signals.filter(isRecord).map(normalizeSubmissionSignal)
+    : [];
+  const confirmedSignal = signals.find((signal) => signal.confirmed === true);
+  const confirmed = submission.confirmed === true || Boolean(confirmedSignal);
+  return {
+    ...record,
+    submission: {
+      ...submission,
+      signals,
+      confirmed,
+      confirmedAt: asString(submission.confirmedAt) || (confirmedSignal?.at || null),
+      confirmedSource: asString(submission.confirmedSource) || (confirmedSignal?.source || null),
+      submissionId: asString(submission.submissionId) || (confirmedSignal?.submissionId || null),
+    },
+  };
+}
+
 /** @param {Record<string, unknown>} profile */
 export function loadOutreachPolicy(profile = {}) {
   const configured = isRecord(profile.outreach_policy) ? profile.outreach_policy : {};
@@ -79,18 +121,37 @@ export function loadOutreachPolicy(profile = {}) {
 
 /** @param {string} file */
 export function loadOutreachState(file) {
-  if (!existsSync(file)) return { schemaVersion: OUTREACH_SCHEMA_VERSION, records: [], settings: {}, path: file };
+  if (!existsSync(file)) return {
+    schemaVersion: OUTREACH_SCHEMA_VERSION,
+    records: [],
+    settings: {},
+    scan: {},
+    outbox: [],
+    path: file,
+  };
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8'));
     return {
       schemaVersion: OUTREACH_SCHEMA_VERSION,
-      records: Array.isArray(parsed?.records) ? parsed.records : [],
+      records: Array.isArray(parsed?.records) ? parsed.records.filter(isRecord).map(migrateRecord) : [],
       settings: isRecord(parsed?.settings) ? parsed.settings : {},
       scan: isRecord(parsed?.scan) ? parsed.scan : {},
+      outbox: Array.isArray(parsed?.outbox) ? parsed.outbox.filter(isRecord) : [],
+      lastProcess: isRecord(parsed?.lastProcess) ? parsed.lastProcess : null,
+      updatedAt: asString(parsed?.updatedAt) || null,
       path: file,
     };
   } catch {
-    return { schemaVersion: OUTREACH_SCHEMA_VERSION, records: [], settings: {}, scan: {}, path: file, loadError: 'outreach state is not valid JSON' };
+    return {
+      schemaVersion: OUTREACH_SCHEMA_VERSION,
+      records: [],
+      settings: {},
+      scan: {},
+      outbox: [],
+      lastProcess: null,
+      path: file,
+      loadError: 'outreach state is not valid JSON',
+    };
   }
 }
 
@@ -103,6 +164,9 @@ export function saveOutreachState(file, state) {
     records: Array.isArray(state.records) ? state.records : [],
     settings: isRecord(state.settings) ? state.settings : {},
     scan: isRecord(state.scan) ? state.scan : {},
+    outbox: Array.isArray(state.outbox) ? state.outbox : [],
+    lastProcess: isRecord(state.lastProcess) ? state.lastProcess : null,
+    updatedAt: asString(state.updatedAt) || new Date().toISOString(),
   };
   writeFileSync(temp, `${JSON.stringify(persisted, null, 2)}\n`, 'utf8');
   renameSync(temp, file);
@@ -113,30 +177,39 @@ export function outreachKey(item) {
   return applicationKey(item);
 }
 
-/** @param {Record<string, unknown>} item @param {{ source: string, at?: string, messageId?: string, subject?: string }} signal */
+/** @param {Record<string, unknown>} item @param {{ source: string, at?: string, messageId?: string, subject?: string, confirmed?: boolean, submissionId?: string, evidence?: Record<string, unknown> }} signal */
 export function upsertSubmissionSignal(state, item, signal) {
   const key = outreachKey(item);
-  const at = signal.at || new Date().toISOString();
+  const evidence = normalizeSubmissionSignal(signal);
+  const at = evidence.at;
   const existing = state.records.find((record) => record.key === key);
-  const evidence = {
-    source: asString(signal.source) || 'unknown',
-    at,
-    messageId: asString(signal.messageId) || null,
-    subject: asString(signal.subject) || null,
-  };
+  const isTerminal = (status) => ['paused', 'complete', 'suppressed', 'needs_application_identity'].includes(status);
   if (existing) {
-    const known = new Set((Array.isArray(existing.submission?.signals) ? existing.submission.signals : []).map((entry) => `${entry.source}:${entry.messageId || entry.at}`));
-    if (!known.has(`${evidence.source}:${evidence.messageId || evidence.at}`)) {
-      existing.submission = {
-        ...(isRecord(existing.submission) ? existing.submission : {}),
-        signals: [...(Array.isArray(existing.submission?.signals) ? existing.submission.signals : []), evidence],
-        firstAt: existing.submission?.firstAt || at,
-        lastAt: at,
-      };
+    const submission = isRecord(existing.submission) ? existing.submission : {};
+    const signals = Array.isArray(submission.signals) ? submission.signals : [];
+    const signalKey = `${evidence.source}:${evidence.messageId || evidence.submissionId || (evidence.source === 'queue_applied' ? '' : evidence.at)}`;
+    const known = signals.find((entry) => `${entry.source}:${entry.messageId || entry.submissionId || (entry.source === 'queue_applied' ? '' : entry.at)}` === signalKey);
+    if (known) {
+      if (evidence.confirmed === true) Object.assign(known, evidence);
+    } else {
+      signals.push(evidence);
     }
-    if (!['paused', 'complete', 'suppressed', 'needs_application_identity'].includes(existing.status)) existing.status = 'awaiting_contacts';
+    const confirmedSignal = signals.find((entry) => entry.confirmed === true);
+    const confirmed = submission.confirmed === true || Boolean(confirmedSignal);
+    existing.submission = {
+      ...submission,
+      signals,
+      confirmed,
+      confirmedAt: asString(submission.confirmedAt) || (confirmedSignal?.at || null),
+      confirmedSource: asString(submission.confirmedSource) || (confirmedSignal?.source || null),
+      submissionId: asString(submission.submissionId) || (confirmedSignal?.submissionId || null),
+      firstAt: submission.firstAt || at,
+      lastAt: at,
+    };
+    if (!isTerminal(existing.status)) existing.status = confirmed ? 'awaiting_contacts' : 'awaiting_submission_confirmation';
     return existing;
   }
+  const confirmed = evidence.confirmed === true;
   const record = {
     key,
     itemId: asString(item.id) || null,
@@ -146,8 +219,16 @@ export function upsertSubmissionSignal(state, item, signal) {
     applyUrl: normalizeUrl(asString(item.applyUrl || item.canonicalUrl)),
     lane: asString(item.lane),
     fitScore: asNumber(item.fitScore, null),
-    status: 'awaiting_contacts',
-    submission: { firstAt: at, lastAt: at, signals: [evidence] },
+    status: confirmed ? 'awaiting_contacts' : 'awaiting_submission_confirmation',
+    submission: {
+      firstAt: at,
+      lastAt: at,
+      signals: [evidence],
+      confirmed,
+      confirmedAt: confirmed ? at : null,
+      confirmedSource: confirmed ? evidence.source : null,
+      submissionId: confirmed ? evidence.submissionId : null,
+    },
     contacts: [],
     createdAt: at,
     updatedAt: at,
@@ -156,13 +237,100 @@ export function upsertSubmissionSignal(state, item, signal) {
   return record;
 }
 
-/** @param {string} file @param {Record<string, unknown>} item @param {{ source: string, at?: string, messageId?: string, subject?: string }} signal */
+/** @param {string} file @param {Record<string, unknown>} item @param {{ source: string, at?: string, messageId?: string, subject?: string, confirmed?: boolean, submissionId?: string, evidence?: Record<string, unknown> }} signal */
 export function recordSubmissionSignal(file, item, signal) {
   const state = loadOutreachState(file);
   const record = upsertSubmissionSignal(state, item, signal);
   state.updatedAt = new Date().toISOString();
   saveOutreachState(file, state);
   return record;
+}
+
+/** @param {Record<string, unknown>} record */
+export function hasConfirmedSubmission(record) {
+  return record?.submission?.confirmed === true;
+}
+
+/** @param {string} status @param {number} [candidateCount] */
+export function discoveryCacheTtlMs(status, candidateCount = 0) {
+  if (candidateCount > 0 || status === 'found') return DISCOVERY_CACHE_TTLS_MS.found;
+  return DISCOVERY_CACHE_TTLS_MS[status] || DISCOVERY_CACHE_TTLS_MS.error;
+}
+
+/** @param {string} recordKey @param {string} contactId @param {'initial'|'followup'} kind @param {string} messageHashValue */
+export function outreachMessageId(recordKey, contactId, kind, messageHashValue) {
+  const digest = createHash('sha256')
+    .update(`${recordKey}|${contactId}|${kind}|${messageHashValue}`)
+    .digest('hex')
+    .slice(0, 32);
+  return `career-ops-${digest}`;
+}
+
+/** @param {Record<string, unknown>} state @param {{ recordKey: string, contactId: string, kind: 'initial'|'followup', to: string, subject: string, body: string, hash: string, now?: string }} payload */
+export function ensureOutboxEntry(state, payload) {
+  if (!Array.isArray(state.outbox)) state.outbox = [];
+  const now = payload.now || new Date().toISOString();
+  const id = outreachMessageId(payload.recordKey, payload.contactId, payload.kind, payload.hash);
+  const existing = state.outbox.find((entry) => entry.id === id);
+  if (existing) {
+    if (!existing.to) existing.to = payload.to;
+    if (!existing.subject) existing.subject = payload.subject;
+    if (!existing.body) existing.body = payload.body;
+    if (!existing.hash) existing.hash = payload.hash;
+    if (!existing.status) existing.status = 'pending';
+    if (!existing.createdAt) existing.createdAt = now;
+    if (!existing.updatedAt) existing.updatedAt = now;
+    return existing;
+  }
+  const entry = {
+    id,
+    recordKey: payload.recordKey,
+    contactId: payload.contactId,
+    kind: payload.kind,
+    to: payload.to,
+    subject: payload.subject,
+    body: payload.body,
+    hash: payload.hash,
+    status: 'pending',
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+    nextAttemptAt: now,
+    lastError: null,
+    gmailMessageId: null,
+    threadId: null,
+    providerStatus: null,
+  };
+  state.outbox.push(entry);
+  return entry;
+}
+
+/** @param {number} attempts */
+export function outboxRetryDelayMs(attempts) {
+  return Math.min(4 * 60 * 60 * 1000, 15 * 60 * 1000 * (2 ** Math.max(0, attempts - 1)));
+}
+
+/** @param {string|Date} value @param {number} attempts */
+export function outboxNextAttemptAt(value, attempts) {
+  return new Date(new Date(value).getTime() + outboxRetryDelayMs(attempts)).toISOString();
+}
+
+/** @param {Record<string, unknown>} entry @param {string|Date} [now] */
+export function outboxEntryDue(entry, now = new Date()) {
+  if (!['pending', 'unknown'].includes(entry.status)) return false;
+  if (Number(entry.attempts || 0) >= OUTREACH_MAX_SEND_ATTEMPTS) return false;
+  const nextAttemptAt = new Date(entry.nextAttemptAt || 0).getTime();
+  return !Number.isFinite(nextAttemptAt) || nextAttemptAt <= new Date(now).getTime();
+}
+
+/** @param {Record<string, unknown>} state */
+export function summarizeOutbox(state) {
+  const summary = { total: 0, pending: 0, sending: 0, accepted: 0, unknown: 0, failed: 0, blocked: 0 };
+  for (const entry of Array.isArray(state.outbox) ? state.outbox : []) {
+    summary.total += 1;
+    if (entry.status in summary) summary[entry.status] += 1;
+  }
+  return summary;
 }
 
 /** @param {Record<string, unknown>} contact @param {Record<string, unknown>} item */
@@ -422,8 +590,21 @@ export function messageForSend(item, message) {
   return { to, subject: asString(message.subject), body: asString(message.body), hash: asString(message.hash) };
 }
 
-/** @param {string} subject @param {string} from @param {string} body @param {Record<string, unknown>} item */
-export function matchesApplicationConfirmation(subject, from, body, item) {
+/** @param {string} value @param {string} combined */
+function containsApplicationIdentity(value, combined) {
+  const normalized = lower(value);
+  if (!normalized) return false;
+  if (combined.includes(normalized)) return true;
+  try {
+    const url = new URL(value);
+    return url.pathname.split(/[^a-z0-9]+/i).some((token) => token.length >= 6 && combined.includes(token.toLowerCase()));
+  } catch {
+    return false;
+  }
+}
+
+/** @param {string} subject @param {string} from @param {string} body @param {Record<string, unknown>} item @param {{ applicationUrl?: string, submissionId?: string }} [identity] */
+export function matchesApplicationConfirmation(subject, from, body, item, identity = {}) {
   const combined = lower(`${subject} ${from} ${body}`);
   if (!CONFIRMATION_RE.test(combined)) return false;
   const company = lower(item.company);
@@ -432,6 +613,8 @@ export function matchesApplicationConfirmation(subject, from, body, item) {
   const companyTokens = company.split(/[^a-z0-9]+/).filter((token) => token.length >= 4 && !['inc', 'llc', 'corp', 'company', ...COMPANY_STOPWORDS].includes(token));
   const companyMatch = (companyPhrase && combined.includes(companyPhrase)) || companyTokens.some((token) => combined.includes(token));
   if (!companyMatch) return false;
+  if (containsApplicationIdentity(identity.submissionId || '', combined)
+    || containsApplicationIdentity(identity.applicationUrl || '', combined)) return true;
   const title = lower(item.title);
   const titlePhrase = title.replace(/[^a-z0-9]+/g, ' ').trim();
   if (titlePhrase && combined.includes(titlePhrase)) return true;

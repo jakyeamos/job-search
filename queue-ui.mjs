@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 
 import { recordApplication, saveQueue } from './queue.mjs';
 import { normalizeUrl, readQueueState } from './queue-lib.mjs';
-import { OUTREACH_STATE_PATH, recordSubmissionSignal, loadOutreachState } from './outreach-lib.mjs';
+import { OUTREACH_STATE_PATH, loadOutreachState, recordSubmissionSignal, summarizeOutbox } from './outreach-lib.mjs';
 import { loadLedger, answerQuestion, findQuestionMatch, isSensitiveQuestion, questionId } from './apply/question-ledger.mjs';
 import { selectProjectAccomplishment } from './project-accomplishment-ledger.mjs';
 import { loadClearState, DEFAULT_CLEAR_STATE_PATH } from './apply/application-run-state.mjs';
@@ -184,17 +184,29 @@ function queuePayload(state) {
   const selected = items
     .filter((item) => item.selectedForToday)
     .sort((a, b) => Number(a.queueRank || 999) - Number(b.queueRank || 999));
+  const outreachState = loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH));
+  const outboxById = new Map((outreachState.outbox || []).map((entry) => [entry.id, entry]));
   return {
     ...state,
     selected,
     questions: questionPayload(items),
     handoffs: publicHandoffSession(),
     applicationRun: publicApplicationRun(),
-    outreach: loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH)).records.map((record) => ({
+    outreach: outreachState.records.map((record) => ({
       key: record.key,
       company: record.company,
       title: record.title,
       status: record.status,
+      submissionConfirmed: record.submission?.confirmed === true,
+      submissionConfirmedAt: record.submission?.confirmedAt || null,
+      submissionConfirmedSource: record.submission?.confirmedSource || null,
+      lastError: record.lastError || null,
+      discovery: record.discovery ? {
+        status: record.discovery.status || 'unknown',
+        reason: record.discovery.reason || '',
+        attemptedAt: record.discovery.attemptedAt || null,
+        nextAttemptAt: record.discovery.nextAttemptAt || record.discovery.cacheExpiresAt || null,
+      } : null,
       searchQuery: record.searchQuery || '',
       contacts: (record.contacts || []).map((contact) => ({
         name: contact.name,
@@ -203,11 +215,25 @@ function queuePayload(state) {
         email: contact.email,
         emailVerified: contact.emailVerified === true,
         initialStatus: contact.initial?.status || 'none',
+        initialDeliveryStatus: contact.initial?.deliveryStatus || null,
+        initialOutboxStatus: outboxById.get(contact.initial?.outboxId)?.status || null,
+        initialLastError: outboxById.get(contact.initial?.outboxId)?.lastError || null,
         followUpStatus: contact.followUp?.status || 'none',
+        followUpDeliveryStatus: contact.followUp?.deliveryStatus || null,
+        followUpOutboxStatus: outboxById.get(contact.followUp?.outboxId)?.status || null,
+        followUpLastError: outboxById.get(contact.followUp?.outboxId)?.lastError || null,
         followUpDueAt: contact.followUp?.dueAt || null,
         linkedinDraft: contact.linkedinDraft || '',
       })),
     })),
+    outreachRun: outreachState.lastProcess || null,
+    outreachSettings: {
+      emailEnabled: outreachState.settings?.emailEnabled === true,
+      rampComplete: outreachState.settings?.rampComplete === true,
+      account: outreachState.settings?.account || null,
+      enabledAt: outreachState.settings?.enabledAt || null,
+    },
+    outreachOutbox: summarizeOutbox(outreachState),
     totals: {
       retained: items.length,
       liveUnique: countUniqueLiveRoles(liveItems),
@@ -238,7 +264,7 @@ function applyQueueAction(payload) {
   const item = items.find((candidate) => candidate.id === id);
   if (!item) throw new Error('queue item not found; refresh the page and try again');
 
-  if (action === 'applied') {
+  if (action === 'applied' || action === 'confirmed-submitted') {
     const appliedAt = new Date().toISOString();
     const recorded = recordApplication(ROOT, item);
     if (!recorded.recorded && !recorded.reason.includes('already exists')) {
@@ -249,7 +275,13 @@ function applyQueueAction(payload) {
     item.selectedForToday = false;
     item.queueRank = null;
     item.actionNote = recorded.reason;
-    recordSubmissionSignal(path.join(ROOT, OUTREACH_STATE_PATH), item, { source: 'queue_applied', at: appliedAt });
+    recordSubmissionSignal(path.join(ROOT, OUTREACH_STATE_PATH), item, {
+      source: action === 'confirmed-submitted' ? 'user_confirmed_submission' : 'queue_applied',
+      at: appliedAt,
+      confirmed: action === 'confirmed-submitted',
+      submissionId: stringValue(payload, 'submissionId') || undefined,
+      evidence: action === 'confirmed-submitted' ? { source: 'queue-ui', itemId: item.id } : undefined,
+    });
   } else if (action === 'skipped') {
     item.status = 'skipped';
     item.selectedForToday = false;
@@ -423,14 +455,35 @@ async function saveQueueQuestionAnswer(payload) {
 }
 
 async function processOutreach() {
-  const result = await execFileAsync(process.execPath, [path.join(ROOT, 'outreach.mjs'), 'process'], {
-    cwd: ROOT,
-    timeout: 180_000,
-    maxBuffer: 8 * 1024 * 1024,
-  });
+  let execution = { ok: true, stdout: '', stderr: '', error: '' };
+  try {
+    const result = await execFileAsync(process.execPath, [path.join(ROOT, 'outreach.mjs'), 'process'], {
+      cwd: ROOT,
+      timeout: 180_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    execution = { ok: true, stdout: result.stdout || '', stderr: result.stderr || '', error: '' };
+  } catch (error) {
+    const typed = /** @type {Error & {stdout?: string, stderr?: string}} */ (error);
+    execution = {
+      ok: false,
+      stdout: typed.stdout || '',
+      stderr: typed.stderr || '',
+      error: typed.message || String(error),
+    };
+  }
+  const state = loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH));
   return {
-    outreach: loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH)).records,
-    output: `${result.stdout || ''}${result.stderr || ''}`.trim(),
+    ok: execution.ok && state.lastProcess?.ok !== false,
+    outreach: state.records,
+    summary: state.lastProcess || null,
+    settings: {
+      emailEnabled: state.settings?.emailEnabled === true,
+      rampComplete: state.settings?.rampComplete === true,
+      account: state.settings?.account || null,
+    },
+    output: `${execution.stdout || ''}${execution.stderr || ''}`.trim(),
+    error: execution.ok ? '' : execution.error,
   };
 }
 

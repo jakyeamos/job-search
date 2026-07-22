@@ -294,7 +294,7 @@ function renderItem(item) {
       </div>
         <div class="queue-actions">
           <a class="button button-primary" href="${escapeHtml(safeHref(item.applyUrl || item.canonicalUrl))}" target="_blank" rel="noopener">Open role</a>
-          <button class="button" type="button" data-action="applied" data-id="${escapeHtml(item.id)}">Applied</button>
+          <button class="button" type="button" data-action="confirmed-submitted" data-id="${escapeHtml(item.id)}">Confirm submitted</button>
           <button class="button" type="button" data-action="packet" data-id="${escapeHtml(item.id)}">${item.applicationPacket?.status ? 'Refresh packet' : 'Prepare packet'}</button>
           <button class="button" type="button" data-action="snooze" data-id="${escapeHtml(item.id)}">Later</button>
         <button class="button button-danger" type="button" data-action="skipped" data-id="${escapeHtml(item.id)}">Skip</button>
@@ -302,32 +302,59 @@ function renderItem(item) {
     </article>`;
 }
 
+function outreachRunLabel(run) {
+  if (!run) return 'No outreach run has been recorded yet.';
+  const sent = Number(run.sent || 0);
+  const retrying = Number(run.retrying || 0);
+  const failed = Number(run.failed || 0);
+  const held = Number(run.rateLimited || 0);
+  const parts = [`${sent} accepted by Gmail`];
+  if (retrying) parts.push(`${retrying} retrying after an uncertain provider result`);
+  if (failed) parts.push(`${failed} failed and blocked`);
+  if (held) parts.push(`${held} held by the daily limit`);
+  return `${run.ok === false ? 'Needs attention: ' : ''}Last run ${parts.join(' · ')}. Gmail acceptance is not delivery confirmation.`;
+}
+
 function renderOutreach() {
   const records = Array.isArray(ui.state?.outreach) ? ui.state.outreach : [];
+  const run = ui.state?.outreachRun || null;
   elements.outreachSubheading.textContent = records.length
-    ? `${records.length} application${records.length === 1 ? '' : 's'} in the outreach workflow.`
-    : 'Your application signals and contact drafts will appear here.';
+    ? `${records.length} application${records.length === 1 ? '' : 's'} in the outreach workflow. ${outreachRunLabel(run)}`
+    : `Your application signals and contact drafts will appear here. ${outreachRunLabel(run)}`;
   if (!records.length) {
-    elements.outreachList.innerHTML = '<div class="outreach-empty">No submitted applications are waiting for outreach.</div>';
+    elements.outreachList.innerHTML = '<div class="outreach-empty">No application records are waiting for outreach.</div>';
     return;
   }
   elements.outreachList.innerHTML = records.map((record) => {
     const contacts = Array.isArray(record.contacts) ? record.contacts : [];
     const contactsMarkup = contacts.length
-      ? contacts.map((contact) => `
+      ? contacts.map((contact) => {
+        const delivery = contact.initialDeliveryStatus === 'provider_accepted'
+          ? 'Accepted by Gmail'
+          : contact.initialOutboxStatus === 'unknown'
+            ? 'Send uncertain; retry scheduled'
+            : contact.initialOutboxStatus === 'failed'
+              ? 'Send failed; blocked'
+              : humanize(contact.initialStatus || 'pending');
+        return `
           <div class="outreach-contact">
             <div>
               <strong>${escapeHtml(contact.name || 'Unnamed contact')}</strong>
               <span>${escapeHtml(contact.title || humanize(contact.type))}</span>
             </div>
             <div class="outreach-contact-meta">
-              <span class="tag">${escapeHtml(humanize(contact.initialStatus || 'pending'))}</span>
+              <span class="tag">${escapeHtml(delivery)}</span>
               ${contact.emailVerified ? '<span class="tag tag-status-ready">Verified email</span>' : '<span class="tag">LinkedIn/manual</span>'}
               ${contact.followUpDueAt ? `<span class="outreach-due">Follow-up ${escapeHtml(formatDate(contact.followUpDueAt))}</span>` : ''}
             </div>
+            ${(contact.initialLastError || contact.followUpLastError) ? `<p class="outreach-due">${escapeHtml(contact.initialLastError || contact.followUpLastError)}</p>` : ''}
             ${contact.linkedinDraft ? `<details class="outreach-draft"><summary>LinkedIn draft</summary><p>${escapeHtml(contact.linkedinDraft)}</p></details>` : ''}
-          </div>`).join('')
+          </div>`;
+      }).join('')
       : `<p class="outreach-empty">No eligible contacts yet. Search: ${escapeHtml(record.searchQuery || 'company hiring manager recruiter team')}</p>`;
+    const submissionLabel = record.submissionConfirmed
+      ? `Submission confirmed${record.submissionConfirmedSource ? ` via ${humanize(record.submissionConfirmedSource)}` : ''}; email may be processed.`
+      : 'Waiting for explicit submission confirmation; no email will be sent.';
     return `
       <article class="outreach-card">
         <div class="outreach-card-heading">
@@ -335,8 +362,10 @@ function renderOutreach() {
             <h3>${escapeHtml(record.title || 'Job lead')}</h3>
             <p>${escapeHtml(record.company || 'Company not parsed')}</p>
           </div>
-          <span class="tag tag-status-ready">${escapeHtml(humanize(record.status || 'pending'))}</span>
+          <span class="tag ${record.submissionConfirmed ? 'tag-status-ready' : ''}">${escapeHtml(humanize(record.status || 'pending'))}</span>
         </div>
+        <p class="outreach-due">${escapeHtml(submissionLabel)}</p>
+        ${record.lastError ? `<p class="outreach-due">${escapeHtml(record.lastError)}</p>` : ''}
         <div class="outreach-contacts">${contactsMarkup}</div>
       </article>`;
   }).join('');
@@ -525,17 +554,23 @@ async function mutateItem(id, action, extra = {}) {
     setConnection(true);
     render();
     let outreachMessage = '';
-    if (action === 'applied') {
+    if (action === 'applied' || action === 'confirmed-submitted') {
       try {
         const outreach = await requestJson('/api/outreach/process', { method: 'POST' });
         ui.state.outreach = outreach.outreach || ui.state.outreach || [];
+        ui.state.outreachRun = outreach.summary || ui.state.outreachRun || null;
         render();
-        outreachMessage = ' Outreach was queued and processed.';
+        outreachMessage = ` ${outreachRunLabel(outreach.summary)}.`;
       } catch {
-        outreachMessage = ' Outreach was queued for the next scheduled run.';
+        outreachMessage = ' Outreach status will refresh on the next scheduled run.';
       }
     }
-    const messages = { applied: 'Marked applied and recorded in the tracker.', skipped: 'Skipped for now.', snoozed: `Snoozed until ${extra.snoozeUntil}.` };
+    const messages = {
+      applied: 'Marked applied; outreach still requires submission confirmation.',
+      'confirmed-submitted': 'Submission confirmed and recorded in the tracker.',
+      skipped: 'Skipped for now.',
+      snoozed: `Snoozed until ${extra.snoozeUntil}.`,
+    };
     showToast(`${messages[action] || 'Queue updated.'}${outreachMessage}`);
   } catch (error) {
     row?.querySelectorAll('button').forEach((button) => { button.disabled = false; });

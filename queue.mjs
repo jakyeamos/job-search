@@ -388,19 +388,25 @@ async function clearQueue(root) {
       console.log(`\n[${item.queueRank}] ${item.title} — ${item.company || 'Unknown company'}`);
       console.log(`  ${item.fitScore.toFixed(1)}/5 | ${item.lane} | ${item.liveness} | ${item.applyUrl}`);
       console.log(`  ${item.fitReasons.join('; ')}`);
-      const action = String(await ask('  [o]pen [a]pplied [s]kip [z]snooze [q]uit: ')).trim().toLowerCase();
+      const action = String(await ask('  [o]pen [a]pplied [c]onfirmed submitted [s]kip [z]snooze [q]uit: ')).trim().toLowerCase();
       if (action === 'q') break;
       if (action === 'o') { openUrl(item.applyUrl); continue; }
-      if (action === 'a') {
+      if (action === 'a' || action === 'c') {
         const appliedAt = new Date().toISOString();
         item.status = 'applied';
         item.appliedAt = appliedAt;
         item.selectedForToday = false;
         item.queueRank = null;
         const recorded = recordApplication(root, item);
-        recordSubmissionSignal(path.join(root, OUTREACH_STATE_PATH), item, { source: 'queue_applied', at: appliedAt });
+        recordSubmissionSignal(path.join(root, OUTREACH_STATE_PATH), item, {
+          source: action === 'c' ? 'user_confirmed_submission' : 'queue_applied',
+          at: appliedAt,
+          confirmed: action === 'c',
+        });
         item.actionNote = recorded.reason;
-        console.log(`  Applied recorded (${recorded.reason}).`);
+        console.log(action === 'c'
+          ? `  Submission confirmed; outreach may now be processed (${recorded.reason}).`
+          : `  Applied recorded; outreach is still waiting for submission confirmation (${recorded.reason}).`);
       } else if (action === 's') {
         item.status = 'skipped';
         item.selectedForToday = false;

@@ -81,7 +81,7 @@ function normalizeEmail(value) {
  *  listMessages: (query: string, options?: { limit?: number }) => Promise<Array<{ id: string, threadId?: string }>>,
  *  getMessage: (id: string, format?: string) => Promise<Record<string, unknown>>,
  *  modifyMessage: (id: string, addLabelIds?: string[], removeLabelIds?: string[]) => Promise<Record<string, unknown>>,
- *  sendMessage: (message: { to: string, subject: string, body: string, threadId?: string }) => Promise<Record<string, unknown>>
+ *  sendMessage: (message: { to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }) => Promise<Record<string, unknown>>
  * }>}
  */
 export async function createGmailClient(options = {}) {
@@ -210,16 +210,21 @@ export async function createGmailClient(options = {}) {
     return value.trim();
   }
 
-  /** @param {{ to: string, subject: string, body: string, threadId?: string }} message */
+  /** @param {{ to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }} message */
   async function sendMessage(message) {
     const account = await verifyAccount();
     const to = safeHeader(message.to, 'recipient');
     const subject = safeHeader(message.subject, 'subject');
     const body = String(message.body || '').replace(/\r?\n/g, '\r\n');
+    const customHeaders = Object.entries(message.headers || {}).map(([name, value]) => {
+      if (!/^[A-Za-z0-9-]+$/.test(name)) throw new GmailClientError(`Gmail header name is invalid: ${name}`);
+      return `${safeHeader(name, 'header name')}: ${safeHeader(value, 'header value')}`;
+    });
     const raw = [
       `From: ${account}`,
       `To: ${to}`,
       `Subject: ${subject}`,
+      ...customHeaders,
       'MIME-Version: 1.0',
       'Content-Type: text/plain; charset=UTF-8',
       'Content-Transfer-Encoding: 8bit',
