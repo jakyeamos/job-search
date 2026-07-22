@@ -80,6 +80,64 @@ test('read-only flow traverses an optional page and stops before required inputs
   }
 });
 
+test('read-only flow may click a posting-page Apply control but never a form Apply control', async (t) => {
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (error) {
+    t.skip(`Playwright browser is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <main>
+        <h1>Backend Engineer</h1>
+        <button id="apply" type="button">Apply</button>
+      </main>
+      <script>
+        document.querySelector('#apply').addEventListener('click', () => {
+          document.body.innerHTML = '<form><label for="why">Why are you interested?</label><textarea id="why" required></textarea><button type="button">Apply</button></form>';
+        });
+      </script>
+    `);
+
+    const flow = await inspectApplicationFlow(page, { settleMs: 10 });
+    assert.equal(flow.pageCount, 2);
+    assert.equal(flow.blocked, false);
+    assert.equal(flow.actions[0].reason, 'posting-page-apply-navigation');
+    assert.equal(flow.pages[0].buttons[0].applyLike, true);
+    assert.equal(flow.pages[0].buttons[0].submitLike, false);
+    assert.equal(flow.pages[1].buttons[0].applyLike, true);
+    assert.equal(flow.pages[1].buttons[0].submitLike, true);
+    assert.equal(await page.locator('textarea').count(), 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('read-only flow refuses to guess when a posting page has multiple Apply controls', async (t) => {
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (error) {
+    t.skip(`Playwright browser is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<main><h1>Backend Engineer</h1><button type="button">Apply</button><a href="#form">Apply</a></main>');
+
+    const flow = await inspectApplicationFlow(page, { settleMs: 10 });
+    assert.equal(flow.pageCount, 1);
+    assert.equal(flow.actions.length, 0);
+    assert.equal(flow.blocked, true);
+    assert.match(flow.blockedReason, /multiple posting-page Apply controls/);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('read-only flow stops on login and challenge signals', async (t) => {
   let browser;
   try {

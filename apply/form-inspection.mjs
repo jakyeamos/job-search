@@ -35,7 +35,9 @@ export function applicationAdapter(url) {
 
 /**
  * Inspect the rendered form without filling controls, selecting options,
- * uploading files, clicking buttons, or reading current values.
+ * uploading files, or reading current values. A posting-page Apply control
+ * may be clicked only to reach the form; final submission controls remain
+ * inspection-only.
  * @param {import('playwright').Page} page
  * @param {{ expectedTitle?: string }} [options]
  */
@@ -211,15 +213,27 @@ export async function inspectApplicationPage(page, options = {}) {
       controls.push(field);
     }
 
+    const hasForm = document.querySelectorAll('form').length > 0;
+    const hasApplicationShell = Boolean(document.querySelector('[class*="application-form" i], [data-testid*="application" i]'));
+    const applicationSurface = hasForm || hasApplicationShell || controls.length > 0;
+    const applyText = (value) => /^(?:apply\b|start application\b|begin application\b)/i.test(value)
+      || /\bapply\s+(?:now|to|for|on)\b/i.test(value);
     const buttonNodes = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
-    const buttons = buttonNodes
+    const applyLinkNodes = Array.from(document.querySelectorAll('a[href]'))
+      .filter(visible)
+      .filter((el) => applyText(compact(el.textContent || el.getAttribute('aria-label') || '')));
+    const buttons = [...buttonNodes, ...applyLinkNodes]
       .filter(visible)
       .map((el) => {
         const text = compact(el.textContent || el.getAttribute('value') || el.getAttribute('aria-label'));
+        const applyLike = applyText(text);
+        const finalSubmitLike = /submit|send application|finish|complete application|finalize/i.test(text);
         return {
         text,
-        type: el.getAttribute('type') || '',
-        submitLike: /submit|apply(?: now)?|send application|finish|complete application/i.test(text),
+        type: el.getAttribute('type') || (el.tagName.toLowerCase() === 'a' ? 'link' : ''),
+        href: el.getAttribute('href') || '',
+        applyLike,
+        submitLike: finalSubmitLike || (applyLike && applicationSurface),
         nextLike: /^(next|continue|save and continue|go to next|review application|proceed)\b/i.test(text),
         blockedLike: /captcha|recaptcha|hcaptcha|verification|multi[- ]factor|one[- ]time password|sign in|log in/i.test(text),
         disabled: Boolean(el.disabled),
@@ -253,9 +267,10 @@ export async function inspectApplicationPage(page, options = {}) {
       jobDescriptionLength: jobDescription.length,
       authRequired,
       challengeDetected,
-      formReady: controls.length > 0 && (document.querySelectorAll('form').length > 0
+      applicationSurface,
+      formReady: controls.length > 0 && (hasForm
         || buttons.some((button) => button.submitLike)
-        || Boolean(document.querySelector('[class*="application-form" i], [data-testid*="application" i]'))),
+        || hasApplicationShell),
     };
   }, String(options.expectedTitle || ''));
   return { url: page.url(), ...report };
@@ -276,9 +291,10 @@ export function jobDescriptionFromInspection(inspection = {}) {
 }
 
 /**
- * Traverse only safe, local form steps. The traversal never reads current
- * values and never fills, selects, uploads, submits, or follows external
- * navigation controls.
+ * Traverse only safe form steps. The traversal never reads current values
+ * and never fills, selects, uploads, or submits. It may click a posting-page
+ * Apply control to reach the form and local Next/Continue controls when no
+ * required fields are present.
  * @param {import('playwright').Page} page
  * @param {{ maxPages?: number, settleMs?: number, expectedTitle?: string }} [options]
  */
@@ -286,6 +302,7 @@ export async function inspectApplicationFlow(page, options = {}) {
   const maxPages = Math.max(1, Math.min(Number(options.maxPages || 8), 20));
   const pages = [];
   const warnings = [];
+  const actions = [];
   const visited = new Set();
   let blockedReason = '';
 
@@ -296,7 +313,7 @@ export async function inspectApplicationFlow(page, options = {}) {
       title: inspection.title,
       heading: inspection.heading,
       controls: (inspection.controls || []).map((control) => [control.label, control.kind, control.required]),
-      buttons: (inspection.buttons || []).map((button) => [button.text, button.nextLike, button.submitLike]),
+      buttons: (inspection.buttons || []).map((button) => [button.text, button.nextLike, button.applyLike, button.submitLike]),
     });
     if (visited.has(identity)) {
       warnings.push('read-only form traversal stopped because the page repeated');
@@ -314,6 +331,40 @@ export async function inspectApplicationFlow(page, options = {}) {
       break;
     }
 
+    const applyCandidates = !inspection.formReady && !(inspection.controls || []).length
+      ? (inspection.buttons || []).map((button, index) => ({ button, index }))
+        .filter(({ button }) => button.applyLike && !button.disabled && !button.submitLike && !button.blockedLike)
+      : [];
+    if (applyCandidates.length > 1) {
+      blockedReason = 'multiple posting-page Apply controls were visible; refusing to guess';
+      break;
+    }
+    const applyIndex = applyCandidates[0]?.index ?? -1;
+    if (applyIndex >= 0) {
+      try {
+        const targetButton = inspection.buttons[applyIndex];
+        const buttons = page.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible, a[href]:visible');
+        const buttonIndex = await buttons.evaluateAll((nodes, expectedText) => nodes.findIndex((node) => {
+          const text = String(node.textContent || node.getAttribute('value') || node.getAttribute('aria-label') || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          return text === String(expectedText || '');
+        }), targetButton?.text || '');
+        if (buttonIndex < 0) throw new Error(`the posting-page Apply control "${targetButton?.text || 'Apply'}" was not found`);
+        const fromUrl = page.url();
+        await buttons.nth(buttonIndex).click({ timeout: 3_000 });
+        actions.push({ type: 'click', control: targetButton?.text || 'Apply', reason: 'posting-page-apply-navigation', fromUrl });
+        await Promise.race([
+          page.waitForLoadState('domcontentloaded', { timeout: 2_000 }).catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, options.settleMs || 250)),
+        ]);
+        continue;
+      } catch (error) {
+        blockedReason = `posting-page Apply navigation could not continue: ${error instanceof Error ? error.message : String(error)}`;
+        break;
+      }
+    }
+
     const nextIndex = (inspection.buttons || []).findIndex((button) => button.nextLike && !button.disabled && !button.submitLike && !button.blockedLike);
     if (nextIndex < 0) break;
     const requiredControls = (inspection.controls || []).filter((control) => control.required === true);
@@ -324,7 +375,7 @@ export async function inspectApplicationFlow(page, options = {}) {
 
     try {
       const targetButton = inspection.buttons[nextIndex];
-      const buttons = page.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible');
+      const buttons = page.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible, a[href]:visible');
       const buttonIndex = await buttons.evaluateAll((nodes, expectedText) => nodes.findIndex((node) => {
         const text = String(node.textContent || node.getAttribute('value') || node.getAttribute('aria-label') || '')
           .replace(/\s+/g, ' ')
@@ -334,6 +385,7 @@ export async function inspectApplicationFlow(page, options = {}) {
       if (buttonIndex < 0) throw new Error(`the local continuation control "${targetButton?.text || 'Next'}" was not found`);
       const button = buttons.nth(buttonIndex);
       await button.click({ timeout: 3_000 });
+      actions.push({ type: 'click', control: targetButton?.text || 'Next', reason: 'local-continuation' });
       await Promise.race([
         page.waitForLoadState('domcontentloaded', { timeout: 2_000 }).catch(() => {}),
         new Promise((resolve) => setTimeout(resolve, options.settleMs || 250)),
@@ -358,5 +410,6 @@ export async function inspectApplicationFlow(page, options = {}) {
     blocked: Boolean(blockedReason),
     blockedReason,
     warnings,
+    actions,
   };
 }

@@ -105,9 +105,10 @@ the legacy adapter's fill or submit commands. It performs this bounded sequence:
    description, and a detected application path.
 2. Inspect every safely reachable form page, recording labels, required state,
    field kind, choices, uploads, page order, and human-only signals.
-3. Click only a local `Next`/`Continue` control on a page with no required
-   fields. It never fills, selects, uploads, follows external controls, or
-   clicks Apply/Submit/Send.
+3. Click a posting-page `Apply` control when no form controls are present, then
+   click only local `Next`/`Continue` controls on pages with no required fields.
+   It never fills, selects, uploads, follows unrelated external controls, or
+   clicks a final Apply/Submit/Send control.
 4. Resolve only confirmed ledger answers, verified profile values, and
    evidence-bound project selections. Narrative drafts remain packet-local
    until humanizer review and approval.
@@ -210,9 +211,10 @@ pnpm application-ledger-dogfood --run --sample 12 --staging-root /private/tmp/ca
 `--shape-only` is an explicit diagnostic exception for sampling supported ATS
 form shapes when queue liveness or JD evidence is incomplete. Its output is
 marked `shape-only-unverified` and must not be treated as active application
-evidence. The runner never promotes staged answers, fills controls, uploads,
-clicks Apply/Submit/Send, or deletes legacy artifacts. Review the emitted JSON
-report and staged ledger before any manual answer promotion.
+evidence. The runner never promotes staged answers, fills controls, uploads, or
+clicks a final Apply/Submit/Send control. It may click a posting-page Apply
+control and safe local continuation controls to reveal the form. Review the
+emitted JSON report and staged ledger before any manual answer promotion.
 
 The older `application-queue.mjs run|clear` surfaces remain separately
 policy-gated legacy adapter paths. They are not part of this human-controlled

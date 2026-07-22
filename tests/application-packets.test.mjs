@@ -19,6 +19,7 @@ test('packet markdown makes unknowns and the human submit boundary explicit', ()
   const markdown = buildPacketMarkdown({
     status: 'needs-user-answers',
     target: { company: 'Acme', title: 'Backend Engineer', url: 'https://jobs.example/acme/1', adapter: 'greenhouse' },
+    form: { navigationActions: [{ control: 'Apply', reason: 'posting-page-apply-navigation' }] },
     artifacts: { resumePdf: '/tmp/resume.pdf', coverLetterText: '/tmp/cover-letter.txt' },
     questions: [{ question: 'Why Acme?', status: 'known', answer: 'Verified answer', source: 'question-ledger:q1' }],
     unresolved: [{ id: 'q2', question: 'Do you require sponsorship?', required: true, options: ['Yes', 'No'] }],
@@ -29,6 +30,8 @@ test('packet markdown makes unknowns and the human submit boundary explicit', ()
   assert.match(markdown, /Verified answer/);
   assert.match(markdown, /Do you require sponsorship\?/);
   assert.match(markdown, /\[your answer\]/);
+  assert.match(markdown, /Safe browser navigation/);
+  assert.match(markdown, /Clicked Apply \(posting-page-apply-navigation\)/);
   assert.match(markdown, /Click Submit\/Apply only after your review/);
 });
 

@@ -534,6 +534,12 @@ export function buildPacketMarkdown(packet) {
   ];
   const warnings = Array.isArray(packet.warnings) ? packet.warnings : [];
   if (warnings.length) lines.push('## Warnings', '', ...warnings.map((warning) => `- ${warning}`), '');
+  const navigationActions = Array.isArray(packet.form?.navigationActions) ? packet.form.navigationActions : [];
+  if (navigationActions.length) {
+    lines.push('## Safe browser navigation', '');
+    for (const action of navigationActions) lines.push(`- Clicked ${action.control || 'control'} (${action.reason || 'navigation'})`);
+    lines.push('');
+  }
   const artifacts = packet.artifacts || {};
   lines.push('## Files to attach', '');
   for (const [label, value] of [['Résumé', artifacts.resumePdf], ['Cover letter', artifacts.coverLetterPdf || artifacts.coverLetterText]]) {
@@ -768,6 +774,7 @@ export async function buildApplicationPacket(item, options = {}) {
       pageCount: pages.length,
       pages,
       submitControls: allButtons.filter((button) => button.submitLike),
+      navigationActions: Array.isArray(safeInspection.actions) ? safeInspection.actions : [],
       manualSignals: allManualSignals,
       prepQuestionCount: questions.length,
       simpleFieldCount: simpleFields.length,

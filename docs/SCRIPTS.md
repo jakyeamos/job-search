@@ -116,14 +116,18 @@ Runs copy the canonical question ledger to a temporary staging root by default,
 disable artifact generation, and never promote staged answers. Pass
 `--staging-root /private/tmp/...` when the staged packet and ledger should be
 reviewed after the command exits. The runner remains read-only with respect to
-the browser: it does not fill, select, upload, apply, submit, or send.
+application data: it does not fill, select, upload, or perform a final
+Apply/Submit/Send action. It may click a posting-page Apply control and safe
+local continuation controls to reveal the form.
 
 ### Human-controlled application packets
 
 Packets are browser-first and use the authorized Chrome Beta session through
 the browser bridge. They record the live form shape and safely reachable local
 pages, but never fill fields, select choices, upload files, solve challenges,
-or click Apply/Submit/Send. A required field needed to continue, login,
+or click a final Apply/Submit/Send control. A posting-page Apply control may be
+clicked to reach the form, and local Next/Continue controls may be clicked when
+no required fields are present. A required field needed to continue, login,
 CAPTCHA/MFA/identity verification, missing posting evidence, or bridge loss
 produces a blocked packet. Final submission is always manual.
 

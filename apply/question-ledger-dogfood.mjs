@@ -448,7 +448,7 @@ export async function runLedgerDogfood(options = {}) {
       delta: null,
     },
     safety: {
-      browserActions: 'read-only form inspection; no fill, select, upload, apply, submit, or send',
+      browserActions: 'read-only form inspection; may click posting-page Apply and safe local continuation controls; no fill, select, upload, final apply, submit, or send',
       promotion: 'staging ledger is never promoted automatically',
       sampleCap: MAX_SAMPLE_SIZE,
     },
