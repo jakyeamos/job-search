@@ -83,6 +83,7 @@ generation is an explicit selected-role action:
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id>
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --dry-run
 pnpm exec node apply/question-ledger.mjs pending
+pnpm application-ledger-dogfood --sample 12
 ```
 
 Use `pnpm exec node jackandjill.mjs sync --write` for an explicit authenticated
@@ -90,6 +91,30 @@ Jack & Jill recommendation/cache refresh. The scheduled source ingest reads
 that local ignored cache; it never needs coaching transcripts and never submits
 applications. `node jackandjill.mjs coach ...` remains an on-demand calibration
 or role-specific coaching action.
+
+### Question-ledger dogfood
+
+The dogfood runner is a bounded staging harness for the current queue. With no
+flags it produces a JSON plan only: no browser opens and no queue, ledger,
+packet, resume, cover-letter, or answer files are written. Selection is
+deterministic and round-robins Greenhouse, Ashby, and Lever candidates.
+
+```bash
+pnpm application-ledger-dogfood --sample 12
+pnpm application-ledger-dogfood --shape-only --sample 12
+pnpm application-ledger-dogfood --run --sample 12
+pnpm application-ledger-dogfood --run --shape-only --sample 12 --headed
+```
+
+Verified runs require an active supported posting and a substantive JD. The
+explicit `--shape-only` mode is useful for form-shape and question dedup
+dogfooding when queue records are uncertain or missing descriptions; it is
+reported as unverified and does not establish that a role is still active.
+Runs copy the canonical question ledger to a temporary staging root by default,
+disable artifact generation, and never promote staged answers. Pass
+`--staging-root /private/tmp/...` when the staged packet and ledger should be
+reviewed after the command exits. The runner remains read-only with respect to
+the browser: it does not fill, select, upload, apply, submit, or send.
 
 ### Human-controlled application packets
 

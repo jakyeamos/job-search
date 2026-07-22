@@ -170,6 +170,34 @@ select, compensation, authorization, legal, EEO, consent, or identity fields.
 Jack & Jill coaching can supply drafts on demand, but it does not promote
 answers into the reusable ledger automatically.
 
+#### Question-ledger dogfood
+
+Use the bounded dogfood runner to exercise ledger matching and answer reuse
+against a queue sample without mutating the canonical queue or ledger. Plan mode
+is the default and opens no browser:
+
+```bash
+pnpm application-ledger-dogfood --sample 12
+pnpm application-ledger-dogfood --shape-only --sample 12
+```
+
+Normal runs require an active supported posting with a substantive description.
+They copy the canonical ledger into a temporary staging root, inspect at most
+the selected sample, and disable resume/cover-letter artifact generation:
+
+```bash
+pnpm application-ledger-dogfood --run --sample 12
+pnpm application-ledger-dogfood --run --shape-only --sample 12 --headed
+pnpm application-ledger-dogfood --run --sample 12 --staging-root /private/tmp/career-ops-ledger-review
+```
+
+`--shape-only` is an explicit diagnostic exception for sampling supported ATS
+form shapes when queue liveness or JD evidence is incomplete. Its output is
+marked `shape-only-unverified` and must not be treated as active application
+evidence. The runner never promotes staged answers, fills controls, uploads,
+clicks Apply/Submit/Send, or deletes legacy artifacts. Review the emitted JSON
+report and staged ledger before any manual answer promotion.
+
 The older `application-queue.mjs run|clear` surfaces remain separately
 policy-gated legacy adapter paths. They are not part of this human-controlled
 packet workflow and must not be used to bypass the manual submission boundary.

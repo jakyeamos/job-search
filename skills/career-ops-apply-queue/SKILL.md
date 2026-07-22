@@ -34,6 +34,21 @@ description: Prepare Career Ops' human-controlled application submission packets
    action yourself. Do not invoke the legacy auto-submit worker as part of this
    workflow.
 
+## Ledger dogfood
+
+Use `pnpm application-ledger-dogfood --sample 12` to produce a deterministic,
+read-only plan over the queue. It does not open a browser or write files. Use
+`--run` only after the browser bridge is healthy; the runner copies the canonical
+ledger into a staging root, disables resume and cover-letter artifacts, and
+continues sequentially through a capped sample while preserving per-role
+results.
+
+`--shape-only` is an explicit form-diagnostic mode for supported ATS URLs whose
+queue liveness or description evidence is incomplete. It is useful for
+question-shape and semantic-dedup dogfooding, but every result is marked
+unverified and must remain outside active application evidence. The runner
+never promotes answers or crosses the manual submission boundary.
+
 ## Browser-first intake and artifact retrieval
 
 The authenticated application path is browser-first. The packet uses the
