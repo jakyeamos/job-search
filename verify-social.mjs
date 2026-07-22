@@ -1,10 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { validateSocialRegistry } from './social.mjs';
 
 const registryPath = resolve(process.cwd(), 'config/social.json');
 const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
 
 const failures = [];
+try {
+  validateSocialRegistry(registry);
+} catch (error) {
+  failures.push(error instanceof Error ? error.message : String(error));
+}
 const requiredLanes = ['tenure', 'engineering-systems', 'data-product-systems', 'client-delivery'];
 const requiredProjects = ['tenure', 'aios', 'pre-cr-suite', 'quality-runner', 'bbdse-courtiq', 'signal-lab', 'forward-automations', 'bidcamp', 'crimclock', 'remodelvision', 'soundscape', 'github-issue-resolution-modeling', 'frmwrk-labs', 'chirons-forge'];
 

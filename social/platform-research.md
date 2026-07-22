@@ -128,7 +128,7 @@ only approved, anonymized outcomes belong in public content.
 | Portfolio | Verification and conversion | Plain-language project problem | Case study, screenshots, transcript, architecture note | Project clicks, contact actions, interview mentions |
 | FRMWRK Labs | Reasoning and durable archive | Question underneath the build | Lab note, technical essay, unresolved edge | Qualified reads, references, conversations |
 
-## BIP Console implications
+## Career-Ops implications
 
 1. Keep `career-ops` as the evidence registry. The registry should hold claims,
    status, proof artifact, disclosure rules, and destination strategy; it should not

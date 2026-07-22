@@ -7,8 +7,8 @@ The registry is intentionally separate from the application tracker. A job
 application is a private pipeline record; a social item is public proof that
 must remain traceable to verified evidence and an approved artifact.
 
-BIP Console consumes this registry through an explicit import. The registry is
-not an instruction to publish automatically. Every social item remains pending
+Career-Ops consumes this registry through its native review commands. The registry
+is not an instruction to publish automatically. Every social item remains pending
 until Jakye reviews the wording, asset, audience, and privacy boundary.
 
 Use the project `tier` and lane `contentBudget` to prevent a large project
@@ -24,8 +24,8 @@ public surfaces can be selected when a role or story makes them relevant.
 ## Writing pipeline
 
 Each backlog item now carries a human brief: the concrete context, Jakye's
-personal angle, the current next step, and a topical voice profile. BIP turns
-that brief into destination variants through this ordered pipeline:
+personal angle, the current next step, and a topical voice profile. Career-Ops
+turns that brief into destination variants through this ordered pipeline:
 
 ```text
 verified brief -> domain draft -> claim/boundary QA -> general humanizer
@@ -41,18 +41,22 @@ reflective lab note. Neither pass may add facts, outcomes, users, customers,
 revenue, or adoption claims. The source references and disclosure boundaries
 remain attached to the review object rather than being dumped into the post.
 
-The BIP Console workflow is intentionally explicit:
+The Career-Ops workflow is intentionally explicit:
 
 ```text
-pnpm --dir /Users/jakyeamos/projects/BIP-Console dev social sync
-pnpm --dir /Users/jakyeamos/projects/BIP-Console dev social next
-pnpm --dir /Users/jakyeamos/projects/BIP-Console dev social variant --item tenure-problem --platform linkedin
-pnpm --dir /Users/jakyeamos/projects/BIP-Console dev social variant --item tenure-demo --platform instagram
-pnpm --dir /Users/jakyeamos/projects/BIP-Console dev social feedback add --item tenure-problem --platform linkedin --publication-outcome published
+pnpm social verify
+pnpm social plan
+pnpm social next --limit 5
+pnpm social variant --item tenure-problem --platform linkedin
+pnpm social variant --item tenure-demo --platform instagram
+pnpm social outcome --item tenure-problem --platform linkedin --publication-outcome published
+pnpm proof:scan --date 2026-07-22
 ```
 
-Generated plans and outcome logs stay in BIP's ignored `.bip/content/` runtime
-directory. LinkedIn, X, and Instagram remain manual publishing surfaces.
+Generated plans and outcome logs stay in Career-Ops' ignored `output/social/`
+runtime directory. The proof scan writes a redacted review artifact under
+`output/proof-scan/`. LinkedIn, X, and Instagram remain manual publishing
+surfaces.
 Longer Markdown articles can be reviewed for both the portfolio writer and
 FRMWRK Labs, but a social atom never exposes private repositories, credentials,
 client data, or unsupported adoption claims.

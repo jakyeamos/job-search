@@ -113,6 +113,26 @@ Built by someone who used it to evaluate 740+ job offers, generate 100+ tailored
 | **Pipeline Integrity**   | Automated merge, dedup, status normalization, health checks                                                                              |
 | **Beyond the CV**        | Company research ([`deep`](modes/deep.md)) surfaces AI strategy, recent moves, engineering culture, and the angle your profile should take. Contact discovery ([`contacto`](modes/contacto.md)) identifies the hiring manager, recruiter, or team peer worth reaching out to and drafts a ≤300-character LinkedIn message tuned to each contact type. Optional outreach can send verified professional email after a confirmed application. |
 
+### Public proof and social review
+
+Career-Ops also keeps a claim-safe public-proof workflow beside the private
+application tracker. `config/social.json` is the canonical registry for project
+lanes, proof artifacts, disclosure boundaries, destination voice, and review
+outcomes. Generated variants remain drafts: LinkedIn and X are manual, and the
+proof scan redacts local paths, credentials, email addresses, environment files,
+and database names before writing a review artifact.
+
+```bash
+pnpm social verify
+pnpm social plan
+pnpm social next --limit 5
+pnpm social variant --item tenure-problem --platform linkedin
+pnpm proof:scan --date 2026-07-22
+```
+
+The active source for this workflow is Career-Ops; the former BIP Console is
+deprecated and retained only as historical provenance.
+
 ## Quick Start
 
 **Fastest way — one command:**

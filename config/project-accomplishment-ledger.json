@@ -320,10 +320,10 @@
       "sourceRefs": ["article-digest.md", "/Users/jakyeamos/projects/frmwrklabs/PROJECT_TRUTH.md", "/Users/jakyeamos/projects/frmwrklabs/index.html", "/Users/jakyeamos/projects/frmwrklabs/licensing.html"]
     },
     {
-      "id": "bip-console",
-      "name": "BIP Console",
-      "kind": "automation-system",
-      "status": "private personal build-in-public editorial operating system",
+      "id": "career-ops-proof",
+      "name": "Career-Ops",
+      "kind": "career-evidence-and-proof-system",
+      "status": "private local career evidence and application command center",
       "visibility": "private-personal",
       "approved": true,
       "priority": 7,
@@ -331,8 +331,8 @@
       "lanes": ["applied_ai_client_delivery", "developer_tools_infrastructure", "solutions_forward_deployed"],
       "laneWeights": { "applied_ai_client_delivery": 10, "developer_tools_infrastructure": 10, "solutions_forward_deployed": 8 },
       "keywords": ["build in public", "social", "content", "humanizer", "approval", "editorial", "automation", "linkedin", "x"],
-      "answer": "I built BIP Console to turn verified project evidence into an approval-gated build-in-public workflow. It separates canonical claims, humanization, destination-specific voice, asset planning, and manual publication so content automation cannot quietly invent outcomes or publish without review.",
-      "sourceRefs": ["article-digest.md", "/Users/jakyeamos/projects/BIP-Console/README.md"]
+      "answer": "I built and maintain a local Career-Ops workflow that connects verified project proof to targeted job search: claim-safe public evidence, human-reviewed social variants, role-aware application artifacts, and guarded outreach. It keeps the source evidence and human approval boundary visible instead of treating generated copy or a queued role as a submitted application.",
+      "sourceRefs": ["article-digest.md", "social/README.md", "PRODUCT.md"]
     },
     {
       "id": "forward-automations",
