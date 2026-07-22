@@ -58,7 +58,7 @@ commands rather than deriving an API client for its authenticated flows.
 - The old `application-queue.mjs run|clear` commands are legacy, separately
   policy-gated adapter surfaces. They are not part of the human-controlled
   packet workflow and must not be used to cross the manual submission boundary.
-- The worker generates contract-managed resume and cover-letter artifacts from
+- The legacy worker generates contract-managed resume and cover-letter artifacts from
   canonical evidence and the queue posting. Existing resume/PDF renderers
   remain available, and their approved output can still be registered with
   `node resume.mjs register ...`.

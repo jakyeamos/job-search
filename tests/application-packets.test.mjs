@@ -244,3 +244,52 @@ test('packet history snapshots only material form changes', async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('packet dry-run never snapshots an existing packet into history', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-dry-run-history-'));
+  try {
+    const item = {
+      id: 'packet-dry-run-history',
+      company: 'Acme',
+      title: 'Backend Engineer',
+      applyUrl: 'https://jobs.example/acme/backend-dry-run-history',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build Python and TypeScript backend services, REST APIs, data pipelines, PostgreSQL workflows, automated tests, and reliable production systems with product and engineering partners.',
+    };
+    const baseInspection = {
+      url: item.applyUrl,
+      title: 'Apply — Acme',
+      heading: 'Backend Engineer',
+      formCount: 1,
+      formReady: true,
+      controls: [],
+      buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+      pages: [],
+    };
+    const first = await buildApplicationPacket(item, {
+      inspection: baseInspection,
+      ledgerPath: path.join(root, 'question-ledger.json'),
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.deepEqual(first.history, []);
+    const packetDirectory = packetPathsForItem(item, { outputRoot: root }).directory;
+    const changedInspection = {
+      ...baseInspection,
+      buttons: [{ ...baseInspection.buttons[0], text: 'Submit your application' }],
+    };
+    const dryRun = await buildApplicationPacket(item, {
+      inspection: changedInspection,
+      ledgerPath: path.join(root, 'question-ledger.json'),
+      outputRoot: root,
+      generateArtifacts: false,
+      dryRun: true,
+    });
+    assert.deepEqual(dryRun.history, []);
+    assert.equal(existsSync(path.join(packetDirectory, 'history')), false);
+    assert.equal(readFileSync(path.join(packetDirectory, 'submission-packet.json'), 'utf8').includes('Submit application'), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

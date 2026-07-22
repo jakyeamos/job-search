@@ -735,7 +735,9 @@ export async function buildApplicationPacket(item, options = {}) {
       'Perform the final Submit/Apply action yourself after review.',
     ],
   };
-  const historyState = snapshotPreviousPacket(packetPaths, packet);
+  const historyState = options.dryRun
+    ? { history: [] }
+    : snapshotPreviousPacket(packetPaths, packet);
   packet.history = historyState.history;
   if (historyState.warning) packet.warnings.push(historyState.warning);
   const markdown = buildPacketMarkdown(packet);

@@ -132,7 +132,7 @@ public recruiter, hiring-manager, and team signals. The existing
 `data/outreach-contacts.json` manifest remains a supported override/supplement
 for contacts you have already researched.
 
-The authorized `node application-queue.mjs run` worker invokes one outreach
+The authorized legacy `node application-queue.mjs run` worker invokes one outreach
 processing pass after a batch contains at least one confirmed submission. Dry
 runs, blocked applications, anti-spam blocks, failed submissions, and
 `submission_unknown` results do not trigger outreach. The interactive queue uses

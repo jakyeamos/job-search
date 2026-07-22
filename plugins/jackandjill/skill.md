@@ -25,7 +25,7 @@ ledger answers.
 
 ## Job source
 
-Run `node jackandjill.mjs sync --write` to refresh the local, uncommitted cache.
+Run `node jackandjill.mjs sync --write` to refresh the local, ignored cache.
 Use `--pipeline` only with explicit `--write`; it adds only new canonical Jack
 URLs. Then run `node queue.mjs refresh --skip-public` (or the normal refresh) to
 score and select records through the existing liveness and resume contracts.

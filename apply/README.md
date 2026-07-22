@@ -35,9 +35,11 @@ sources (`cv.md`, `article-digest.md`, `config/profile.yml`, and
 posting and evidence hashes. It refuses to generate when the job description
 is missing/too short or fewer than two verified lane projects are available.
 When the queued description is short, supported Greenhouse, Lever, and Ashby
-URLs are checked through their public ATS JSON endpoint before the existing
+URLs may be enriched through a bounded ATS JSON fallback before the existing
 posting-page fallback. The artifact manifest records whether the description
-came from the queue, `ats-api`, or the live posting page.
+came from the queue, `ats-api`, or the live posting page. This optional queue
+enrichment does not replace browser-first inspection of the authenticated
+application form.
 
 ```bash
 node resume.mjs plan --limit 6
