@@ -25,7 +25,10 @@ test('contact discovery rejects aggregate alert identities', () => {
     ...item,
     company: 'F-ADA and 7 more jobs in New York, NY for you. Apply Now.',
   }), false);
-  assert.equal(buildDiscoveryQueries(item).length, 2);
+  const queries = buildDiscoveryQueries(item);
+  assert.equal(queries.length, 4);
+  assert.ok(queries.some((query) => query.includes('site:linkedin.com/in') && query.includes('recruiter')));
+  assert.ok(queries.some((query) => query.includes('site:linkedin.com/in') && query.includes('engineering manager')));
   assert.equal(buildDiscoveryQueries({ ...item, company: 'F-ADA and 7 more jobs' }).length, 0);
 });
 
@@ -221,8 +224,39 @@ test('live discovery preserves contacts collected from search and scrape results
   assert.equal(result.status, 'found');
   assert.equal(result.contacts.length, 1);
   assert.equal(result.contacts[0].email, 'taylor@example.ai');
-  assert.equal(calls.filter((url) => url.endsWith('/v2/search')).length, 2);
-  assert.equal(calls.filter((url) => url.endsWith('/v2/scrape')).length, 2);
+  assert.equal(calls.filter((url) => url.endsWith('/v2/search')).length, 4);
+  assert.equal(calls.filter((url) => url.endsWith('/v2/scrape')).length, 4);
+});
+
+test('public candidates receive bounded exact email verification', async () => {
+  const searchQueries = [];
+  const result = await discoverContactsForApplication(item, {
+    env: { FIRECRAWL_API_KEY: 'test-key', FIRECRAWL_API_URL: 'https://203.0.113.10' },
+    fetchFn: async (input, init) => {
+      if (String(input).endsWith('/v2/search')) {
+        const body = JSON.parse(String(init?.body || '{}'));
+        const query = String(body.query || '');
+        searchQueries.push(query);
+        const web = query.includes('email contact')
+          ? [{
+            url: 'https://example.ai/team/morgan',
+            title: 'Morgan Example | Technical Recruiter | Example AI',
+            markdown: 'Morgan Example\nTechnical Recruiter\nmorgan@example.ai',
+          }]
+          : [{
+            url: 'https://www.linkedin.com/in/morgan-example',
+            title: 'Morgan Example - Technical Recruiter - Example AI | LinkedIn',
+            description: 'Technical Recruiter at Example AI',
+          }];
+        return new Response(JSON.stringify({ success: true, data: { web } }), { status: 200 });
+      }
+      throw new Error(`unexpected scrape request: ${String(input)}`);
+    },
+  });
+  assert.equal(result.status, 'found');
+  assert.ok(result.contacts.some((contact) => contact.email === 'morgan@example.ai'));
+  assert.equal(result.candidateEmailVerification[0].status, 'verified-exact-public-source');
+  assert.equal(searchQueries.length, 5);
 });
 
 test('live discovery infers a review-only convention without making hypotheses sendable', async () => {

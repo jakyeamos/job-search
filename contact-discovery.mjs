@@ -9,7 +9,7 @@ import { resolveAndValidate } from './plugins/_net.mjs';
 import { buildEmailHypotheses, inferEmailConventions } from './email-conventions.mjs';
 
 const DEFAULT_API_URL = 'https://api.firecrawl.dev';
-const MAX_QUERIES = 2;
+const MAX_QUERIES = 4;
 const MAX_SCRAPES_PER_QUERY = 2;
 const MAX_EXACT_VERIFICATION_QUERIES = 6;
 const MAX_CANDIDATE_EMAIL_QUERIES = 8;
@@ -306,11 +306,13 @@ export function buildDiscoveryQueries(item) {
   const queries = [
     `"${company}" "${title}" recruiter hiring manager`,
     `"${company}" recruiting talent engineering manager email`,
+    `site:linkedin.com/in "${company}" recruiter talent acquisition`,
+    `site:linkedin.com/in "${company}" "engineering manager"`,
   ];
   const companyWebsite = stringValue(item.companyWebsite || item.companyUrl || item.employerUrl);
   const parsed = parsedUrl(companyWebsite);
   if (parsed && !BLOCKED_SOURCE_HOSTS.has(parsed.hostname.toLowerCase())) {
-    queries[1] = `site:${parsed.hostname} (team OR people OR recruiting OR careers) "${title}"`;
+    queries[1] = `site:${parsed.hostname} (team OR people OR leadership OR recruiting OR careers) "${title}"`;
   }
   return queries.slice(0, MAX_QUERIES);
 }
@@ -653,10 +655,10 @@ function dedupeContacts(contacts) {
 export async function discoverContactsForApplication(item, options = {}) {
   const queries = buildDiscoveryQueries(item);
   if (!queries.length) {
-    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', queries: [], sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], errors: [] };
+    return { status: 'blocked', reason: 'application identity is not specific enough for contact discovery', queries: [], sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], candidateEmailVerification: [], errors: [] };
   }
   if (options.dryRun) {
-    return { status: 'dry_run', reason: 'dry-run does not perform public web discovery', queries, sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], errors: [] };
+    return { status: 'dry_run', reason: 'dry-run does not perform public web discovery', queries, sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], candidateEmailVerification: [], errors: [] };
   }
   const contacts = [];
   const candidates = [];
@@ -665,7 +667,7 @@ export async function discoverContactsForApplication(item, options = {}) {
   const fetchFn = options.fetchFn || globalThis.fetch;
   const credentials = credentialsFromEnv(options.env);
   if (!credentials) {
-    return { status: 'unavailable', reason: 'Firecrawl credentials are unavailable', queries, sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], errors: [] };
+    return { status: 'unavailable', reason: 'Firecrawl credentials are unavailable', queries, sources: [], contacts: [], emailConventions: [], emailHypotheses: [], emailVerification: [], candidateEmailVerification: [], errors: [] };
   }
   for (const query of queries) {
     try {
@@ -697,6 +699,16 @@ export async function discoverContactsForApplication(item, options = {}) {
   const emailVerification = emailHypotheses.length
     ? await verifyPublicEmailHypotheses(emailHypotheses, item, { env: options.env, fetchFn: options.fetchFn })
     : { contacts: [], queries: [], sources: [], verifications: [], errors: [] };
+  const verifiedPublicNames = new Set(uniqueContacts
+    .filter((contact) => stringValue(contact.email))
+    .map((contact) => lower(stringValue(contact.name))));
+  const candidateEmailVerification = await verifyPublicCandidateEmails(
+    uniqueCandidates
+      .filter((candidate) => !stringValue(candidate.email) && !verifiedPublicNames.has(lower(stringValue(candidate.name))))
+      .slice(0, 4),
+    item,
+    { env: options.env, fetchFn: options.fetchFn },
+  );
   const verifiedHypothesisEmails = new Map(emailVerification.verifications
     .filter((entry) => entry.status === 'verified-exact-public-source')
     .map((entry) => [entry.email, entry]));
@@ -706,22 +718,23 @@ export async function discoverContactsForApplication(item, options = {}) {
       ? { ...hypothesis, emailVerificationState: 'verified-exact-public-source', verificationSourceUrl: verification.sourceUrl || null, verificationQuery: verification.query }
       : hypothesis;
   });
-  const finalContacts = dedupeContacts([...uniqueContacts, ...emailVerification.contacts]);
-  const finalQueries = [...queries, ...emailVerification.queries];
-  const finalSources = [...new Set([...uniqueSources, ...emailVerification.sources])].slice(0, 20);
-  const finalErrors = [...new Set([...errors, ...emailVerification.errors])];
+  const finalContacts = dedupeContacts([...uniqueContacts, ...emailVerification.contacts, ...candidateEmailVerification.contacts]);
+  const finalQueries = [...queries, ...emailVerification.queries, ...candidateEmailVerification.queries];
+  const finalSources = [...new Set([...uniqueSources, ...emailVerification.sources, ...candidateEmailVerification.sources])].slice(0, 20);
+  const finalErrors = [...new Set([...errors, ...emailVerification.errors, ...candidateEmailVerification.errors])];
   const reason = finalContacts.length
     ? `found ${finalContacts.length} public contact candidate(s)`
     : 'no eligible public contact found';
   return {
     status: finalContacts.length ? 'found' : 'no_contacts',
-    reason: `${reason}${emailConventions.length ? `; inferred ${emailConventions.length} review-only email convention(s)` : ''}${emailHypotheses.length ? `; generated ${emailHypotheses.length} email hypothesis/hypotheses; exact verification observed ${emailVerification.contacts.length}` : ''}`,
+    reason: `${reason}${emailConventions.length ? `; inferred ${emailConventions.length} review-only email convention(s)` : ''}${emailHypotheses.length ? `; generated ${emailHypotheses.length} email hypothesis/hypotheses; exact verification observed ${emailVerification.contacts.length}` : ''}${candidateEmailVerification.contacts.length ? `; exact candidate email verification observed ${candidateEmailVerification.contacts.length}` : ''}`,
     queries: finalQueries,
     sources: finalSources,
     contacts: finalContacts,
     emailConventions,
     emailHypotheses: annotatedHypotheses,
     emailVerification: emailVerification.verifications,
+    candidateEmailVerification: candidateEmailVerification.verifications,
     errors: finalErrors,
   };
 }

@@ -251,7 +251,10 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
   );
   const candidateEmailVerification = mergeDiscoveryEvidence(
     preservePreviousDiscoveryEvidence ? record.discovery?.candidateEmailVerification : [],
-    candidateEmailResult.verifications,
+    [
+      ...(Array.isArray(publicResult.candidateEmailVerification) ? publicResult.candidateEmailVerification : []),
+      ...candidateEmailResult.verifications,
+    ],
     'name',
   );
   const result = {

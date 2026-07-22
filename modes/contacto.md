@@ -124,8 +124,9 @@ named person appear together in public evidence. Never test a hypothesis by
 sending mail or probing SMTP.
 
 When a named public candidate has no address, discovery may run at most two
-exact-name Firecrawl searches for each of the top four candidates. These are
-evidence searches, not address generation: only the same person, an exact
+exact-name Firecrawl searches for each of the top four candidates, whether the
+candidate came from the public company search or a warm-network search. These
+are evidence searches, not address generation: only the same person, an exact
 employer-domain address, and an allowed public source can be promoted. Data
 brokers and blocked job boards never qualify.
 
