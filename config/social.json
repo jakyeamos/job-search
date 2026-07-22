@@ -127,7 +127,7 @@
   "profiles": {
     "linkedin": {
       "headline": "3x Amazon SDE Intern | Backend, AI, Data & Product Engineer | Building Reliable Systems",
-      "about": "I build backend systems, data workflows, developer tools, and AI-enabled products that turn ambiguous problems into usable software.\n\nI completed three Amazon SDE internship terms across Ads and FinTech/business-systems environments, and I have led client-facing product delivery through Forward Automations. My current work spans Tenure, engineering systems, basketball/data products, and applied AI systems.\n\nI am especially interested in backend engineering, applied AI, data engineering, platform/developer tools, product engineering, and solutions or forward-deployed roles.\n\nSelected work: https://jakye.netlify.app/\nGitHub: https://github.com/jakyeamos",
+      "about": "I build backend systems, data workflows, developer tools, and AI-enabled products that turn ambiguous problems into usable software.\n\nI completed three Amazon SDE internship terms across Ads and FinTech/business-systems environments, and I have led client-facing product delivery through Forward Automations. My current work spans Tenure, split AI runtimes for evaluation, context, and workflow leverage, macOS developer tools, basketball/data products, and applied AI systems.\n\nI am especially interested in backend engineering, applied AI, data engineering, platform/developer tools, product engineering, and solutions or forward-deployed roles.\n\nSelected work: https://jakye.netlify.app/\nGitHub: https://github.com/jakyeamos",
       "educationLabel": "Case Western Reserve University — Computer Science",
       "featured": [
         {"label": "Portfolio", "url": "https://jakye.netlify.app/"},
@@ -139,7 +139,7 @@
     },
     "x": {
       "handle": "soundscapeweb",
-      "bio": "Backend, AI & data systems builder. 3x Amazon SDE intern. Building Soundscape, Tenure, engineering tools, and basketball/data products.",
+      "bio": "Backend, AI & data systems builder. 3x Amazon SDE intern. Building Tenure, split AI runtimes, macOS tools, Soundscape, and basketball/data products.",
       "pinnedPost": "Most of what I build starts with a handoff that lost something important. I’m exploring that in Tenure (a LaunchNY cohort venture), Soundscape, and tools for making AI work easier to inspect. I’ll share parts, dead ends, and what I change my mind about: jakye.netlify.app/"
     }
   },
@@ -211,7 +211,7 @@
       "title": "Engineering Systems",
       "kind": "flagship",
       "narrative": "AI-assisted engineering becomes more trustworthy when context, quality gates, evaluation contracts, and release evidence are explicit.",
-      "projects": ["aios", "pre-cr-suite", "quality-runner", "terrace", "tmcp"],
+      "projects": ["aios", "pre-cr-suite", "quality-runner", "agent-eval-runtime", "ai-context-runtime", "ai-workflow-leverage", "mac-control", "marketing-autoresearch", "relay", "terrace", "tmcp"],
       "contentBudget": 4,
       "publicStatus": "Public tooling and local-first systems with verified package/release surfaces"
     },
@@ -299,6 +299,83 @@
       "publicClaims": ["skill-packet workflows", "release readiness", "UI rubrics", "agent handoffs", "marketplace install verification"],
       "doNotClaim": ["broad adoption"],
       "publicSurfaces": ["https://github.com/jakyeamos"],
+      "videoEligible": false
+    },
+    {
+      "slug": "agent-eval-runtime",
+      "name": "Agent Eval Runtime",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Standalone local eval runtime; first slice is report-only",
+      "publicClaims": ["eval-run evidence", "paired comparisons", "model-selection records", "benchmark contracts", "explicit empty-state handling"],
+      "doNotClaim": ["measured adoption", "non-empty eval corpus", "automatic provider execution"],
+      "publicSurfaces": ["https://github.com/jakyeamos/agent-eval-runtime"],
+      "videoEligible": false
+    },
+    {
+      "slug": "ai-context-runtime",
+      "name": "AI Context Runtime",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Standalone local context and session-intelligence runtime with report-only boundaries",
+      "publicClaims": ["context compilation", "knowledge packets", "handoffs", "versioned signal exports", "private evidence separation"],
+      "doNotClaim": ["provider invocation", "public knowledge publishing", "direct AIOS database access"],
+      "publicSurfaces": ["https://github.com/jakyeamos/ai-context-runtime"],
+      "videoEligible": false
+    },
+    {
+      "slug": "ai-workflow-leverage",
+      "name": "AI Workflow Leverage",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Evidence-bounded workflow-leverage runtime with review-gated execution",
+      "publicClaims": ["bounded reproductions", "review-gated runs", "acceptance evidence", "cross-repository scorecards", "redacted public projections"],
+      "doNotClaim": ["automatic merge or deploy", "unsandboxed provider execution", "public publication without review"],
+      "publicSurfaces": ["https://github.com/jakyeamos/ai-workflow-leverage"],
+      "videoEligible": false
+    },
+    {
+      "slug": "mac-control",
+      "name": "macctl",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Command-first macOS control plane with owner-only transport and explicit blocked states",
+      "publicClaims": ["owner-only daemon", "guarded GUI workflows", "local receipts", "accessibility boundaries", "machine-readable release checks"],
+      "doNotClaim": ["unverified GUI success", "available daemon evidence when the socket is blocked", "automatic approval"],
+      "publicSurfaces": ["https://github.com/jakyeamos/mac-control"],
+      "videoEligible": false
+    },
+    {
+      "slug": "marketing-autoresearch",
+      "name": "Marketing Autoresearch",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Evidence-bounded weekly SEO/AEO research loop with fail-closed publication controls",
+      "publicClaims": ["fixed prompt profiles", "source-freshness checks", "shadow runs", "research packets", "apply/verify separation"],
+      "doNotClaim": ["automatic new-claim publishing", "unverified visibility gains", "scheduler ownership"],
+      "publicSurfaces": ["https://github.com/jakyeamos/marketing-autoresearch"],
+      "videoEligible": false
+    },
+    {
+      "slug": "relay",
+      "name": "Relay",
+      "lane": "engineering-systems",
+      "tier": "supporting",
+      "publicStatus": "Private keyboard-first native macOS workbench for local AI coding workflows",
+      "publicClaims": ["local session discovery", "Playbook intelligence", "derived Usage metrics", "guarded file transactions", "local-first privacy boundary"],
+      "doNotClaim": ["Relay-operated backend", "provider quota values without adapter evidence", "background file changes without confirmation"],
+      "publicSurfaces": ["https://github.com/jakyeamos/Relay"],
+      "videoEligible": false
+    },
+    {
+      "slug": "agent-router",
+      "name": "Agent Router",
+      "lane": "engineering-systems",
+      "tier": "planning",
+      "publicStatus": "Foundation-phase adaptive-routing workspace; not an approved accomplishment claim",
+      "publicClaims": ["routing contracts", "replayable planning cases", "capability-aligned decomposition", "unknown-safe usage probes"],
+      "doNotClaim": ["completed execution layers", "production adoption", "approved resume or application accomplishment"],
+      "publicSurfaces": ["https://github.com/jakyeamos/agent-router"],
       "videoEligible": false
     },
     {
