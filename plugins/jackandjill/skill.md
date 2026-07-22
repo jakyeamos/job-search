@@ -18,6 +18,11 @@ The prompt requests a summary/headline replacement, prioritized proof-point
 edits, project ordering, skills emphasis, and an optional cover letter. Preserve
 the user's truthful voice and flag missing evidence instead of filling gaps.
 
+Use Jack for calibration and explicit role-specific coaching, not for every
+role in the scheduled queue. Raw responses stay in ignored local coaching
+storage; they are reviewed before becoming packet-local drafts or confirmed
+ledger answers.
+
 ## Job source
 
 Run `node jackandjill.mjs sync --write` to refresh the local, uncommitted cache.
@@ -30,6 +35,16 @@ Chat-only recommendations remain advisory. Incomplete records remain
 `source-alert` and must not produce a ready application or a report. Gmail
 wrappers and direct Jack records deduplicate by the stable UUID while retaining
 `sourceMessageId` when present.
+
+The 8 AM scheduled refresh consumes the recommendation cache for discovery and
+queue scoring only. It does not traverse application forms or generate
+submission packets, resumes, cover letters, or answers. Use the explicit
+human-controlled packet command for a selected role:
+
+```bash
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id>
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --dry-run
+```
 
 Never submit an application, send recruiter messages, change the Jack account,
 store credentials, or bypass login, CAPTCHA, MFA, rate limits, or a bridge

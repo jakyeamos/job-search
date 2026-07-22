@@ -84,7 +84,7 @@ function normalizeEntry(entry) {
         answerVersion: variant.answer === null || variant.answer === undefined || variant.answer === ''
           ? 0
           : Math.max(1, Number(variant.answerVersion || 1)),
-        answerStatus: variant.answerStatus === 'confirmed' || variant.answerSource === 'user' || entry.source === 'profile-confirmed'
+        answerStatus: variant.answerStatus === 'confirmed' || variant.answerSource === 'user' || variant.source === 'profile-confirmed' || entry.source === 'profile-confirmed'
           ? 'confirmed'
           : variant.answer ? 'unconfirmed' : 'unanswered',
       }))

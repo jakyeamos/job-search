@@ -93,29 +93,84 @@ The report is JSON and intentionally excludes current field values. It is a
 read-only diagnostic; it does not log in, upload files, click options, or
 submit an application.
 
-### Human submission packets
+### Human-controlled submission packets
 
-When the goal is to prepare an application rather than submit it, build a
-read-only packet. The packet opens the rendered application form, records the
-exact labels, required state, field kind, and visible choices, then reuses
-verified ledger/profile/project answers where they are compatible. It never
-fills, uploads, clicks an option, or clicks Submit.
+The packet path is browser-first and read-only. It is the supported workflow
+for preparing a selected application for manual copy/paste; it does not invoke
+the legacy adapter's fill or submit commands. It performs this bounded sequence:
+
+1. Revalidate posting freshness and require a visible title, a substantive
+   description, and a detected application path.
+2. Inspect every safely reachable form page, recording labels, required state,
+   field kind, choices, uploads, page order, and human-only signals.
+3. Click only a local `Next`/`Continue` control on a page with no required
+   fields. It never fills, selects, uploads, follows external controls, or
+   clicks Apply/Submit/Send.
+4. Resolve only confirmed ledger answers, verified profile values, and
+   evidence-bound project selections. Narrative drafts remain packet-local
+   until humanizer review and approval.
+5. Reuse an existing audited resume only when its evidence is current, the role
+   is active, and its coverage passes the resume gate; otherwise generate and
+   register a tailored artifact. Cover letters are independent of that choice.
+6. Render a packet with a final manual checklist. Submission stays outside
+   Career Ops.
 
 ```bash
-node apply/application-packets.mjs --queue-id <queue-id>
-node apply/application-packets.mjs <application-url> \
+# Selected queue role; this is the normal explicit invocation.
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id>
+
+# Inspect without ledger, packet, artifact, resume, or draft writes.
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --dry-run
+
+# Direct application URL; Chrome Beta is the default browser channel.
+pnpm exec node apply/application-packets.mjs <application-url> \
   --company "Example" --title "Backend Engineer" \
-  --job-description "..." --headed
+  --job-description "..." --headed --max-pages 8 --answers path/to/answers.json
+
+# Force independent cover-letter preparation or omit artifact generation.
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --cover
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --no-artifacts
 ```
 
-Each packet writes `submission-packet.json` and a copy-ready
-`submission-packet.md` under `output/application-packets/`. Unknown required
-questions are recorded in `data/application-question-ledger.json` and remain
-unanswered instead of being guessed. A user answer saved with the ledger is
-reused for exact or conservatively similar question wording; the packet keeps
-the exact form occurrence and options so a semantic match cannot hide a
-conflicting field. Final personal, legal, consent, identity, CAPTCHA, and
-Submit/Apply decisions remain human work.
+Statuses are `ready-for-human-review`, `needs-user-input`, `blocked`, and
+`stale`. Login redirects, CAPTCHA/MFA/identity checks, required fields needed
+to continue, missing form evidence, bridge loss, and unsupported flows are
+blocked rather than worked around. Optional unanswered questions are listed in
+the packet but do not hide the distinction between a ready packet and a packet
+missing a required answer.
+
+Each role has one stable current packet under
+`output/application-packets/{company-role}-{url-hash}/` and one stable artifact
+directory under `output/application-artifacts/`. A history snapshot is created
+only when the JD hash, form shape, canonical answer references, or resume
+decision changes. Existing legacy hash directories are left untouched.
+
+#### Question ledger and answer drafts
+
+Observed questions are grouped in the ignored canonical ledger. Existing
+adapter-observed answers are unconfirmed until the user explicitly promotes
+them; confirmed answers carry stable references such as
+`question-ledger:q_abc123@v2`.
+
+```bash
+pnpm exec node apply/question-ledger.mjs pending
+pnpm exec node apply/question-ledger.mjs answer <question-id-or-text> "answer" --scope global
+pnpm exec node apply/question-ledger.mjs answer <question-id-or-text> "No" \
+  --scope global --confirm-sensitive
+```
+
+`--answers` accepts a local ignored JSON file. Its question entries may contain
+`questionId`, `question`, `draft`, `humanized`, `approved`, and `evidenceRefs`;
+an optional `coverLetter` object uses the same raw/humanized/approved shape.
+The packet preserves the evidence-bound raw text, the humanized revision, the
+claim-preservation audit, and the approval state. It never humanizes yes/no,
+select, compensation, authorization, legal, EEO, consent, or identity fields.
+Jack & Jill coaching can supply drafts on demand, but it does not promote
+answers into the reusable ledger automatically.
+
+The older `application-queue.mjs run|clear` surfaces remain separately
+policy-gated legacy adapter paths. They are not part of this human-controlled
+packet workflow and must not be used to bypass the manual submission boundary.
 
 ## Usage
 

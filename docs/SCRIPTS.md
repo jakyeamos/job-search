@@ -1,6 +1,7 @@
 # Scripts Reference
 
-All scripts live in the project root as `.mjs` modules and are exposed via `npm run <name>`.
+All scripts live in the project root as `.mjs` modules. Use `pnpm run <name>` for
+package scripts and `pnpm exec node <script>.mjs` for direct commands.
 
 ## Quick Reference
 
@@ -64,6 +65,47 @@ and posting dates stay separate rather than being guessed.
 
 Queue state is kept in the local ignored files `data/job-queue.json` and
 `data/job-queue.md`.
+
+### 8 AM source-only boundary
+
+The installed 8 AM launchd path runs `scripts/queue-ui-launch.mjs`, which
+invokes `queue.mjs refresh --scheduled`. That refresh ingests the cached Jack &
+Jill recommendation source alongside Gmail and configured public sources,
+applies deduplication, liveness, fit scoring, and posting aging, then refreshes
+the local queue UI. Its `lastRun.sources.jackandjill` counters make the Jack
+source result visible.
+
+The scheduled path does not traverse application forms and does not generate
+submission packets, resumes, cover letters, or application answers. Packet
+generation is an explicit selected-role action:
+
+```bash
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id>
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --dry-run
+pnpm exec node apply/question-ledger.mjs pending
+```
+
+Use `pnpm exec node jackandjill.mjs sync --write` for an explicit authenticated
+Jack & Jill recommendation/cache refresh. The scheduled source ingest reads
+that local ignored cache; it never needs coaching transcripts and never submits
+applications. `node jackandjill.mjs coach ...` remains an on-demand calibration
+or role-specific coaching action.
+
+### Human-controlled application packets
+
+Packets are browser-first and use the authorized Chrome Beta session through
+the browser bridge. They record the live form shape and safely reachable local
+pages, but never fill fields, select choices, upload files, solve challenges,
+or click Apply/Submit/Send. A required field needed to continue, login,
+CAPTCHA/MFA/identity verification, missing posting evidence, or bridge loss
+produces a blocked packet. Final submission is always manual.
+
+Each role keeps one stable current packet and artifact manifest. History is
+created only for material JD/form/canonical-answer/resume-decision changes;
+legacy ignored artifacts are not deleted. Narrative drafts keep raw,
+humanized, audited, and approved states. Canonical reusable answers live in
+`data/application-question-ledger.json` and only explicit user confirmations
+or verified profile values can be reused.
 
 Each retained posting also carries `firstSeenAt`, `lastSeenAt`, and freshness
 metadata. A role is down-ranked after 14 days, marked `recheck_due` after 30

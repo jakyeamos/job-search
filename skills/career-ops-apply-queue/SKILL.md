@@ -1,50 +1,50 @@
 ---
 name: career-ops-apply-queue
-description: Run Career Ops' authorized, human-accountable application queue. Use when the candidate asks to clear selected job applications, fill or submit supported ATS forms, maintain the application question ledger, inspect application-run state, or disable or recover the auto-apply workflow.
+description: Prepare Career Ops' human-controlled application submission packets, inspect read-only forms, maintain the versioned question ledger, and enforce the manual final-submission boundary.
 ---
 
 # Career Ops Apply Queue
 
-## Workflow
+## Human-controlled packet workflow
 
-1. Read the current queue and policy. If the policy is disabled, stop and show
-   the exact authorize/disable controls instead of guessing authorization.
-2. Run `node resume.mjs plan --limit N` and
-   `node application-queue.mjs dry-run --limit N`. Inspect the selected roles,
-   ATS adapter, liveness, score, resume lane, selected projects, evidence
-   sources, manifest status, and artifact path. A dry run may report
-   `would-generate-and-submit`; the actual worker creates and audits the
-   tailored resume and cover letter immediately before the adapter run.
-3. Run `node application-queue.mjs run --limit N` only after the candidate's
-   explicit authorization is current. The worker submits only supported ATS
-   forms and records an idempotent run result.
-4. Review `data/application-question-ledger.json` after blocked runs. Answer a
-   question only from the exact form wording and choose a narrow scope for
-   sensitive answers. For accomplishment prompts, the adapters also consult
-   `config/project-accomplishment-ledger.json` and select a verified project from
-   the posting lane and description; an explicit scoped answer remains the
-   override.
-5. Treat `submitted` and `submission_unknown` as terminal until the external
-   state is verified. Never retry an unknown submission automatically.
+1. Read the current queue item and confirm its posting is fresh enough to
+   inspect. A stale or archived role must be refreshed and revalidated first.
+2. Run `pnpm exec node apply/application-packets.mjs --queue-id <id>` (or
+   `--dry-run` first). The packet opens the application in the authorized
+   browser session, records all safely reachable pages and controls, and never
+   fills, selects, uploads, or submits anything.
+3. Treat `ready-for-human-review`, `needs-user-input`, `blocked`, and `stale`
+   as the only packet statuses. Login, CAPTCHA, MFA, identity verification,
+   required fields needed to continue, unsupported flows, missing title/JD/apply
+   evidence, and bridge loss are hard stops.
+4. Review `data/application-question-ledger.json` and the grouped pending view:
+   `pnpm exec node apply/question-ledger.mjs pending`. Only explicit user
+   answers or verified profile values are reusable. User-confirmed answers get
+   stable refs such as `question-ledger:q_x@v2`; adapter-observed answers stay
+   unconfirmed until promoted.
+5. For narrative answers and cover letters, keep the evidence-bound draft,
+   run the humanizer, preserve the humanized revision, and require a factual
+   claim audit plus human approval. Never humanize structured, legal, EEO,
+   consent, authorization, compensation, CAPTCHA, MFA, or identity fields.
+6. Review the resume decision and manifest. Reuse is allowed only for an
+   existing audited artifact with current evidence, active posting, and
+   sufficient role coverage; otherwise the packet generates a tailored resume.
+   Cover-letter generation is independent of resume reuse.
+7. Complete the packet checklist manually and perform the final Apply/Submit
+   action yourself. Do not invoke the legacy auto-submit worker as part of this
+   workflow.
 
-## Browser-free intake and artifact retrieval
+## Browser-first intake and artifact retrieval
 
-The queue keeps the browser for the form interaction, but it uses public ATS
-HTTP endpoints first when a supported posting needs a fuller job description.
-The generated manifest records `descriptionSource: ats-api` and the public
-endpoint when that path succeeds; an unavailable or too-short response falls
-back to the existing posting-page fetch and then fails closed if the description
-is still insufficient.
+The authenticated application path is browser-first. The packet uses the
+authorized Chrome Beta session through the browser bridge and does not prefer a
+browser-free client for form traversal. The existing artifact generator may use
+its bounded description fallback for queue data, but that is separate from the
+authenticated form and never performs application writes.
 
-When a new public job source needs a browser-free path, use the `$derive-api-client`
-skill before adding or changing a provider. The derived client belongs in the
-existing `providers/` contract, reuses `providers/_http.mjs`, records endpoint
-provenance, and returns normalized listings for `scan.mjs`. Derive only public,
-read-only listing or description requests. Never derive application POSTs,
-login/MFA flows, CAPTCHA controls, or any request that changes external state.
-After a provider change, run `node validate-portals.mjs`, a scoped
-`node scan.mjs --dry-run --company <name>`, and its focused contract tests before
-using the application queue.
+Job-source adapters remain separate from packet preparation. Jack & Jill is a
+browser-mediated source and coaching tool; use its local skill and explicit
+commands rather than deriving an API client for its authenticated flows.
 
 ## Safety contract
 
@@ -55,6 +55,9 @@ using the application queue.
 - Do not expose private repositories, credentials, customer data, or raw form
   data in logs or generated content.
 - Unsupported or ambiguous forms remain blocked for manual handling.
+- The old `application-queue.mjs run|clear` commands are legacy, separately
+  policy-gated adapter surfaces. They are not part of the human-controlled
+  packet workflow and must not be used to cross the manual submission boundary.
 - The worker generates contract-managed resume and cover-letter artifacts from
   canonical evidence and the queue posting. Existing resume/PDF renderers
   remain available, and their approved output can still be registered with

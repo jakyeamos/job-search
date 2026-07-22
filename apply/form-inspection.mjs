@@ -260,8 +260,16 @@ export async function inspectApplicationFlow(page, options = {}) {
     }
 
     try {
+      const targetButton = inspection.buttons[nextIndex];
       const buttons = page.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible');
-      const button = buttons.nth(nextIndex);
+      const buttonIndex = await buttons.evaluateAll((nodes, expectedText) => nodes.findIndex((node) => {
+        const text = String(node.textContent || node.getAttribute('value') || node.getAttribute('aria-label') || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return text === String(expectedText || '');
+      }), targetButton?.text || '');
+      if (buttonIndex < 0) throw new Error(`the local continuation control "${targetButton?.text || 'Next'}" was not found`);
+      const button = buttons.nth(buttonIndex);
       await button.click({ timeout: 3_000 });
       await Promise.race([
         page.waitForLoadState('domcontentloaded', { timeout: 2_000 }).catch(() => {}),

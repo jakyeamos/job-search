@@ -14,6 +14,8 @@ data/queue-ui-launch-state.json
 data/gmail-state.json
 data/gmail-organizer-state.json
 data/jackandjill-recommendations.json
+data/jackandjill-coaching/
+data/application-answer-drafts/
 data/outreach-state.json
 data/outreach-contacts.json
 data/application-policy.json
