@@ -25,7 +25,9 @@ const BLOCKED_SOURCE_HOSTS = new Set([
   'contactout.com', 'www.contactout.com', 'lusha.com', 'www.lusha.com',
   'apollo.io', 'www.apollo.io', 'zoominfo.com', 'www.zoominfo.com',
   'signalhire.com', 'www.signalhire.com', 'hunter.io', 'www.hunter.io',
-  'clearbit.com', 'www.clearbit.com',
+  'clearbit.com', 'www.clearbit.com', 'wiza.co', 'www.wiza.co',
+  'whitepages.com', 'www.whitepages.com', 'facebook.com', 'www.facebook.com',
+  'instagram.com', 'www.instagram.com',
 ]);
 const ATS_HOSTS = [
   'ashbyhq.com', 'greenhouse.io', 'lever.co', 'workable.com', 'myworkdayjobs.com',
@@ -68,6 +70,19 @@ function parsedUrl(url) {
     if (!parsed.hostname || BLOCKED_SOURCE_HOSTS.has(parsed.hostname.toLowerCase())) return null;
     return parsed;
   } catch { return null; }
+}
+
+/** @param {string} url */
+function provenanceUrl(url) {
+  const normalized = normalizeUrl(url);
+  if (!normalized) return '';
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
+    const host = parsed.hostname.toLowerCase();
+    if (!BLOCKED_SOURCE_HOSTS.has(host)) return normalized;
+    return isLinkedInUrl(normalized) && /^\/(?:in|pub)\//i.test(parsed.pathname) ? normalized : '';
+  } catch { return ''; }
 }
 
 /** @param {string} url */
@@ -169,6 +184,18 @@ function hasEmployerEvidence(value, itemCompany) {
   return tokens.length > 0 && tokens.some((token) => haystack.includes(token));
 }
 
+/** @param {string} title @param {string} description @param {string} itemCompany */
+function hasCurrentLinkedInEmployerEvidence(title, description, itemCompany) {
+  const titleText = stringValue(title);
+  const descriptionText = stringValue(description);
+  const evidence = `${titleText}\n${descriptionText}`;
+  if (!hasEmployerEvidence(evidence, itemCompany)) return false;
+  if (hasEmployerEvidence(titleText, itemCompany)) return true;
+  const titleEmployer = titleText.match(/\bat\s+([^|—–-]+?)(?:\s*\|\s*|\s*-\s*|\s*$)/i)?.[1]?.trim() || '';
+  if (titleEmployer && !/^\.{2,}$/.test(titleEmployer) && !hasEmployerEvidence(titleEmployer, itemCompany)) return false;
+  return !/\b(?:left|former(?:ly)?|previously|ex[-\s]?employee|past)\b/i.test(descriptionText);
+}
+
 /** @param {string} email */
 function isGenericMailbox(email) {
   return GENERIC_MAILBOX_RE.test(email.split('@')[0] || '');
@@ -207,6 +234,7 @@ function contactsFromResult(result, item) {
 
   const contacts = [];
   if (isLinkedInUrl(url)) {
+    if (!hasCurrentLinkedInEmployerEvidence(title, description, stringValue(item.company))) return contacts;
     const identity = identityFromText(title, description);
     if (identity.name && identity.title) {
       const publicEmail = extractEmails(evidence).find((email) => {
@@ -269,6 +297,7 @@ function candidateFromResult(result, item) {
   const markdown = stringValue(result.markdown);
   const evidence = `${title}\n${description}\n${markdown}`;
   if (!hasEmployerEvidence(evidence, stringValue(item.company))) return null;
+  if (isLinkedInUrl(url) && !hasCurrentLinkedInEmployerEvidence(title, description, stringValue(item.company))) return null;
   const identity = isLinkedInUrl(url)
     ? identityFromText(title, description)
     : identityFromText(title, markdown || description);
@@ -481,7 +510,8 @@ export async function verifyPublicEmailHypotheses(hypotheses, item, options = {}
         if (!result || typeof result !== 'object' || Array.isArray(result)) continue;
         const entry = /** @type {Record<string, unknown>} */ (result);
         const url = normalizeUrl(stringValue(entry.url));
-        if (url && parsedUrl(url)) sources.push(url);
+        const source = provenanceUrl(url);
+        if (source) sources.push(source);
         batch.push(entry);
         const evidence = `${stringValue(entry.title)}\n${stringValue(entry.description)}\n${stringValue(entry.markdown)}`;
         if (credentials && url && isSearchScrapeCandidate(url) && scrapeCount < 1 && !lower(evidence).includes(email)) {
@@ -556,7 +586,7 @@ export async function verifyPublicCandidateEmails(candidates, item, options = {}
     const domain = candidateEmailDomain(item);
     const candidateQueries = [
       buildCandidateEmailVerificationQuery(candidate, item),
-      ...(domain ? [`"${name}" "@${domain}" email`] : []),
+      ...(domain ? [`site:${domain} "${name}" email`] : []),
     ];
     const attemptedQueries = [];
     let match = null;
@@ -573,7 +603,8 @@ export async function verifyPublicCandidateEmails(candidates, item, options = {}
           if (!result || typeof result !== 'object' || Array.isArray(result)) continue;
           const entry = /** @type {Record<string, unknown>} */ (result);
           const url = normalizeUrl(stringValue(entry.url));
-          if (url && parsedUrl(url)) sources.push(url);
+          const source = provenanceUrl(url);
+          if (source) sources.push(source);
           batch.push(entry);
           const evidence = `${stringValue(entry.title)}\n${stringValue(entry.description)}\n${stringValue(entry.markdown)}`;
           if (credentials && url && isSearchScrapeCandidate(url) && scrapeCount < 1 && !extractEmails(evidence).length) {
@@ -676,7 +707,8 @@ export async function discoverContactsForApplication(item, options = {}) {
       for (const result of results) {
         const url = normalizeUrl(stringValue(result.url));
         if (!url) continue;
-        sources.push(url);
+        const source = provenanceUrl(url);
+        if (source) sources.push(source);
         if (isSearchScrapeCandidate(url) && hydrated.length < MAX_SCRAPES_PER_QUERY) {
           try {
             const scraped = await scrapePublicPage(url, { credentials, fetchFn });

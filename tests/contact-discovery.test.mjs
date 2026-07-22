@@ -59,6 +59,11 @@ test('contact extraction only marks public company evidence as email-eligible', 
       title: 'Taylor Example - Example AI',
       markdown: 'Taylor Example\ntaylor@example.ai',
     },
+    {
+      url: 'https://wiza.co/d/example-ai/taylor-example',
+      title: 'Taylor Example - Example AI',
+      markdown: 'Taylor Example\ntaylor@example.ai',
+    },
   ], item);
 
   assert.equal(contacts.length, 2);
@@ -66,7 +71,21 @@ test('contact extraction only marks public company evidence as email-eligible', 
   assert.equal(contacts.find((contact) => contact.name === 'Recruiting Team')?.email, 'recruiting@example.ai');
   assert.equal(contacts.some((contact) => contact.email === 'someone@gmail.com'), false);
   assert.equal(contacts.some((contact) => contact.sourceUrl.includes('rocketreach.co')), false);
+  assert.equal(contacts.some((contact) => contact.sourceUrl.includes('wiza.co')), false);
   assert.equal(contacts.some((contact) => contact.sourceUrl === 'https://other.example/team'), false);
+});
+
+test('LinkedIn alumni snippets are not promoted as current employer contacts', () => {
+  const contacts = extractPublicContacts([{
+    url: 'https://www.linkedin.com/in/frank-cebek',
+    title: 'Frank Cebek - VP, Talent Acquisition and HR Ops at Gravie',
+    description: 'SeatGeek Graphic. Left the company.',
+  }], {
+    company: 'SeatGeek',
+    title: 'Software Engineer - New Grad (New York)',
+    applyUrl: 'https://seatgeek.com/jobs/7858968',
+  });
+  assert.equal(contacts.length, 0);
 });
 
 test('LinkedIn search results produce manual-only contact drafts', () => {
@@ -159,7 +178,7 @@ test('candidate email discovery searches names without inventing an address', as
   const fallback = await verifyPublicCandidateEmails([candidate], { ...item, companyWebsite: 'https://example.ai' }, {
     searchFn: async (query) => {
       fallbackQueries.push(query);
-      return query.includes('@example.ai') ? [{
+      return query.includes('site:example.ai') ? [{
         url: 'https://example.ai/team/morgan',
         title: 'Morgan Example | Technical Recruiter | Example AI',
         markdown: 'Morgan Example\nTechnical Recruiter\nmorgan@example.ai',
@@ -211,6 +230,14 @@ test('live discovery preserves contacts collected from search and scrape results
               url: 'https://example.ai/team',
               title: 'Taylor Example | Engineering Manager | Example AI',
               description: 'Example AI engineering leadership',
+            }, {
+              url: 'https://www.instagram.com/example',
+              title: 'Example AI recruiting',
+              description: 'Taylor Example Engineering Manager Example AI',
+            }, {
+              url: 'https://wiza.co/d/example-ai/1234/taylor-example',
+              title: 'Taylor Example - Example AI',
+              description: 'Engineering Manager',
             }],
           },
         }), { status: 200 });
@@ -224,6 +251,7 @@ test('live discovery preserves contacts collected from search and scrape results
   assert.equal(result.status, 'found');
   assert.equal(result.contacts.length, 1);
   assert.equal(result.contacts[0].email, 'taylor@example.ai');
+  assert.equal(result.sources.some((source) => /instagram\.com|wiza\.co/.test(source)), false);
   assert.equal(calls.filter((url) => url.endsWith('/v2/search')).length, 4);
   assert.equal(calls.filter((url) => url.endsWith('/v2/scrape')).length, 4);
 });
