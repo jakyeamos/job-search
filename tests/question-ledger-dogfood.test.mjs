@@ -55,10 +55,10 @@ test('dogfood selection is deterministic and round-robins supported ATS adapters
 
   assert.deepEqual(first.selected.map((candidate) => candidate.id), second.selected.map((candidate) => candidate.id));
   assert.deepEqual(first.selected.map((candidate) => candidate.adapter), ['ashby', 'greenhouse', 'lever', 'ashby']);
-  assert.equal(first.eligible.length, 6);
+  assert.equal(first.eligible.length, 7);
   assert.equal(first.reasonCounts['unsupported-adapter'], 1);
   assert.equal(first.reasonCounts['liveness-uncertain'], 1);
-  assert.equal(first.reasonCounts['missing-description'], 1);
+  assert.equal(first.verificationWarningCounts['missing-description'], 1);
   assert.equal(first.reasonCounts['status-excluded'], 1);
   assert.equal(first.reasonCounts['application-state-submitted'], 1);
 });

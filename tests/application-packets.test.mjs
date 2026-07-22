@@ -140,6 +140,48 @@ test('packet blocks incomplete posting evidence instead of presenting it as read
   }
 });
 
+test('packet hydrates a missing queue JD from the inspected application page and cleans source title tags', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-live-jd-'));
+  try {
+    const ledgerPath = path.join(root, 'question-ledger.json');
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+    const item = {
+      id: 'packet-live-jd',
+      company: 'Acme',
+      title: '\\[C\\] Backend Engineer',
+      applyUrl: 'https://jobs.example/acme/backend-live-jd',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: '',
+    };
+    const packet = await buildApplicationPacket(item, {
+      inspection: {
+        url: item.applyUrl,
+        title: 'Apply — Acme',
+        heading: 'Backend Engineer',
+        titleVisible: false,
+        jobDescription: 'Build reliable Python and TypeScript services, APIs, data pipelines, PostgreSQL workflows, automated tests, and production systems with product and engineering partners. Own systems from design through operation and improve the developer experience.',
+        jobDescriptionSource: 'application-page:selector',
+        formCount: 1,
+        formReady: true,
+        controls: [],
+        buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+        pages: [],
+      },
+      ledgerPath,
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.equal(packet.status, 'ready-for-human-review');
+    assert.equal(packet.target.title, 'Backend Engineer');
+    assert.equal(packet.target.descriptionSource, 'application-page:selector');
+    assert.ok(packet.target.descriptionLength >= 120);
+    assert.doesNotMatch(packet.warnings.join('\n'), /job description is missing or too short/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('packet keeps optional unknowns visible and preserves cover-letter review states', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-cover-'));
   try {

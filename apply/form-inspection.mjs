@@ -15,6 +15,13 @@ export function normalizeApplicationUrl(url) {
   }
 }
 
+/** @param {unknown} value */
+export function normalizeJobTitle(value) {
+  const compact = String(value || '').replace(/\s+/g, ' ').trim();
+  const unescaped = compact.replace(/\\(?=[\[\]])/g, '');
+  return unescaped.replace(/^(?:\[[^\r\n\]]{1,40}\]\s*)+/, '').trim();
+}
+
 /** @param {string} url */
 export function applicationAdapter(url) {
   try {
@@ -93,6 +100,44 @@ export async function inspectApplicationPage(page, options = {}) {
       if (/marketing|newsletter|updates|promotional|subscribe|receive (?:emails|communications)/i.test(label)) return 'marketing consent — leave unchecked unless you choose otherwise';
       return '';
     };
+    const textFrom = (el) => compact(el?.innerText || el?.textContent || '');
+    const textWithoutApplicationControls = (root) => {
+      if (!root) return '';
+      const clone = root.cloneNode(true);
+      clone.querySelectorAll(
+        'input, textarea, select, button, [role="button"], [role="combobox"], [contenteditable="true"], [data-field-path], [data-testid*="field" i], [class*="application-question" i], [class*="question" i], fieldset, nav, footer',
+      ).forEach((node) => node.remove());
+      return textFrom(clone);
+    };
+    const descriptionCandidates = [];
+    const addDescriptionCandidate = (source, el, stripControls = false) => {
+      if (!el || !visible(el)) return;
+      const text = stripControls ? textWithoutApplicationControls(el) : textFrom(el);
+      if (text.length >= 120) descriptionCandidates.push({ source, text: text.slice(0, 40_000) });
+    };
+    const descriptionSelectors = [
+      '[data-testid*="job-description" i]',
+      '[data-test*="job-description" i]',
+      '[data-qa*="job-description" i]',
+      '[id*="job-description" i]',
+      '[class*="job-description" i]',
+      '[data-testid*="description" i]',
+      '[data-test*="description" i]',
+      '[data-qa*="description" i]',
+      '[id*="description" i]',
+      '[class*="description" i]',
+    ];
+    for (const selector of descriptionSelectors) {
+      for (const el of Array.from(document.querySelectorAll(selector))) addDescriptionCandidate('application-page:selector', el);
+    }
+    const scopedRoots = Array.from(document.querySelectorAll('main, [role="main"], article')).filter(visible);
+    for (const root of scopedRoots) addDescriptionCandidate('application-page:main', root, true);
+    if (!scopedRoots.length) addDescriptionCandidate('application-page:body', document.body, true);
+    const selectorCandidates = descriptionCandidates.filter((candidate) => candidate.source === 'application-page:selector');
+    const preferredCandidates = selectorCandidates.length ? selectorCandidates : descriptionCandidates;
+    preferredCandidates.sort((left, right) => right.text.length - left.text.length);
+    const jobDescription = preferredCandidates[0]?.text || '';
+    const jobDescriptionSource = preferredCandidates[0]?.source || '';
     const controls = [];
     const grouped = new Set();
     const containerIds = new WeakMap();
@@ -180,7 +225,7 @@ export async function inspectApplicationPage(page, options = {}) {
         };
       })
       .filter((button) => button.text);
-    const bodyText = compact(document.body?.innerText || '');
+    const bodyText = textFrom(document.body);
     const titleVisible = expectedTitle
       ? [document.title, document.querySelector('h1')?.textContent, bodyText]
         .map(compact)
@@ -202,6 +247,9 @@ export async function inspectApplicationPage(page, options = {}) {
       buttons,
       manualSignals,
       titleVisible,
+      jobDescription,
+      jobDescriptionSource,
+      jobDescriptionLength: jobDescription.length,
       authRequired,
       challengeDetected,
       formReady: controls.length > 0 && (document.querySelectorAll('form').length > 0
@@ -210,6 +258,20 @@ export async function inspectApplicationPage(page, options = {}) {
     };
   }, String(options.expectedTitle || ''));
   return { url: page.url(), ...report };
+}
+
+/** @param {Record<string, unknown>} [inspection] */
+export function jobDescriptionFromInspection(inspection = {}) {
+  const pages = Array.isArray(inspection.pages) && inspection.pages.length ? inspection.pages : [inspection];
+  const candidates = pages
+    .map((page) => ({
+      description: String(page.jobDescription || '').replace(/\s+/g, ' ').trim().slice(0, 40_000),
+      source: String(page.jobDescriptionSource || ''),
+    }))
+    .filter((candidate) => candidate.description.length >= 120);
+  const rank = (source) => source.includes(':selector') ? 2 : source.includes(':main') ? 1 : 0;
+  candidates.sort((left, right) => rank(right.source) - rank(left.source) || right.description.length - left.description.length);
+  return candidates[0] || { description: '', source: '' };
 }
 
 /**
@@ -286,6 +348,7 @@ export async function inspectApplicationFlow(page, options = {}) {
   }
   const current = pages[pages.length - 1] || {
     url: page.url(), title: '', heading: '', controls: [], buttons: [], formReady: false,
+    jobDescription: '', jobDescriptionSource: '', jobDescriptionLength: 0,
   };
   return {
     ...current,

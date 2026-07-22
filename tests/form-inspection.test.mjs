@@ -2,7 +2,48 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
-import { inspectApplicationFlow } from '../apply/form-inspection.mjs';
+import { inspectApplicationFlow, inspectApplicationPage, normalizeJobTitle } from '../apply/form-inspection.mjs';
+
+test('normalizes source annotations from queue titles before comparison', () => {
+  assert.equal(normalizeJobTitle('\\[C\\] Data Engineer, Safeguards'), 'Data Engineer, Safeguards');
+  assert.equal(normalizeJobTitle('[C] Backend Engineer'), 'Backend Engineer');
+  assert.equal(normalizeJobTitle('Senior Backend Engineer'), 'Senior Backend Engineer');
+});
+
+test('extracts the rendered application-page job description without reading form values', async (t) => {
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (error) {
+    t.skip(`Playwright browser is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <main>
+        <h1>Backend Engineer</h1>
+        <section data-testid="job-description">
+          <h2>About the role</h2>
+          <p>Build reliable Python and TypeScript services, APIs, data pipelines, PostgreSQL workflows, automated tests, and production systems with product and engineering partners. Own systems from design through operation and improve the developer experience.</p>
+        </section>
+        <form>
+          <label for="answer">Why are you interested?</label>
+          <textarea id="answer">Do not read this current value.</textarea>
+          <button type="submit">Submit application</button>
+        </form>
+      </main>
+    `);
+
+    const inspection = await inspectApplicationPage(page, { expectedTitle: 'Backend Engineer' });
+    assert.equal(inspection.titleVisible, true);
+    assert.equal(inspection.jobDescriptionSource, 'application-page:selector');
+    assert.match(inspection.jobDescription, /Build reliable Python and TypeScript services/);
+    assert.doesNotMatch(inspection.jobDescription, /Do not read this current value/);
+  } finally {
+    await browser.close();
+  }
+});
 
 test('read-only flow traverses an optional page and stops before required inputs', async (t) => {
   let browser;

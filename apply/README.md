@@ -129,6 +129,10 @@ pnpm exec node apply/application-packets.mjs <application-url> \
   --company "Example" --title "Backend Engineer" \
   --job-description "..." --headed --max-pages 8 --answers path/to/answers.json
 
+# Reuse an already authenticated Chrome/OpenCLI-compatible CDP session.
+pnpm exec node apply/application-packets.mjs --queue-id <queue-id> \
+  --cdp-endpoint http://127.0.0.1:9222
+
 # Force independent cover-letter preparation or omit artifact generation.
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --cover
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --no-artifacts
@@ -181,9 +185,12 @@ pnpm application-ledger-dogfood --sample 12
 pnpm application-ledger-dogfood --shape-only --sample 12
 ```
 
-Normal runs require an active supported posting with a substantive description.
-They copy the canonical ledger into a temporary staging root, inspect at most
-the selected sample, and disable resume/cover-letter artifact generation:
+Normal runs require an active supported posting. If the queue description is
+missing or short, the runner hydrates it from the rendered application page
+during the read-only inspection; the packet remains blocked if that page does
+not expose a substantive description. They copy the canonical ledger into a
+temporary staging root, inspect at most the selected sample, and disable
+resume/cover-letter artifact generation:
 
 ```bash
 pnpm application-ledger-dogfood --run --sample 12

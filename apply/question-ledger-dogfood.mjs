@@ -47,6 +47,7 @@ const TERMINAL_APPLICATION_STATES = new Set([
  * @property {string} status
  * @property {string} liveness
  * @property {number} descriptionLength
+ * @property {boolean} descriptionNeedsHydration
  * @property {number|null} fitScore
  * @property {string[]} reasons
  * @property {string[]} verificationWarnings
@@ -148,6 +149,7 @@ export function classifyQueueItem(item, options = {}) {
   const fitScore = Number.isFinite(rawFitScore) ? rawFitScore : null;
   const reasons = [];
   const verificationWarnings = [];
+  const descriptionNeedsHydration = descriptionLength < policy.minDescriptionLength;
 
   if (EXCLUDED_STATUSES.has(status)) reasons.push(`status-${status}`);
   else if (!policy.statuses.includes(status)) reasons.push('status-not-selected');
@@ -158,11 +160,16 @@ export function classifyQueueItem(item, options = {}) {
   if (policy.minFitScore > 0 && (fitScore === null || fitScore < policy.minFitScore)) reasons.push('fit-score-below-threshold');
 
   if (liveness !== 'active') verificationWarnings.push(`liveness-${liveness}`);
-  if (descriptionLength < policy.minDescriptionLength) {
+  if (descriptionNeedsHydration) {
     verificationWarnings.push(descriptionLength === 0 ? 'missing-description' : 'description-too-short');
   }
 
-  if (!policy.shapeOnly) reasons.push(...verificationWarnings);
+  if (!policy.shapeOnly) {
+    if (liveness !== 'active') reasons.push(`liveness-${liveness}`);
+    if (descriptionNeedsHydration && !SUPPORTED_ADAPTERS.has(adapter)) {
+      reasons.push(descriptionLength === 0 ? 'missing-description' : 'description-too-short');
+    }
+  }
   return {
     item,
     id: idForItem(item, url),
@@ -171,6 +178,7 @@ export function classifyQueueItem(item, options = {}) {
     status,
     liveness,
     descriptionLength,
+    descriptionNeedsHydration,
     fitScore,
     reasons,
     verificationWarnings,
@@ -327,6 +335,7 @@ function publicCandidate(candidate) {
     status: candidate.status,
     liveness: candidate.liveness,
     descriptionLength: candidate.descriptionLength,
+    descriptionNeedsHydration: candidate.descriptionNeedsHydration,
     fitScore: candidate.fitScore,
     verificationWarnings: candidate.verificationWarnings,
   };
@@ -368,6 +377,10 @@ function summarizePacketResult(result, candidate) {
     questionCount: questions.length,
     unresolvedCount: unresolved.length,
     requiredUnresolvedCount: unresolved.filter((question) => question && question.required === true).length,
+    descriptionLength: Number(record.target && typeof record.target === 'object' ? record.target.descriptionLength : 0) || 0,
+    descriptionSource: record.target && typeof record.target === 'object'
+      ? normalizedText(record.target.descriptionSource)
+      : '',
     pendingGroups: Number(record.ledger && typeof record.ledger === 'object' ? record.ledger.pendingGroups : 0) || 0,
     warnings: warnings.slice(0, 8),
     reason: normalizedText(record.reason),

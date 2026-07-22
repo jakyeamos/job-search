@@ -11,6 +11,7 @@ import { chromium } from 'playwright';
 import {
   commonQuestions,
   answerFor,
+  createBrowserPage,
   launchBrowser,
   loadProfile,
   settle,
@@ -30,7 +31,13 @@ import {
 import { selectProjectAccomplishment } from '../project-accomplishment-ledger.mjs';
 import { assessResumeReuse, generateApplicationArtifacts, jobHash } from './application-artifacts.mjs';
 import { auditHumanizedText } from './application-humanizer.mjs';
-import { inspectApplicationFlow, applicationAdapter, normalizeApplicationUrl } from './form-inspection.mjs';
+import {
+  applicationAdapter,
+  inspectApplicationFlow,
+  jobDescriptionFromInspection,
+  normalizeApplicationUrl,
+  normalizeJobTitle,
+} from './form-inspection.mjs';
 import { readQueueState } from '../queue-lib.mjs';
 import { postingFreshness } from '../queue-aging.mjs';
 
@@ -354,20 +361,32 @@ function inspectionControls(inspection) {
 }
 
 /** @param {Record<string, unknown>} item @param {Record<string, unknown>} inspection */
-function applicationEvidenceGate(item, inspection) {
+export function applicationEvidenceGate(item, inspection) {
   const pages = Array.isArray(inspection.pages) && inspection.pages.length ? inspection.pages : [inspection];
-  const expectedTitle = normalize(String(item.title || ''));
+  const expectedTitle = normalizeJobTitle(item.title);
   const titleVisible = pages.some((page) => page.titleVisible === true || (
     expectedTitle
       ? [page.heading, page.title].some((value) => normalize(String(value || '')).toLowerCase().includes(expectedTitle.toLowerCase()))
       : [page.heading, page.title].some((value) => normalize(String(value || '')))
   ));
   const formReady = pages.some((page) => page.formReady === true);
+  const queuedDescription = normalize(String(item.description || ''));
+  const observedDescription = jobDescriptionFromInspection(inspection);
+  const description = queuedDescription.length >= 120 ? queuedDescription : normalize(observedDescription.description);
   const reasons = [];
   if (!expectedTitle || !titleVisible) reasons.push('the active posting title was not visible in the inspected application flow');
-  if (normalize(String(item.description || '')).length < 120) reasons.push('the job description is missing or too short to verify this application safely');
+  if (description.length < 120) reasons.push('the job description is missing or too short to verify this application safely');
   if (!formReady) reasons.push('no application form or application path was detected');
-  return { ok: reasons.length === 0, reasons, titleVisible, formReady };
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    titleVisible,
+    formReady,
+    descriptionLength: description.length,
+    descriptionSource: queuedDescription.length >= 120
+      ? String(item.descriptionSource || 'queue')
+      : observedDescription.source || null,
+  };
 }
 
 /** @param {Record<string, unknown>} item @param {Record<string, unknown>} inspection @param {Record<string, unknown>} profile @param {string} ledgerPath @param {{ persistLedger?: boolean, drafts?: { questions: Array<Record<string, unknown>> }, draftsPath?: string }} [options] */
@@ -540,11 +559,13 @@ export async function buildApplicationPacket(item, options = {}) {
   if (!freshnessGate.ok) return { ok: false, status: 'stale', reason: freshnessGate.reason };
   const effectiveItem = {
     ...item,
+    title: normalizeJobTitle(item.title) || normalize(String(item.title || '')),
     applyUrl: normalizeApplicationUrl(String(item.applyUrl || item.canonicalUrl || '')),
   };
   if (!effectiveItem.applyUrl) return { ok: false, reason: 'application URL is missing' };
   const profile = await loadProfile(options.profilePath || DEFAULT_PROFILE_PATH);
   const drafts = options.drafts || loadAnswerDrafts(options.answersPath || '');
+  const cdpEndpoint = String(options.cdpEndpoint || process.env.CAREER_OPS_CDP_ENDPOINT || process.env.OPENCLI_CDP_ENDPOINT || '').trim();
   let inspection = options.inspection || null;
   if (!inspection) {
     let browser;
@@ -552,12 +573,15 @@ export async function buildApplicationPacket(item, options = {}) {
       browser = await launchBrowser(chromium, {
         headless: options.headed !== true,
         channel: options.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
-        cdpEndpoint: options.cdpEndpoint,
+        cdpEndpoint,
       });
-      const page = await browser.newPage();
+      const page = await createBrowserPage(browser, { shared: Boolean(cdpEndpoint) });
       await page.goto(effectiveItem.applyUrl, { waitUntil: 'domcontentloaded' });
       await settle(page);
-      inspection = await inspectApplicationFlow(page, { maxPages: options.maxPages, expectedTitle: effectiveItem.title });
+      inspection = await inspectApplicationFlow(page, {
+        maxPages: options.maxPages,
+        expectedTitle: normalizeJobTitle(effectiveItem.title),
+      });
     } catch (error) {
       return {
         ok: false,
@@ -573,8 +597,15 @@ export async function buildApplicationPacket(item, options = {}) {
   const safeInspection = /** @type {Record<string, unknown>} */ (inspection || {});
   const pages = Array.isArray(safeInspection.pages) && safeInspection.pages.length ? safeInspection.pages : [safeInspection];
   if (!normalize(String(effectiveItem.title || ''))) {
-    const observedTitle = normalize(String(safeInspection.heading || safeInspection.title || ''));
+    const observedTitle = normalizeJobTitle(safeInspection.heading || safeInspection.title || '');
     if (observedTitle) effectiveItem.title = observedTitle;
+  }
+  const observedDescription = jobDescriptionFromInspection(safeInspection);
+  if (observedDescription.description.length >= 120) {
+    effectiveItem.description = observedDescription.description;
+    effectiveItem.descriptionSource = observedDescription.source || 'application-page';
+  } else if (normalize(String(effectiveItem.description || '')).length >= 120) {
+    effectiveItem.descriptionSource = effectiveItem.descriptionSource || 'queue';
   }
   const evidenceGate = applicationEvidenceGate(effectiveItem, safeInspection);
   const allControls = inspectionControls(safeInspection);
@@ -676,6 +707,8 @@ export async function buildApplicationPacket(item, options = {}) {
       url: effectiveItem.applyUrl,
       adapter: applicationAdapter(effectiveItem.applyUrl),
       jdHash: jobHash(effectiveItem),
+      descriptionLength: normalize(String(effectiveItem.description || '')).length,
+      descriptionSource: effectiveItem.descriptionSource || null,
       canonicalUrl: effectiveItem.canonicalUrl || effectiveItem.applyUrl,
     },
     form: {
@@ -770,6 +803,7 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
       location: { type: 'string' },
       'job-description': { type: 'string' },
       browser: { type: 'string' },
+      'cdp-endpoint': { type: 'string' },
       headed: { type: 'boolean', default: false },
       headless: { type: 'boolean', default: false },
       'dry-run': { type: 'boolean', default: false },
@@ -796,6 +830,7 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
   if (!item) throw new Error('Usage: node apply/application-packets.mjs [application-url] [--queue-id <id>] [--company <name>] [--title <role>]');
   const result = await buildApplicationPacket(item, {
     browser: values.browser,
+    cdpEndpoint: values['cdp-endpoint'],
     headed: values.headed === true && values.headless !== true,
     generateArtifacts: values['no-artifacts'] !== true,
     generateCoverLetter: values.cover === true,
