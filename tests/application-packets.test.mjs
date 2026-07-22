@@ -131,6 +131,7 @@ test('packet counts only nontrivial answer preparation and keeps standard fields
         formReady: true,
         controls: [
           { id: 'first-name', label: 'First Name', kind: 'text', category: 'standard', required: true },
+          { id: 'name', label: 'Name', kind: 'text', category: 'question', required: true },
           { id: 'country', label: 'Country', kind: 'combobox', category: 'question', required: false, options: [] },
           { id: 'email', label: 'Email', kind: 'text', category: 'standard', required: true },
           { id: 'why', label: 'Why Acme?', kind: 'textarea', category: 'question', required: true, options: [] },
@@ -150,7 +151,7 @@ test('packet counts only nontrivial answer preparation and keeps standard fields
     assert.equal(packet.status, 'needs-user-input');
     assert.deepEqual(packet.questions.map((question) => question.question), ['Why Acme?']);
     assert.deepEqual(packet.simpleFields.map((question) => question.question), ['Are you open to working in person?']);
-    assert.equal(packet.standardFields.length, 3);
+    assert.equal(packet.standardFields.length, 4);
     assert.equal(packet.manualItems.length, 1);
     assert.deepEqual(packet.unresolved.map((question) => question.question), ['Why Acme?']);
     assert.deepEqual(packet.simpleUnresolved.map((question) => question.question), ['Are you open to working in person?']);
@@ -159,7 +160,7 @@ test('packet counts only nontrivial answer preparation and keeps standard fields
       unresolvedCount: 1,
       simpleFieldCount: 1,
       simpleUnresolvedCount: 1,
-      standardFieldCount: 3,
+      standardFieldCount: 4,
       manualFieldCount: 1,
       artifactFieldCount: 0,
       requiredUnresolvedCount: 2,

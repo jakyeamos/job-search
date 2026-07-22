@@ -181,6 +181,7 @@ function isStandardControl(control) {
   if (control.category === 'standard') return true;
   const label = String(control.label || '');
   return /first name|last name|full name|legal name|preferred name|email|phone|mobile|linkedin|github|portfolio|personal site|website/i.test(label)
+    || /^(?:your\s+)?name$/i.test(label.trim())
     || /^(?:country|country\/region|country of residence)$/i.test(label.trim());
 }
 
