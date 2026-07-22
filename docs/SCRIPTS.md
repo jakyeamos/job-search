@@ -207,11 +207,14 @@ first-party Gmail header with its source message ID. The discovery pass now runs
 a bounded exact-address Firecrawl query for each hypothesis; only a result that
 contains the exact address and the same named person is promoted to a verified
 contact. The original hypothesis remains marked as derived evidence for audit.
-The public pass also uses four bounded queries: the exact role, company recruiting
-signals, LinkedIn recruiter/talent profiles, and LinkedIn engineering-manager
-profiles. Named public candidates without an address receive at most two exact-name
-email searches each for the top four candidates, whether they came from the public
-pass or a warm-network pass.
+The public pass also uses five bounded queries: the exact role, company recruiting
+signals, LinkedIn recruiter/talent profiles, LinkedIn engineering-manager profiles,
+and first-party employer-domain email examples. It ranks observed local-part
+patterns such as `first.last` and `flast`, records coverage and evidence URLs, and
+rejects pseudo-identities from code/configuration pages. ATS hosts from an apply
+URL are never treated as the employer's email domain. Named public candidates
+without an address receive at most two exact-name email searches each for the top
+four candidates, whether they came from the public pass or a warm-network pass.
 Use `--force` on an explicitly requested read-only discovery retry when a prior
 provider error is still inside its short cache window. Do not validate
 hypotheses by sending test mail, probing SMTP, using data brokers, or scraping

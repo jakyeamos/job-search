@@ -9,7 +9,7 @@ import { resolveAndValidate } from './plugins/_net.mjs';
 import { buildEmailHypotheses, inferEmailConventions } from './email-conventions.mjs';
 
 const DEFAULT_API_URL = 'https://api.firecrawl.dev';
-const MAX_QUERIES = 4;
+const MAX_QUERIES = 5;
 const MAX_SCRAPES_PER_QUERY = 2;
 const MAX_EXACT_VERIFICATION_QUERIES = 6;
 const MAX_CANDIDATE_EMAIL_QUERIES = 8;
@@ -35,6 +35,10 @@ const ATS_HOSTS = [
 ];
 const GENERIC_MAILBOX_RE = /^(?:careers?|jobs?|recruit(?:ing|ment)|talent|hiring|people|hr|humanresources|employment)(?:[+._-].*)?$/i;
 const ROLE_RE = /(?:recruit|talent|hiring|people|engineering|software|technical|product|developer|cto|founder|manager|director|head|vice president|vp)/i;
+const NON_PERSON_NAME_TOKENS = new Set([
+  'api', 'aws', 'config', 'configuration', 'developer', 'experience', 'github', 'group',
+  'iam', 'json', 'permission', 'policy', 'role', 'service', 'team', 'terraform', 'user', 'yaml',
+]);
 const AGGREGATE_COMPANY_RE = /\band\s+\d+\s+more\b|\b\d+\s+more\s+jobs?\b|\bfor\s+you\b|\bapply\s+now\b/i;
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const COMPANY_EMAIL_ALIASES = new Map([
@@ -60,6 +64,12 @@ function recordValue(value) {
 function rootHost(host) {
   const labels = host.toLowerCase().split('.').filter(Boolean);
   return labels.length >= 2 ? labels.slice(-2).join('.') : host.toLowerCase();
+}
+
+/** @param {string} host */
+function isAtsHost(host) {
+  const normalized = host.toLowerCase();
+  return ATS_HOSTS.some((suffix) => normalized === suffix || normalized.endsWith(`.${suffix}`));
 }
 
 /** @param {string} url */
@@ -104,7 +114,7 @@ function sourceTypeForUrl(url) {
   const parsed = parsedUrl(url);
   if (!parsed) return 'public-profile';
   const host = parsed.hostname.toLowerCase();
-  if (ATS_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) return 'job-posting';
+  if (isAtsHost(host)) return 'job-posting';
   if (/\/(?:jobs?|careers?|positions?|openings?)\b/i.test(parsed.pathname)) return 'job-posting';
   return 'company-site';
 }
@@ -163,6 +173,14 @@ function nameTokens(value) {
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
+}
+
+/** @param {string} name */
+function isLikelyPersonName(name) {
+  const tokens = nameTokens(name);
+  return tokens.length >= 2
+    && tokens.length <= 4
+    && !tokens.some((token) => NON_PERSON_NAME_TOKENS.has(token));
 }
 
 /** @param {string} left @param {string} right */
@@ -236,7 +254,7 @@ function contactsFromResult(result, item) {
   if (isLinkedInUrl(url)) {
     if (!hasCurrentLinkedInEmployerEvidence(title, description, stringValue(item.company))) return contacts;
     const identity = identityFromText(title, description);
-    if (identity.name && identity.title) {
+    if (identity.name && identity.title && isLikelyPersonName(identity.name)) {
       const publicEmail = extractEmails(evidence).find((email) => {
         if (FREE_EMAIL_DOMAINS.has(emailDomain(email))) return false;
         return employerEmailDomainMatches(email, item) || /(?:email|contact|reach|mail)\s*[:\-]/i.test(evidence);
@@ -267,9 +285,9 @@ function contactsFromResult(result, item) {
   for (const email of extractEmails(evidence)) {
     const domain = emailDomain(email);
     if (!domain || FREE_EMAIL_DOMAINS.has(domain)) continue;
-    if (!isGenericMailbox(email) && !identity.name) continue;
-    if (sourceType === 'company-site' && pageRoot !== rootHost(domain)) continue;
     const generic = isGenericMailbox(email);
+    if (!generic && (!identity.name || !identity.title || !isLikelyPersonName(identity.name))) continue;
+    if (sourceType === 'company-site' && pageRoot !== rootHost(domain)) continue;
     contacts.push({
       name: generic ? 'Recruiting Team' : identity.name,
       title: generic ? 'Recruiting' : identity.title || 'Engineering contact',
@@ -301,7 +319,7 @@ function candidateFromResult(result, item) {
   const identity = isLinkedInUrl(url)
     ? identityFromText(title, description)
     : identityFromText(title, markdown || description);
-  if (!identity.name || !identity.title) return null;
+  if (!identity.name || !identity.title || !isLikelyPersonName(identity.name)) return null;
   const sourceType = sourceTypeForUrl(url);
   return {
     name: identity.name,
@@ -338,9 +356,11 @@ export function buildDiscoveryQueries(item) {
     `site:linkedin.com/in "${company}" recruiter talent acquisition`,
     `site:linkedin.com/in "${company}" "engineering manager"`,
   ];
+  const emailDomain = candidateEmailDomain(item);
+  if (emailDomain) queries.push(`site:${emailDomain} "@${emailDomain}" (recruiter OR talent OR engineering OR manager)`);
   const companyWebsite = stringValue(item.companyWebsite || item.companyUrl || item.employerUrl);
   const parsed = parsedUrl(companyWebsite);
-  if (parsed && !BLOCKED_SOURCE_HOSTS.has(parsed.hostname.toLowerCase())) {
+  if (parsed && !BLOCKED_SOURCE_HOSTS.has(parsed.hostname.toLowerCase()) && !isAtsHost(parsed.hostname)) {
     queries[1] = `site:${parsed.hostname} (team OR people OR leadership OR recruiting OR careers) "${title}"`;
   }
   return queries.slice(0, MAX_QUERIES);
@@ -460,7 +480,9 @@ function candidateEmailDomain(item) {
     .filter(Boolean);
   for (const url of urls) {
     try {
-      const host = rootHost(new URL(url).hostname);
+      const parsed = new URL(url);
+      if (isAtsHost(parsed.hostname)) continue;
+      const host = rootHost(parsed.hostname);
       if (host) return host;
     } catch { /* non-URL metadata is ignored */ }
   }

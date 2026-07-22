@@ -115,25 +115,43 @@ export function inferEmailConventions(contacts, options = {}) {
   const conventions = [];
   for (const [domain, domainSamples] of groups) {
     const samples = [...domainSamples.values()];
-    const sourceUrls = [...new Set(samples.map((sample) => sample.sourceUrl))];
-    if (samples.length < minSamples || sourceUrls.length < 2) continue;
-    const matching = PATTERNS.filter((pattern) => samples.every((sample) => pattern.render(sample.tokens) === sample.local));
-    if (matching.length !== 1) continue;
-    const pattern = matching[0];
-    const confidence = samples.length >= 3 && sourceUrls.length >= 2 ? 'high' : 'provisional';
+    if (samples.length < minSamples) continue;
+    const ranked = PATTERNS.map((pattern) => {
+      const matchingSamples = samples.filter((sample) => pattern.render(sample.tokens) === sample.local);
+      return {
+        pattern,
+        matchingSamples,
+        sourceUrls: [...new Set(matchingSamples.map((sample) => sample.sourceUrl))],
+      };
+    })
+      .filter((entry) => entry.matchingSamples.length >= minSamples && entry.sourceUrls.length >= 2)
+      .sort((left, right) => right.matchingSamples.length - left.matchingSamples.length
+        || right.sourceUrls.length - left.sourceUrls.length
+        || left.pattern.id.localeCompare(right.pattern.id));
+    if (!ranked.length) continue;
+    const best = ranked[0];
+    const tied = ranked.filter((entry) => entry.matchingSamples.length === best.matchingSamples.length
+      && entry.sourceUrls.length === best.sourceUrls.length);
+    if (tied.length !== 1) continue;
+    const coverage = best.matchingSamples.length / samples.length;
+    const confidence = coverage === 1 && best.matchingSamples.length >= 3 ? 'high' : 'provisional';
     conventions.push({
       domain,
-      pattern: pattern.id,
+      pattern: best.pattern.id,
       confidence,
-      sampleCount: samples.length,
-      sourceCount: sourceUrls.length,
-      evidenceUrls: sourceUrls.slice(0, MAX_EVIDENCE_URLS),
-      sampleNames: samples.map((sample) => sample.name).slice(0, MAX_EVIDENCE_URLS),
+      sampleCount: best.matchingSamples.length,
+      observedSampleCount: samples.length,
+      coverage: Number(coverage.toFixed(2)),
+      sourceCount: best.sourceUrls.length,
+      evidenceUrls: best.sourceUrls.slice(0, MAX_EVIDENCE_URLS),
+      sampleNames: best.matchingSamples.map((sample) => sample.name).slice(0, MAX_EVIDENCE_URLS),
       verificationState: 'public-pattern-observed',
       sendable: false,
     });
   }
-  return conventions.sort((left, right) => right.sampleCount - left.sampleCount || left.domain.localeCompare(right.domain));
+  return conventions.sort((left, right) => right.coverage - left.coverage
+    || right.sampleCount - left.sampleCount
+    || left.domain.localeCompare(right.domain));
 }
 
 /** @param {Array<Record<string, unknown>>} conventions @param {Array<Record<string, unknown>>} candidates @param {{maxHypotheses?: number}} [options] */
@@ -181,6 +199,7 @@ export function buildEmailHypotheses(conventions, candidates, options = {}) {
         conventionDomain: domain,
         conventionConfidence: stringValue(convention.confidence) || 'provisional',
         conventionSampleCount: Number(convention.sampleCount) || 0,
+        conventionCoverage: Number(convention.coverage) || 0,
         conventionEvidenceUrls: Array.isArray(convention.evidenceUrls) ? convention.evidenceUrls.slice(0, MAX_EVIDENCE_URLS) : [],
         verificationRequired: 'exact public email evidence or first-party Gmail header with source message ID',
         sendable: false,

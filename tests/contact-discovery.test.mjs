@@ -26,10 +26,18 @@ test('contact discovery rejects aggregate alert identities', () => {
     company: 'F-ADA and 7 more jobs in New York, NY for you. Apply Now.',
   }), false);
   const queries = buildDiscoveryQueries(item);
-  assert.equal(queries.length, 4);
+  assert.equal(queries.length, 5);
   assert.ok(queries.some((query) => query.includes('site:linkedin.com/in') && query.includes('recruiter')));
   assert.ok(queries.some((query) => query.includes('site:linkedin.com/in') && query.includes('engineering manager')));
+  assert.ok(queries.some((query) => query.includes('site:example.ai') && query.includes('"@example.ai"')));
   assert.equal(buildDiscoveryQueries({ ...item, company: 'F-ADA and 7 more jobs' }).length, 0);
+  const greenhouseQueries = buildDiscoveryQueries({
+    ...item,
+    company: 'Example Cloud',
+    applyUrl: 'https://job-boards.greenhouse.io/examplecloud/jobs/123',
+  });
+  assert.equal(greenhouseQueries.length, 4);
+  assert.equal(greenhouseQueries.some((query) => query.includes('greenhouse.io')), false);
 });
 
 test('contact extraction only marks public company evidence as email-eligible', () => {
@@ -64,6 +72,11 @@ test('contact extraction only marks public company evidence as email-eligible', 
       title: 'Taylor Example - Example AI',
       markdown: 'Taylor Example\ntaylor@example.ai',
     },
+    {
+      url: 'https://chairnerd.example.ai/policy/email-access',
+      title: 'Example IAM Policy | Example AI',
+      markdown: 'Example IAM Policy\nteam: developer-experience\nzhammer@example.ai',
+    },
   ], item);
 
   assert.equal(contacts.length, 2);
@@ -73,6 +86,7 @@ test('contact extraction only marks public company evidence as email-eligible', 
   assert.equal(contacts.some((contact) => contact.sourceUrl.includes('rocketreach.co')), false);
   assert.equal(contacts.some((contact) => contact.sourceUrl.includes('wiza.co')), false);
   assert.equal(contacts.some((contact) => contact.sourceUrl === 'https://other.example/team'), false);
+  assert.equal(contacts.some((contact) => contact.email === 'zhammer@example.ai'), false);
 });
 
 test('LinkedIn alumni snippets are not promoted as current employer contacts', () => {
@@ -252,8 +266,8 @@ test('live discovery preserves contacts collected from search and scrape results
   assert.equal(result.contacts.length, 1);
   assert.equal(result.contacts[0].email, 'taylor@example.ai');
   assert.equal(result.sources.some((source) => /instagram\.com|wiza\.co/.test(source)), false);
-  assert.equal(calls.filter((url) => url.endsWith('/v2/search')).length, 4);
-  assert.equal(calls.filter((url) => url.endsWith('/v2/scrape')).length, 4);
+  assert.equal(calls.filter((url) => url.endsWith('/v2/search')).length, 5);
+  assert.equal(calls.filter((url) => url.endsWith('/v2/scrape')).length, 5);
 });
 
 test('public candidates receive bounded exact email verification', async () => {
@@ -284,7 +298,7 @@ test('public candidates receive bounded exact email verification', async () => {
   assert.equal(result.status, 'found');
   assert.ok(result.contacts.some((contact) => contact.email === 'morgan@example.ai'));
   assert.equal(result.candidateEmailVerification[0].status, 'verified-exact-public-source');
-  assert.equal(searchQueries.length, 5);
+  assert.equal(searchQueries.length, 6);
 });
 
 test('live discovery infers a review-only convention without making hypotheses sendable', async () => {

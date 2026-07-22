@@ -58,7 +58,7 @@ const APPLICATION_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
 const STATE_PATH = path.join(ROOT, OUTREACH_STATE_PATH);
 const CONTACTS_PATH = path.join(ROOT, OUTREACH_CONTACTS_PATH);
 const CONFIRMATION_QUERY = 'in:anywhere {subject:"application received" subject:"thank you for applying" subject:"thanks for applying" subject:"application submitted" subject:"we received your application"} newer_than:30d';
-const DISCOVERY_PIPELINE_VERSION = 9;
+const DISCOVERY_PIPELINE_VERSION = 10;
 
 /** @typedef {{
  *  verifyAccount: () => Promise<string>,

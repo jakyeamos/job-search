@@ -38,6 +38,8 @@ test('email convention inference requires multiple named public examples and sou
     pattern: 'first.last',
     confidence: 'high',
     sampleCount: 3,
+    observedSampleCount: 3,
+    coverage: 1,
     sourceCount: 3,
     evidenceUrls: [
       'https://example.ai/team/taylor',
@@ -85,4 +87,29 @@ test('convention hypotheses remain ineligible until exact evidence is found', ()
   assert.equal(hypotheses[0].sendable, false);
   assert.equal(rankContacts(hypotheses, item)[0].email, null);
   assert.equal(rankContacts(hypotheses, item)[0].emailEligible, false);
+});
+
+test('infers first-initial plus last-name conventions and carries ranked confidence', () => {
+  const conventions = inferEmailConventions([
+    publicExample('Jane Doe', 'jdoe@example.ai', 'https://example.ai/team/jane'),
+    publicExample('John Smith', 'jsmith@example.ai', 'https://example.ai/team/john'),
+    publicExample('Alicia Stone', 'astone@example.ai', 'https://example.ai/about/alicia'),
+  ]);
+  assert.equal(conventions.length, 1);
+  assert.equal(conventions[0].pattern, 'flast');
+  assert.equal(conventions[0].confidence, 'high');
+  assert.equal(conventions[0].coverage, 1);
+  const hypotheses = buildEmailHypotheses(conventions, [{
+    name: 'Morgan Example',
+    title: 'Technical Recruiter',
+    company: 'Example AI',
+    email: null,
+    sourceType: 'public-profile',
+    sourceUrl: 'https://www.linkedin.com/in/morgan-example',
+    profileUrl: 'https://www.linkedin.com/in/morgan-example',
+  }]);
+  assert.equal(hypotheses[0].email, 'mexample@example.ai');
+  assert.equal(hypotheses[0].convention, 'flast');
+  assert.equal(hypotheses[0].conventionCoverage, 1);
+  assert.equal(hypotheses[0].sendable, false);
 });
