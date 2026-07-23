@@ -295,10 +295,11 @@ export function resolveDogfoodStaging(options = {}) {
 /** @param {{ entries?: Array<Record<string, unknown>> }} ledger */
 function ledgerStats(ledger) {
   const entries = Array.isArray(ledger.entries) ? ledger.entries : [];
-  const stats = { total: entries.length, confirmed: 0, unconfirmed: 0, unanswered: 0, pendingGroups: 0 };
+  const stats = { total: entries.length, confirmed: 0, evidenceBacked: 0, unconfirmed: 0, unanswered: 0, pendingGroups: 0 };
   for (const entry of entries) {
     const status = normalized(entry.answerStatus) || 'unanswered';
     if (status === 'confirmed') stats.confirmed += 1;
+    else if (status === 'evidence-backed') stats.evidenceBacked += 1;
     else if (status === 'unconfirmed') stats.unconfirmed += 1;
     else stats.unanswered += 1;
   }
@@ -310,7 +311,26 @@ function ledgerStats(ledger) {
 export function summarizeLedgerDelta(before, after) {
   const beforeEntries = Array.isArray(before.entries) ? before.entries : [];
   const afterEntries = Array.isArray(after.entries) ? after.entries : [];
-  const beforeById = new Map(beforeEntries.map((entry) => [String(entry.id || ''), JSON.stringify(entry)]));
+  const comparable = (entry) => {
+    const copy = JSON.parse(JSON.stringify(entry));
+    delete copy.updatedAt;
+    if (Array.isArray(copy.contexts)) {
+      copy.contexts = copy.contexts.map((context) => {
+        const contextCopy = { ...context };
+        delete contextCopy.recordedAt;
+        return contextCopy;
+      });
+    }
+    if (Array.isArray(copy.answerVariants)) {
+      copy.answerVariants = copy.answerVariants.map((variant) => {
+        const variantCopy = { ...variant };
+        delete variantCopy.updatedAt;
+        return variantCopy;
+      });
+    }
+    return JSON.stringify(copy);
+  };
+  const beforeById = new Map(beforeEntries.map((entry) => [String(entry.id || ''), comparable(entry)]));
   let updatedEntries = 0;
   let unchangedExistingEntries = 0;
   let newEntries = 0;
@@ -318,7 +338,7 @@ export function summarizeLedgerDelta(before, after) {
     const id = String(entry.id || '');
     const previous = beforeById.get(id);
     if (previous === undefined) newEntries += 1;
-    else if (previous === JSON.stringify(entry)) unchangedExistingEntries += 1;
+    else if (previous === comparable(entry)) unchangedExistingEntries += 1;
     else updatedEntries += 1;
   }
   return {
@@ -534,12 +554,13 @@ export async function runLedgerDogfood(options = {}) {
   report.ledger.promotion = null;
   if (options.promoteEvidence === true) {
     const canonicalBefore = loadLedger(sourceLedgerPath);
+    const canonicalBeforeSnapshot = JSON.parse(JSON.stringify(canonicalBefore));
     const merged = mergeLedgerObservations(canonicalBefore, after);
     saveLedger(sourceLedgerPath, merged);
     const canonicalHashAfter = fileHash(sourceLedgerPath);
     report.staging.canonicalLedgerTouched = canonicalHashAfter !== sourceLedgerHashBefore;
     report.ledger.canonicalAfter = ledgerStats(merged);
-    report.ledger.promotion = summarizeLedgerDelta(canonicalBefore, merged);
+    report.ledger.promotion = summarizeLedgerDelta(canonicalBeforeSnapshot, merged);
   }
   report.sourceQueueHashBefore = sourceQueueHashBefore;
   report.sourceQueueHashAfter = fileHash(queuePath);

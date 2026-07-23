@@ -130,6 +130,16 @@ function snapshotPreviousPacket(packetPaths, current) {
   }
 }
 
+/** @param {string} label */
+function isCurrentLocationPrompt(label) {
+  const text = String(label || '').toLowerCase();
+  if (isSensitiveQuestion(text)) return false;
+  return /^(?:location|current location|current city|current state|current country|location\s*\(city\))$/i.test(text)
+    || /\bcurrent(?:ly)?\s+(?:based|located|living|working)\b/i.test(text)
+    || /\bwhere\s+are\s+you\s+(?:currently\s+)?(?:located|based|living)\b/i.test(text)
+    || /\b(?:where|what)\s+is\s+your\s+specific\s+working\s+location\b/i.test(text);
+}
+
 /** @param {Record<string, unknown>} profile @param {string} label */
 function profileAnswer(profile, label) {
   const text = label.toLowerCase();
@@ -137,6 +147,7 @@ function profileAnswer(profile, label) {
   const address = profile.address || {};
   const links = profile.links || {};
   const location = [address.city, address.state || address.country].filter(Boolean).join(', ');
+  const country = address.country || '';
   const values = [
     [/^first name\b/, identity.first_name, 'profile:identity.first_name'],
     [/^last name\b|surname/, identity.last_name, 'profile:identity.last_name'],
@@ -146,10 +157,13 @@ function profileAnswer(profile, label) {
     [/linkedin/, links.linkedin, 'profile:links.linkedin'],
     [/github/, links.github, 'profile:links.github'],
     [/portfolio|personal site|website/, links.website, 'profile:links.website'],
-    [/where.*work|work.*from|current location|location|city|based in/, location, 'profile:address'],
   ];
   for (const [pattern, value, source] of values) {
     if (pattern.test(text) && value) return { answer: String(value), source };
+  }
+  if (isCurrentLocationPrompt(text) && location) return { answer: String(location), source: 'profile:address' };
+  if (/^(?:country|country\/region|country of residence)\b/i.test(text) && country) {
+    return { answer: String(country), source: 'profile:address.country' };
   }
   return null;
 }
@@ -173,6 +187,7 @@ function manualReason(control) {
   if (EEO_LABEL_RE.test(label)) return 'voluntary self-identification — complete manually';
   if (LEGAL_LABEL_RE.test(label)) return 'legal or attestation field — review manually';
   if (MARKETING_RE.test(label)) return 'marketing consent — leave unchecked unless you choose otherwise';
+  if (isSensitiveQuestion(label)) return 'sensitive or eligibility field — complete manually';
   if (control.manualReason) return String(control.manualReason);
   return '';
 }
@@ -181,9 +196,10 @@ function manualReason(control) {
 function isStandardControl(control) {
   if (control.category === 'standard') return true;
   const label = String(control.label || '');
+  const normalizedLabel = label.trim().replace(/[\s*:]+$/g, '').trim();
   return /first name|last name|full name|legal name|preferred name|email|phone|mobile|linkedin|github|portfolio|personal site|website/i.test(label)
     || /^(?:your\s+)?name$/i.test(label.trim())
-    || /^(?:country|country\/region|country of residence)$/i.test(label.trim());
+    || /^(?:country|country\/region|country of residence)$/i.test(normalizedLabel);
 }
 
 /** @param {Record<string, unknown>} control */
@@ -195,8 +211,9 @@ function shouldRecord(control) {
 function isNarrativeControl(control) {
   if (!['text', 'textarea'].includes(String(control.kind || control.type || '').toLowerCase())) return false;
   const label = String(control.label || '');
+  const nonNarrativeLabel = /\b(?:first|last|full|legal|preferred)\s+name\b|\b(?:email|phone|mobile|linkedin|github|portfolio|website|country|location|address|city|state|zip|postal|salary|compensation|authorization|sponsor(?:ship)?|visa|consent|gender|race|veteran|disabil\w*|captcha|mfa|verification|attest\w*|background|criminal|conviction|earliest|start date|availability|deadline|timeline|relocat\w*|in[- ]person|on[- ]site|onsite|remote|work from)\b/i;
   return control.category === 'question'
-    && !/first name|last name|full name|legal name|preferred name|email|phone|linkedin|github|portfolio|website|country|location|address|city|state|zip|postal|salary|compensation|authorization|sponsor|visa|consent|gender|race|veteran|disabilit|captcha|mfa|verification|attest|background|criminal|conviction|earliest|start date|availability|deadline|timeline|relocat|in[- ]person|on[- ]site|onsite|remote|work from/i.test(label);
+    && !nonNarrativeLabel.test(label);
 }
 
 /** @param {string} file */
@@ -345,7 +362,7 @@ function answerForControl(control, item, profile, ledger, options = {}) {
     };
   }
 
-  const profileValue = profileAnswer(profile, label) || profileQuestionAnswer(profile, label);
+  const profileValue = profileQuestionAnswer(profile, label) || profileAnswer(profile, label);
   if (profileValue) {
     return {
       ...profileValue,

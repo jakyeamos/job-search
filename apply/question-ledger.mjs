@@ -9,7 +9,7 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const DEFAULT_LEDGER_PATH = path.join(ROOT, 'data', 'application-question-ledger.json');
 export const QUESTION_LEDGER_SCHEMA_VERSION = 2;
 
-const SENSITIVE_RE = /authorization|visa|sponsor|relocat|salary|compensation|background|legal|degree|education|citizenship|demographic|gender|race|veteran|disab|self[-\s]?identif|criminal|conviction|consent/i;
+const SENSITIVE_RE = /authoriz|visa|sponsor|relocat|salary|compensation|background|legal|degree|education|citizenship|demographic|gender|race|veteran|disab|self[-\s]?identif|criminal|conviction|consent/i;
 const EVIDENCE_BACKED_ANSWER_STATUS = 'evidence-backed';
 const QUESTION_STOP_WORDS = new Set([
   'a', 'an', 'and', 'any', 'are', 'at', 'be', 'can', 'could', 'do', 'does', 'for', 'from',
@@ -375,9 +375,10 @@ export function recordEvidenceBackedAnswerInLedger(ledger, target, answer, optio
     ...context,
   };
   const variants = existingVariants.length
-    ? existingVariants.map((candidate) => (contextMatches(candidate) ? { ...candidate, ...variant } : candidate))
+    ? (sameContext
+      ? existingVariants.map((candidate) => (contextMatches(candidate) ? { ...candidate, ...variant } : candidate))
+      : [...existingVariants, variant])
     : [variant];
-  if (!sameContext) variants.push(variant);
 
   const topLevelConfirmed = isConfirmedAnswer(entry, entry) && entry.answerStatus === 'confirmed';
   const updated = normalizeEntry({

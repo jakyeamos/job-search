@@ -178,6 +178,57 @@ test('packet counts only nontrivial answer preparation and keeps standard fields
   }
 });
 
+test('profile evidence does not answer capability, relocation, sponsorship, or country prompts with an address', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-profile-boundaries-'));
+  try {
+    const item = {
+      id: 'packet-profile-boundaries',
+      company: 'Acme',
+      title: 'Backend Engineer',
+      applyUrl: 'https://jobs.example/acme/backend-profile-boundaries',
+      canonicalUrl: 'https://jobs.example/acme/backend-profile-boundaries',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build reliable Python and TypeScript services, APIs, data pipelines, PostgreSQL workflows, automated tests, and production systems with product and engineering partners.',
+    };
+    const packet = await buildApplicationPacket(item, {
+      inspection: {
+        url: item.applyUrl,
+        title: 'Apply — Acme',
+        heading: 'Backend Engineer',
+        formCount: 1,
+        formReady: true,
+        controls: [
+          { id: 'location', label: 'Current Location', kind: 'combobox', category: 'question', required: true, options: [] },
+          { id: 'capability', label: 'Have you worked with Salesforce integrations in an engineering capacity?', kind: 'textarea', category: 'question', required: true, options: [] },
+          { id: 'relocation', label: 'Are you open to relocation for this role?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+          { id: 'sponsorship', label: 'Will you now or in the future require visa sponsorship?', kind: 'checkbox', category: 'question', required: true, options: ['Yes', 'No'] },
+          { id: 'authorization', label: 'Are you currently authorized to work in the United States?', kind: 'checkbox', category: 'question', required: true, options: ['Yes', 'No'] },
+          { id: 'country', label: 'Country*', kind: 'combobox', category: 'question', required: true, options: [] },
+        ],
+        buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+        pages: [],
+        manualSignals: [],
+        blocked: false,
+        blockedReason: '',
+      },
+      ledgerPath: path.join(root, 'question-ledger.json'),
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.equal(packet.status, 'needs-user-input');
+    assert.equal(packet.simpleFields.find((field) => field.question === 'Current Location')?.answer, 'Buffalo, NY');
+    assert.equal(packet.questions.find((field) => field.question.startsWith('Have you worked with Salesforce'))?.status, 'unanswered');
+    assert.equal(packet.manualItems.find((field) => field.label.startsWith('Are you open to relocation'))?.reason, 'sensitive or eligibility field — complete manually');
+    assert.equal(packet.manualItems.find((field) => field.label.startsWith('Will you now or in the future'))?.reason, 'sensitive or eligibility field — complete manually');
+    assert.equal(packet.manualItems.find((field) => field.label.startsWith('Are you currently authorized'))?.reason, 'sensitive or eligibility field — complete manually');
+    assert.ok(packet.standardFields.some((field) => field.label === 'Country*'));
+    assert.equal(packet.standardFields.some((field) => field.label === 'Country*' && field.answer), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('packet blocks incomplete posting evidence instead of presenting it as ready', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-blocked-'));
   try {

@@ -9,8 +9,15 @@ import {
   buildDogfoodPlan,
   resolveDogfoodStaging,
   runLedgerDogfood,
+  summarizeLedgerDelta,
 } from '../apply/question-ledger-dogfood.mjs';
-import { DEFAULT_LEDGER_PATH, recordQuestion } from '../apply/question-ledger.mjs';
+import {
+  DEFAULT_LEDGER_PATH,
+  loadLedger,
+  recordEvidenceBackedAnswerInLedger,
+  recordQuestion,
+  saveLedger,
+} from '../apply/question-ledger.mjs';
 
 const LONG_DESCRIPTION = 'Build reliable Python and TypeScript services, APIs, data pipelines, PostgreSQL workflows, automated tests, and production systems with product and engineering partners.'.repeat(2);
 
@@ -177,4 +184,88 @@ test('run mode copies the ledger into staging and reports duplicate observations
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('promotion reports the canonical delta and evidence-backed count before mutating the snapshot', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-dogfood-promotion-'));
+  try {
+    const queuePath = path.join(root, 'queue.json');
+    const ledgerPath = path.join(root, 'ledger.json');
+    const stagingRoot = path.join(root, 'staging');
+    writeFileSync(queuePath, JSON.stringify({ items: [item('promote-a', 'ashby')] }));
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+
+    const result = await runLedgerDogfood({
+      mode: 'run',
+      queuePath,
+      sourceLedgerPath: ledgerPath,
+      stagingRoot,
+      promoteEvidence: true,
+      buildPacket: async (target, options) => {
+        const entry = recordQuestion(options.ledgerPath, 'What did you build?', {
+          company: target.company,
+          role: target.title,
+          fieldKind: 'textarea',
+          required: true,
+        });
+        const ledger = loadLedger(options.ledgerPath);
+        recordEvidenceBackedAnswerInLedger(ledger, entry.id, 'I built a documented platform.', {
+          company: target.company,
+          role: target.title,
+          scope: 'question',
+          evidenceRefs: ['cv.md'],
+        });
+        saveLedger(options.ledgerPath, ledger);
+        return {
+          ok: true,
+          status: 'ready-for-human-review',
+          questions: [{ question: 'What did you build?', answer: 'I built a documented platform.' }],
+          unresolved: [],
+          warnings: [],
+          ledger: { pendingGroups: 0 },
+          paths: { json: path.join(options.outputRoot, `${target.id}.json`) },
+        };
+      },
+    });
+
+    assert.equal(result.report.ledger.after.evidenceBacked, 1);
+    assert.equal(result.report.ledger.canonicalAfter.evidenceBacked, 1);
+    assert.equal(result.report.ledger.promotion.newEntries, 1);
+    assert.equal(result.report.ledger.promotion.entryCountDelta, 1);
+    assert.equal(result.report.staging.canonicalLedgerTouched, true);
+    const canonical = loadLedger(ledgerPath);
+    assert.equal(canonical.entries[0].answerVariants.length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('ledger delta ignores observation timestamps while retaining substantive changes', () => {
+  const before = {
+    entries: [{
+      id: 'q_timestamp',
+      question: 'What did you build?',
+      answer: null,
+      answerStatus: 'unanswered',
+      updatedAt: '2026-07-22T00:00:00.000Z',
+      contexts: [{ queueId: 'role-a', recordedAt: '2026-07-22T00:00:00.000Z' }],
+      answerVariants: [],
+    }],
+  };
+  const after = {
+    entries: [{
+      ...before.entries[0],
+      updatedAt: '2026-07-23T00:00:00.000Z',
+      contexts: [{ queueId: 'role-a', recordedAt: '2026-07-23T00:00:00.000Z' }],
+    }],
+  };
+  assert.deepEqual(summarizeLedgerDelta(before, after), {
+    newEntries: 0,
+    updatedEntries: 0,
+    unchangedExistingEntries: 1,
+    entryCountDelta: 0,
+  });
+  assert.equal(summarizeLedgerDelta(before, {
+    entries: [{ ...after.entries[0], answerStatus: 'evidence-backed', answer: 'I built it.' }],
+  }).updatedEntries, 1);
 });
