@@ -22,6 +22,7 @@ import {
 import {
   DEFAULT_LEDGER_PATH,
   findReusableAnswer,
+  isAiUsageQuestion,
   isSensitiveQuestion,
   loadLedger,
   pendingQuestions,
@@ -181,6 +182,30 @@ function profileQuestionAnswer(profile, label) {
   return null;
 }
 
+/** @param {Record<string, unknown>} profile @param {string} label */
+function profileApplicationAnswer(profile, label) {
+  if (!isAiUsageQuestion(label)) return null;
+  const configuredAnswers = profile.application_answers && typeof profile.application_answers === 'object'
+    ? /** @type {Record<string, unknown>} */ (profile.application_answers)
+    : {};
+  const configured = configuredAnswers.ai_usage && typeof configuredAnswers.ai_usage === 'object'
+    ? /** @type {Record<string, unknown>} */ (configuredAnswers.ai_usage)
+    : null;
+  const answer = String(configured?.answer || '').trim();
+  if (!answer) return null;
+  return {
+    answer,
+    source: String(configured?.source || 'profile:application_answers.ai_usage'),
+    evidenceBacked: configured?.evidenceBacked !== false,
+    answerScope: String(configured?.answerScope || 'question'),
+    answerStatus: configured?.answerStatus ? String(configured.answerStatus) : null,
+    evidenceRefs: [
+      String(configured?.source || 'profile:application_answers.ai_usage'),
+      ...(Array.isArray(configured?.evidenceRefs) ? configured.evidenceRefs.map(String) : []),
+    ].filter(Boolean),
+  };
+}
+
 /** @param {Record<string, unknown>} control */
 function manualReason(control) {
   const label = String(control.label || '');
@@ -325,6 +350,14 @@ function answerForControl(control, item, profile, ledger, options = {}) {
         confidence: reusable.confidence,
         matchedQuestion: reusable.entry.question,
       },
+    };
+  }
+
+  const applicationAnswer = profileApplicationAnswer(profile, label);
+  if (applicationAnswer) {
+    return {
+      ...applicationAnswer,
+      kind: 'evidence-backed-profile',
     };
   }
 
@@ -505,6 +538,7 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
         : resolved?.kind === 'humanized' ? 'humanized'
         : resolved?.kind === 'draft' ? 'draft'
           : resolved?.evidenceBacked === true ? 'evidence-backed'
+          : resolved?.answerStatus === 'evidence-backed' ? 'evidence-backed'
           : answer !== null ? 'confirmed' : 'unanswered';
     const field = {
       id: entry?.id || null,

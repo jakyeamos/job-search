@@ -229,6 +229,83 @@ test('profile evidence does not answer capability, relocation, sponsorship, or c
   }
 });
 
+test('AI usage variants reuse one evidence-backed profile answer', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-ai-usage-'));
+  try {
+    const ledgerPath = path.join(root, 'question-ledger.json');
+    const profilePath = path.join(root, 'application-profile.json');
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+    writeFileSync(profilePath, JSON.stringify({
+      application_answers: {
+        ai_usage: {
+          answer: 'I use AI in products and engineering workflows, with human review around the output.',
+          source: 'profile:application_answers.ai_usage',
+          answerScope: 'question',
+          evidenceBacked: true,
+          evidenceRefs: ['cv.md', 'article-digest.md'],
+        },
+      },
+    }));
+    const item = {
+      id: 'packet-ai-usage',
+      company: 'Acme',
+      title: 'Applied AI Engineer',
+      applyUrl: 'https://jobs.example/acme/applied-ai',
+      canonicalUrl: 'https://jobs.example/acme/applied-ai',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build reliable AI-enabled products and backend services with TypeScript, Python, evaluation workflows, retrieval, automated tests, and product partners.',
+    };
+    const inspection = {
+      url: item.applyUrl,
+      title: 'Apply — Acme',
+      heading: 'Applied AI Engineer',
+      formCount: 1,
+      formReady: true,
+      controls: [
+        {
+          id: 'ai-tools',
+          label: 'What AI tools are you currently using today and how are you using them?',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'ai-experiment',
+          label: 'How are you using AI today in your current role? If applicable, show us your last AI experiment.',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+      ],
+      buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+      pages: [],
+      manualSignals: [],
+      blocked: false,
+      blockedReason: '',
+    };
+    const packet = await buildApplicationPacket(item, {
+      inspection,
+      ledgerPath,
+      profilePath,
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.equal(packet.status, 'ready-for-human-review');
+    assert.equal(packet.questions.length, 2);
+    assert.deepEqual(packet.questions.map((question) => question.answer), [
+      'I use AI in products and engineering workflows, with human review around the output.',
+      'I use AI in products and engineering workflows, with human review around the output.',
+    ]);
+    assert.deepEqual(packet.questions.map((question) => question.status), ['evidence-backed', 'evidence-backed']);
+    assert.equal(packet.questions[0].id, packet.questions[1].id);
+    assert.equal(packet.ledger.canonicalQuestionCount, 1);
+    assert.equal(packet.unresolved.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('packet blocks incomplete posting evidence instead of presenting it as ready', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-blocked-'));
   try {

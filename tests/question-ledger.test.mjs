@@ -8,13 +8,17 @@ import {
   answerQuestion,
   answerTable,
   answerReference,
+  canonicalQuestionKey,
+  compactLedger,
   findReusableAnswer,
+  isAiUsageQuestion,
   isSensitiveQuestion,
   loadLedger,
   lookupAnswer,
   recordEvidenceBackedAnswerInLedger,
   pendingQuestions,
   recordQuestion,
+  saveLedger,
 } from '../apply/question-ledger.mjs';
 
 test('ledger records an unresolved form question and reuses an explicit global answer', () => {
@@ -115,6 +119,69 @@ test('different semantic questions do not collapse into one ledger entry', () =>
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('AI usage prompts share one evidence-backed question family', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-ai-usage-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const firstQuestion = 'What AI tools are you currently using today and how are you using them?';
+    const secondQuestion = 'How are you using AI today in your current role? If applicable, show us your last AI experiment.';
+    assert.equal(isAiUsageQuestion(firstQuestion), true);
+    assert.equal(isAiUsageQuestion(secondQuestion), true);
+    assert.equal(isAiUsageQuestion('Link any AI projects or open source contributions you\'re proud of'), false);
+    assert.equal(isAiUsageQuestion('Have you deployed AI agents in production, especially using LangChain?'), false);
+    assert.equal(isAiUsageQuestion('What AI creative tools do you use today and how are you using them in production?'), false);
+    assert.equal(canonicalQuestionKey(firstQuestion), 'ai usage');
+    assert.equal(canonicalQuestionKey(secondQuestion), 'ai usage');
+    const first = recordQuestion(file, firstQuestion, { fieldKind: 'textarea' });
+    const second = recordQuestion(file, secondQuestion, { fieldKind: 'textarea' });
+    assert.equal(second.id, first.id);
+    assert.deepEqual(loadLedger(file).entries[0].aliases, [secondQuestion]);
+    const ledger = loadLedger(file);
+    const promoted = recordEvidenceBackedAnswerInLedger(ledger, first.id, 'I use AI in reviewed product workflows.', {
+      scope: 'question',
+      evidenceRefs: ['cv.md', 'article-digest.md'],
+    });
+    assert.ok(promoted);
+    saveLedger(file, ledger);
+    recordQuestion(file, secondQuestion, { fieldKind: 'textarea' });
+    const persisted = loadLedger(file).entries[0];
+    assert.deepEqual(persisted.answerVariants[0].evidenceRefs, ['cv.md', 'article-digest.md']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ledger compaction migrates legacy AI usage duplicates without losing contexts', () => {
+  const firstQuestion = 'What AI tools are you currently using today and how are you using them?';
+  const secondQuestion = 'How are you using AI today in your current role? If applicable, show us your last AI experiment.';
+  const ledger = {
+    entries: [
+      {
+        id: 'q_first',
+        question: firstQuestion,
+        fieldKind: 'textarea',
+        sensitivity: 'normal',
+        contexts: [{ queueId: 'one', company: 'Acme' }, { queueId: 'two', company: 'Beta' }],
+        answer: null,
+      },
+      {
+        id: 'q_second',
+        question: secondQuestion,
+        fieldKind: 'textarea',
+        sensitivity: 'normal',
+        contexts: [{ queueId: 'three', company: 'Gamma' }],
+        answer: null,
+      },
+    ],
+  };
+  const result = compactLedger(ledger);
+  assert.equal(result.mergedCount, 1);
+  assert.equal(ledger.entries.length, 1);
+  assert.equal(ledger.entries[0].id, 'q_first');
+  assert.equal(ledger.entries[0].contexts.length, 3);
+  assert.deepEqual(ledger.entries[0].aliases, [secondQuestion]);
 });
 
 test('adapter-observed answers are not reusable until the user confirms them', () => {

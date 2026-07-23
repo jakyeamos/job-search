@@ -40,6 +40,15 @@ const QUESTION_SYNONYMS = new Map([
   ['visa', 'sponsorship'],
   ['where', 'location'],
 ]);
+const AI_TOOLS_QUESTION_RE = /\b(?:ai|llm)\s+tools?\b/i;
+const AI_DIRECT_USAGE_RE = /\b(?:use|uses|using|used)\s+(?:ai|llm)\b/i;
+const AI_USAGE_CONTEXT_RE = /\b(?:today|current(?:ly)?|role|experiment(?:s)?|production)\b/i;
+const ANSWER_STATUS_RANK = {
+  unanswered: 0,
+  unconfirmed: 1,
+  [EVIDENCE_BACKED_ANSWER_STATUS]: 2,
+  confirmed: 3,
+};
 
 /** @param {string} file */
 export function loadLedger(file = DEFAULT_LEDGER_PATH) {
@@ -148,6 +157,14 @@ export function questionId(question) {
   return `q_${createHash('sha256').update(normalizeQuestion(question).toLowerCase()).digest('hex').slice(0, 16)}`;
 }
 
+/** @param {string} question */
+export function isAiUsageQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  if (/\bcreative\b/i.test(normalized)) return false;
+  return (AI_TOOLS_QUESTION_RE.test(normalized) && /\b(?:use|uses|using|used|today|current(?:ly)?|production)\b/i.test(normalized))
+    || (AI_DIRECT_USAGE_RE.test(normalized) && AI_USAGE_CONTEXT_RE.test(normalized));
+}
+
 /**
  * Produce a conservative semantic key without changing the legacy question id.
  * Exact ids remain stable; this key only lets new observations attach to an
@@ -155,7 +172,9 @@ export function questionId(question) {
  * @param {string} question
  */
 export function canonicalQuestionKey(question) {
-  const core = normalizeQuestion(question)
+  const normalized = normalizeQuestion(question);
+  if (isAiUsageQuestion(normalized)) return 'ai usage';
+  const core = normalized
     .replace(/^yes\s*[-–—:]\s*/i, '')
     .replace(/\bplease note\b[\s\S]*$/i, '')
     .replace(/\b(?:for employment|in the united states|in the us)\b[\s\S]*$/i, '')
@@ -311,12 +330,123 @@ export function recordQuestionInLedger(ledger, question, metadata = {}) {
     answerVersion: normalizedExisting?.answerVersion || 0,
     answerStatus: normalizedExisting?.answerStatus || 'unanswered',
     answerSource: normalizedExisting?.answerSource || null,
+    evidenceRefs: Array.isArray(normalizedExisting?.evidenceRefs)
+      ? normalizedExisting.evidenceRefs
+      : Array.isArray(existing?.evidenceRefs) ? existing.evidenceRefs : [],
+    answerVariants: Array.isArray(normalizedExisting?.answerVariants)
+      ? normalizedExisting.answerVariants
+      : [],
     answeredAt: normalizedExisting?.answeredAt || null,
   });
   ledger.entries = existing
     ? ledger.entries.map((item) => (item.id === id ? entry : item))
     : [...ledger.entries, entry];
   return entry;
+}
+
+/** @param {Record<string, unknown>} entry */
+function answerStatusRank(entry) {
+  return ANSWER_STATUS_RANK[String(entry.answerStatus || 'unanswered')] || 0;
+}
+
+/** @param {Record<string, unknown>} left @param {Record<string, unknown>} right */
+function preferredLedgerEntry(left, right) {
+  const leftRank = answerStatusRank(left);
+  const rightRank = answerStatusRank(right);
+  if (rightRank !== leftRank) return rightRank > leftRank ? right : left;
+  const leftContexts = Array.isArray(left.contexts) ? left.contexts.length : 0;
+  const rightContexts = Array.isArray(right.contexts) ? right.contexts.length : 0;
+  if (rightContexts !== leftContexts) return rightContexts > leftContexts ? right : left;
+  const leftUsage = Number(left.usageCount || 0);
+  const rightUsage = Number(right.usageCount || 0);
+  return rightUsage > leftUsage ? right : left;
+}
+
+/** @param {Array<Record<string, unknown>>} values @param {(value: Record<string, unknown>) => string} keyFor */
+function uniqueObjects(values, keyFor) {
+  const seen = new Set();
+  return values.filter((value) => {
+    if (!value || typeof value !== 'object') return false;
+    const key = keyFor(value);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Collapse legacy duplicate observations that now resolve to the same
+ * conservative semantic key. Confirmed answers win over evidence-backed and
+ * unanswered entries; conflicting answer variants remain visible so the
+ * resolver can fail closed instead of silently choosing one.
+ * @param {{ entries: Array<Record<string, unknown>> }} ledger
+ * @returns {{ ledger: { entries: Array<Record<string, unknown>> }, mergedCount: number }}
+ */
+export function compactLedger(ledger) {
+  const groups = new Map();
+  let mergedCount = 0;
+  for (const rawEntry of ledger.entries || []) {
+    const entry = normalizeEntry(rawEntry);
+    const key = canonicalQuestionKey(String(entry.question || ''));
+    const groupKey = key
+      ? `${key}|${String(entry.sensitivity || 'normal')}|${fieldKindFamily(String(entry.fieldKind || ''))}`
+      : `id:${String(entry.id || '')}`;
+    const existing = groups.get(groupKey);
+    if (!existing) {
+      groups.set(groupKey, entry);
+      continue;
+    }
+
+    const primary = preferredLedgerEntry(existing, entry);
+    const secondary = primary.id === existing.id ? entry : existing;
+    const aliases = uniqueObjects([
+      ...(Array.isArray(primary.aliases) ? primary.aliases.map((value) => ({ value: String(value) })) : []),
+      ...(Array.isArray(secondary.aliases) ? secondary.aliases.map((value) => ({ value: String(value) })) : []),
+      normalizeQuestion(String(primary.question || '')) === normalizeQuestion(String(secondary.question || ''))
+        ? null
+        : { value: normalizeQuestion(String(secondary.question || '')) },
+    ].filter(Boolean), (value) => value.value.toLowerCase()).map((value) => value.value);
+    const contexts = uniqueObjects([
+      ...(Array.isArray(primary.contexts) ? primary.contexts : []),
+      ...(Array.isArray(secondary.contexts) ? secondary.contexts : []),
+    ], (value) => [value.queueId, value.url, value.company, value.role].map((item) => String(item || '')).join('|'));
+    const answerVariants = uniqueObjects([
+      ...answerVariantsForMerge(primary),
+      ...answerVariantsForMerge(secondary),
+    ], (value) => `${answerContextKey(value)}|${String(value.answer || '')}`);
+    const updatedAt = [primary.updatedAt, secondary.updatedAt]
+      .map((value) => String(value || ''))
+      .sort()
+      .pop() || primary.updatedAt || secondary.updatedAt || null;
+    const merged = normalizeEntry({
+      ...primary,
+      aliases,
+      contexts,
+      options: [...new Set([
+        ...(Array.isArray(primary.options) ? primary.options.map(String) : []),
+        ...(Array.isArray(secondary.options) ? secondary.options.map(String) : []),
+      ].filter(Boolean))],
+      required: primary.required === true || secondary.required === true,
+      usageCount: Number(primary.usageCount || 0) + Number(secondary.usageCount || 0),
+      updatedAt,
+      answerVariants,
+      questionKey: canonicalQuestionKey(String(primary.question || '')),
+      questionFingerprint: questionFingerprint(String(primary.question || '')),
+    });
+    groups.set(groupKey, merged);
+    mergedCount += 1;
+  }
+  ledger.entries = [...groups.values()].map((entry) => ({
+    ...entry,
+    questionKey: canonicalQuestionKey(String(entry.question || '')),
+    questionFingerprint: questionFingerprint(String(entry.question || '')),
+  }));
+  return { ledger, mergedCount };
+}
+
+/** @param {Record<string, unknown>} entry */
+function answerVariantsForMerge(entry) {
+  return answerVariants(entry).filter((variant) => variant && variant.answer !== null && variant.answer !== undefined && variant.answer !== '');
 }
 
 /**
@@ -410,6 +540,7 @@ export function recordEvidenceBackedAnswerInLedger(ledger, target, answer, optio
  * @returns {{ entries: Array<Record<string, unknown>> }}
  */
 export function mergeLedgerObservations(target, source) {
+  compactLedger(target);
   for (const incoming of source.entries || []) {
     const observed = recordQuestionInLedger(target, String(incoming.question || ''), {
       company: incoming.company,
@@ -459,6 +590,7 @@ export function mergeLedgerObservations(target, source) {
       });
     }
   }
+  compactLedger(target);
   return target;
 }
 
@@ -704,6 +836,11 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
     printLedger(file);
   } else if (command === 'pending') {
     printPending(file);
+  } else if (command === 'compact') {
+    const ledger = loadLedger(file);
+    const result = compactLedger(ledger);
+    saveLedger(file, ledger);
+    console.log(`Compacted ${result.mergedCount} duplicate question group${result.mergedCount === 1 ? '' : 's'}.`);
   } else if (command === 'answer') {
     const target = process.argv[3];
     const answer = process.argv[4];
@@ -722,7 +859,7 @@ if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
     });
     console.log(`Answered ${entry.id} (${entry.scope}).`);
   } else {
-    console.error('Usage: node apply/question-ledger.mjs list|pending|answer');
+    console.error('Usage: node apply/question-ledger.mjs list|pending|compact|answer');
     process.exitCode = 1;
   }
 }
