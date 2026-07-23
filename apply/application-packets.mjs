@@ -22,7 +22,10 @@ import {
 import {
   DEFAULT_LEDGER_PATH,
   findReusableAnswer,
+  isAgenticSystemsQuestion,
   isAiUsageQuestion,
+  isProductionSystemQuestion,
+  isPythonProductionQuestion,
   isSensitiveQuestion,
   loadLedger,
   pendingQuestions,
@@ -184,24 +187,35 @@ function profileQuestionAnswer(profile, label) {
 
 /** @param {Record<string, unknown>} profile @param {string} label */
 function profileApplicationAnswer(profile, label) {
-  if (!isAiUsageQuestion(label)) return null;
+  const answerKey = isAiUsageQuestion(label)
+    ? 'ai_usage'
+    : isProductionSystemQuestion(label)
+      ? 'production_system'
+      : isAgenticSystemsQuestion(label)
+        ? 'agentic_systems'
+        : isPythonProductionQuestion(label)
+          ? 'python_production'
+          : '';
+  if (!answerKey) return null;
   const configuredAnswers = profile.application_answers && typeof profile.application_answers === 'object'
     ? /** @type {Record<string, unknown>} */ (profile.application_answers)
     : {};
-  const configured = configuredAnswers.ai_usage && typeof configuredAnswers.ai_usage === 'object'
-    ? /** @type {Record<string, unknown>} */ (configuredAnswers.ai_usage)
+  const configured = configuredAnswers[answerKey] && typeof configuredAnswers[answerKey] === 'object'
+    ? /** @type {Record<string, unknown>} */ (configuredAnswers[answerKey])
     : null;
   const answer = String(configured?.answer || '').trim();
   if (!answer) return null;
   return {
     answer,
-    source: String(configured?.source || 'profile:application_answers.ai_usage'),
-    evidenceBacked: configured?.evidenceBacked !== false,
-    answerScope: String(configured?.answerScope || 'question'),
+    source: String(configured?.source || `profile:application_answers.${answerKey}`),
+    evidenceBacked: configured?.evidenceBacked !== false && configured?.evidence_backed !== false,
+    answerScope: String(configured?.answerScope || configured?.answer_scope || 'question'),
     answerStatus: configured?.answerStatus ? String(configured.answerStatus) : null,
     evidenceRefs: [
-      String(configured?.source || 'profile:application_answers.ai_usage'),
-      ...(Array.isArray(configured?.evidenceRefs) ? configured.evidenceRefs.map(String) : []),
+      String(configured?.source || `profile:application_answers.${answerKey}`),
+      ...(Array.isArray(configured?.evidenceRefs)
+        ? configured.evidenceRefs.map(String)
+        : Array.isArray(configured?.evidence_refs) ? configured.evidence_refs.map(String) : []),
     ].filter(Boolean),
   };
 }

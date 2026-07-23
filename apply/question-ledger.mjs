@@ -43,6 +43,14 @@ const QUESTION_SYNONYMS = new Map([
 const AI_TOOLS_QUESTION_RE = /\b(?:ai|llm)\s+tools?\b/i;
 const AI_DIRECT_USAGE_RE = /\b(?:use|uses|using|used)\s+(?:ai|llm)\b/i;
 const AI_USAGE_CONTEXT_RE = /\b(?:today|current(?:ly)?|role|experiment(?:s)?|production)\b/i;
+const PRODUCTION_SYSTEM_RE = /\b(?:production|live|shipped)\b/i;
+const END_USER_RE = /\bend[-\s]?user[-\s]?facing\b|\bcustomer[-\s]?facing\b|\buser[-\s]?facing\b/i;
+const OWNERSHIP_RE = /\b(?:owned|led|built|responsible)\b/i;
+const END_TO_END_RE = /\bend[-\s]?to[-\s]?end\b/i;
+const AGENTIC_SYSTEM_RE = /\bagentic\s+systems?\b/i;
+const AGENTIC_EXPERIENCE_RE = /\b(?:hands[-\s]?on|build(?:ing)?|evaluat(?:e|ed|ing))\b/i;
+const PYTHON_PROJECT_RE = /\bpython\b[\s\S]{0,80}\b(?:project|system|application|service|product)\b|\b(?:project|system|application|service|product)\b[\s\S]{0,80}\bpython\b/i;
+const PRODUCTION_SHIPPING_RE = /\b(?:production|shipped|shipping|deployed|deployment|live)\b/i;
 const ANSWER_STATUS_RANK = {
   unanswered: 0,
   unconfirmed: 1,
@@ -165,6 +173,27 @@ export function isAiUsageQuestion(question) {
     || (AI_DIRECT_USAGE_RE.test(normalized) && AI_USAGE_CONTEXT_RE.test(normalized));
 }
 
+/** @param {string} question */
+export function isProductionSystemQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  return PRODUCTION_SYSTEM_RE.test(normalized)
+    && END_USER_RE.test(normalized)
+    && OWNERSHIP_RE.test(normalized)
+    && END_TO_END_RE.test(normalized);
+}
+
+/** @param {string} question */
+export function isAgenticSystemsQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  return AGENTIC_SYSTEM_RE.test(normalized) && AGENTIC_EXPERIENCE_RE.test(normalized);
+}
+
+/** @param {string} question */
+export function isPythonProductionQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  return PYTHON_PROJECT_RE.test(normalized) && PRODUCTION_SHIPPING_RE.test(normalized);
+}
+
 /**
  * Produce a conservative semantic key without changing the legacy question id.
  * Exact ids remain stable; this key only lets new observations attach to an
@@ -174,6 +203,9 @@ export function isAiUsageQuestion(question) {
 export function canonicalQuestionKey(question) {
   const normalized = normalizeQuestion(question);
   if (isAiUsageQuestion(normalized)) return 'ai usage';
+  if (isProductionSystemQuestion(normalized)) return 'production end-user system';
+  if (isAgenticSystemsQuestion(normalized)) return 'agentic systems experience';
+  if (isPythonProductionQuestion(normalized)) return 'python production project';
   const core = normalized
     .replace(/^yes\s*[-–—:]\s*/i, '')
     .replace(/\bplease note\b[\s\S]*$/i, '')

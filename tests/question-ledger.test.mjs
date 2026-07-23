@@ -11,7 +11,10 @@ import {
   canonicalQuestionKey,
   compactLedger,
   findReusableAnswer,
+  isAgenticSystemsQuestion,
   isAiUsageQuestion,
+  isProductionSystemQuestion,
+  isPythonProductionQuestion,
   isSensitiveQuestion,
   loadLedger,
   lookupAnswer,
@@ -151,6 +154,22 @@ test('AI usage prompts share one evidence-backed question family', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('production, agentic, and Python prompts resolve to distinct evidence-backed families', () => {
+  const productionQuestion = 'Describe a production, end-user-facing system you owned end-to-end while working closely with Product and UX.';
+  const agenticQuestion = 'Do you have hands-on experience building or evaluating agentic systems?';
+  const pythonQuestion = 'Please share an example of a Python project you shipped to production.';
+
+  assert.equal(isProductionSystemQuestion(productionQuestion), true);
+  assert.equal(isAgenticSystemsQuestion(agenticQuestion), true);
+  assert.equal(isPythonProductionQuestion(pythonQuestion), true);
+  assert.equal(canonicalQuestionKey(productionQuestion), 'production end-user system');
+  assert.equal(canonicalQuestionKey(agenticQuestion), 'agentic systems experience');
+  assert.equal(canonicalQuestionKey(pythonQuestion), 'python production project');
+  assert.equal(isAgenticSystemsQuestion('Tell us about your experience with AI or agentic systems.'), false);
+  assert.equal(isAgenticSystemsQuestion('Have you deployed AI agents in production, especially using LangChain?'), false);
+  assert.equal(isPythonProductionQuestion('How many years of Python experience do you have?'), false);
 });
 
 test('ledger compaction migrates legacy AI usage duplicates without losing contexts', () => {

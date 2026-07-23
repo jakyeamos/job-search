@@ -306,6 +306,116 @@ test('AI usage variants reuse one evidence-backed profile answer', async () => {
   }
 });
 
+test('experience prompts reuse distinct evidence-backed profile answers', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-experience-answers-'));
+  try {
+    const ledgerPath = path.join(root, 'question-ledger.json');
+    const profilePath = path.join(root, 'application-profile.json');
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+    writeFileSync(profilePath, JSON.stringify({
+      application_answers: {
+        production_system: {
+          answer: 'I built and owned BidCamp end to end as a live closed-beta SaaS.',
+          source: 'profile:application_answers.production_system',
+          answer_scope: 'question',
+          evidence_backed: true,
+          evidence_refs: ['cv.md', '/Users/jakyeamos/projects/BidCamp/README.md'],
+        },
+        agentic_systems: {
+          answer: 'Yes. I build and evaluate observable, review-gated agentic systems.',
+          source: 'profile:application_answers.agentic_systems',
+          answer_scope: 'question',
+          evidence_backed: true,
+          evidence_refs: ['cv.md', '/Users/jakyeamos/projects/AIOS/README.md'],
+        },
+        python_production: {
+          answer: 'Quality Runner is my clearest published Python CLI and MCP example.',
+          source: 'profile:application_answers.python_production',
+          answer_scope: 'question',
+          evidence_backed: true,
+          evidence_refs: ['cv.md', '/Users/jakyeamos/projects/quality-runner/README.md'],
+        },
+      },
+    }));
+    const item = {
+      id: 'packet-experience-answers',
+      company: 'Acme',
+      title: 'Applied AI Engineer',
+      applyUrl: 'https://jobs.example/acme/applied-ai-experience',
+      canonicalUrl: 'https://jobs.example/acme/applied-ai-experience',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build reliable AI-enabled products and Python services with evaluation workflows, automated tests, observability, and product partners across the full delivery lifecycle.',
+    };
+    const inspection = {
+      url: item.applyUrl,
+      title: 'Apply — Acme',
+      heading: 'Applied AI Engineer',
+      formCount: 1,
+      formReady: true,
+      controls: [
+        {
+          id: 'production-system',
+          label: 'Describe a production, end-user-facing system you owned end-to-end while working closely with Product and UX.',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'agentic-systems',
+          label: 'Do you have hands-on experience building or evaluating agentic systems?',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'python-production',
+          label: 'Please share an example of a Python project you shipped to production.',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+      ],
+      buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+      pages: [],
+      manualSignals: [],
+      blocked: false,
+      blockedReason: '',
+    };
+    const packet = await buildApplicationPacket(item, {
+      inspection,
+      ledgerPath,
+      profilePath,
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.equal(packet.status, 'ready-for-human-review');
+    assert.equal(packet.questions.length, 3);
+    assert.deepEqual(packet.questions.map((question) => question.status), ['evidence-backed', 'evidence-backed', 'evidence-backed']);
+    assert.equal(packet.unresolved.length, 0);
+    assert.deepEqual(packet.questions.map((question) => question.answer), [
+      'I built and owned BidCamp end to end as a live closed-beta SaaS.',
+      'Yes. I build and evaluate observable, review-gated agentic systems.',
+      'Quality Runner is my clearest published Python CLI and MCP example.',
+    ]);
+    assert.deepEqual(packet.questions.map((question) => question.source), [
+      'profile:application_answers.production_system',
+      'profile:application_answers.agentic_systems',
+      'profile:application_answers.python_production',
+    ]);
+    assert.deepEqual(packet.questions.map((question) => question.provenance.evidenceRefs), [
+      ['profile:application_answers.production_system', 'cv.md', '/Users/jakyeamos/projects/BidCamp/README.md'],
+      ['profile:application_answers.agentic_systems', 'cv.md', '/Users/jakyeamos/projects/AIOS/README.md'],
+      ['profile:application_answers.python_production', 'cv.md', '/Users/jakyeamos/projects/quality-runner/README.md'],
+    ]);
+    assert.equal(packet.questions[0].id === packet.questions[1].id, false);
+    assert.equal(packet.questions[1].id === packet.questions[2].id, false);
+    assert.equal(packet.ledger.canonicalQuestionCount, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('packet blocks incomplete posting evidence instead of presenting it as ready', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-blocked-'));
   try {
