@@ -13,9 +13,12 @@ import {
   findReusableAnswer,
   isAgenticSystemsQuestion,
   isAiUsageQuestion,
+  isCloudInfrastructureQuestion,
+  isCustomerDeliveryQuestion,
   isProductionSystemQuestion,
   isPythonProductionQuestion,
   isSensitiveQuestion,
+  isTechnicalFoundationsQuestion,
   loadLedger,
   lookupAnswer,
   recordEvidenceBackedAnswerInLedger,
@@ -156,19 +159,34 @@ test('AI usage prompts share one evidence-backed question family', () => {
   }
 });
 
-test('production, agentic, and Python prompts resolve to distinct evidence-backed families', () => {
+test('experience prompts resolve to distinct evidence-backed families', () => {
   const productionQuestion = 'Describe a production, end-user-facing system you owned end-to-end while working closely with Product and UX.';
   const agenticQuestion = 'Do you have hands-on experience building or evaluating agentic systems?';
   const pythonQuestion = 'Please share an example of a Python project you shipped to production.';
+  const customerQuestion = 'Have you built customer-facing demos or proof-of-concepts?';
+  const customerPocQuestion = 'Do you have experience working directly with customers during POCs, architecture reviews, and technical evaluations?';
+  const foundationsQuestion = 'Do you have strong Python, JavaScript and systems fundamentals?';
+  const cloudQuestion = 'Do you have experience with cloud environments, containers, and basic Kubernetes?';
 
   assert.equal(isProductionSystemQuestion(productionQuestion), true);
   assert.equal(isAgenticSystemsQuestion(agenticQuestion), true);
   assert.equal(isPythonProductionQuestion(pythonQuestion), true);
+  assert.equal(isCustomerDeliveryQuestion(customerQuestion), true);
+  assert.equal(isCustomerDeliveryQuestion(customerPocQuestion), true);
+  assert.equal(isTechnicalFoundationsQuestion(foundationsQuestion), true);
+  assert.equal(isCloudInfrastructureQuestion(cloudQuestion), true);
   assert.equal(canonicalQuestionKey(productionQuestion), 'production end-user system');
   assert.equal(canonicalQuestionKey(agenticQuestion), 'agentic systems experience');
   assert.equal(canonicalQuestionKey(pythonQuestion), 'python production project');
+  assert.equal(canonicalQuestionKey(customerQuestion), 'customer delivery experience');
+  assert.equal(canonicalQuestionKey(foundationsQuestion), 'technical foundations');
+  assert.equal(canonicalQuestionKey(cloudQuestion), 'cloud and container experience');
   assert.equal(isAgenticSystemsQuestion('Tell us about your experience with AI or agentic systems.'), false);
-  assert.equal(isAgenticSystemsQuestion('Have you deployed AI agents in production, especially using LangChain?'), false);
+  assert.equal(isAgenticSystemsQuestion('Have you deployed AI agents in production, especially using LangChain?'), true);
+  assert.equal(isProductionSystemQuestion('Have you shipped and operated production software?'), true);
+  assert.equal(isProductionSystemQuestion('Have you built software?'), false);
+  assert.equal(isAgenticSystemsQuestion('Have you designed agent-based or LLM-powered applications?'), true);
+  assert.equal(isTechnicalFoundationsQuestion('How many years of Python experience do you have?'), false);
   assert.equal(isPythonProductionQuestion('How many years of Python experience do you have?'), false);
 });
 

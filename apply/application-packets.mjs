@@ -22,10 +22,13 @@ import {
 import {
   DEFAULT_LEDGER_PATH,
   findReusableAnswer,
+  isCloudInfrastructureQuestion,
+  isCustomerDeliveryQuestion,
   isAgenticSystemsQuestion,
   isAiUsageQuestion,
   isProductionSystemQuestion,
   isPythonProductionQuestion,
+  isTechnicalFoundationsQuestion,
   isSensitiveQuestion,
   loadLedger,
   pendingQuestions,
@@ -144,6 +147,21 @@ function isCurrentLocationPrompt(label) {
     || /\b(?:where|what)\s+is\s+your\s+specific\s+working\s+location\b/i.test(text);
 }
 
+/** @param {string} label */
+function isRecentEmployerPrompt(label) {
+  return /\b(?:most recent employer|current employer|current(?: or most recent)? company|most recent company)\b/i.test(label);
+}
+
+/** @param {string} label */
+function isRecentTitlePrompt(label) {
+  return /\b(?:most recent job title|current job title|most recent title|current title)\b/i.test(label);
+}
+
+/** @param {string} label */
+function isStartDatePrompt(label) {
+  return /\b(?:earliest.*(?:join|start)|(?:date|when).*join|start date|notice period|available to (?:start|join)|when.*(?:start|join))\b/i.test(label);
+}
+
 /** @param {Record<string, unknown>} profile @param {string} label */
 function profileAnswer(profile, label) {
   const text = label.toLowerCase();
@@ -182,6 +200,34 @@ function profileQuestionAnswer(profile, label) {
   if (/sponsor|require .*(petition|immigration)|file a petition|immigration status|nonimmigrant|visa status/.test(text)) {
     return { answer: authorization.requires_sponsorship ? 'Yes' : 'No', source: 'profile:work_authorization.requires_sponsorship', sensitive: true };
   }
+  if (isRecentEmployerPrompt(label)) {
+    const experiences = Array.isArray(profile.work_experience) ? profile.work_experience : [];
+    const current = experiences.find((experience) => experience && experience.current === true);
+    const prior = experiences.find((experience) => experience && experience.current !== true && experience.employer);
+    if (current?.employer) {
+      return {
+        answer: `Self-employed (${String(current.employer)})${prior?.employer ? `; prior employer: ${String(prior.employer)}.` : '.'}`,
+        source: 'profile:work_experience',
+      };
+    }
+  }
+  if (isRecentTitlePrompt(label)) {
+    const current = Array.isArray(profile.work_experience)
+      ? profile.work_experience.find((experience) => experience && experience.current === true)
+      : null;
+    if (current?.title) return { answer: String(current.title), source: 'profile:work_experience' };
+  }
+  if (isStartDatePrompt(label)) {
+    const answers = profile.application_answers && typeof profile.application_answers === 'object'
+      ? /** @type {Record<string, unknown>} */ (profile.application_answers)
+      : {};
+    const availability = answers.availability && typeof answers.availability === 'object'
+      ? /** @type {Record<string, unknown>} */ (answers.availability)
+      : null;
+    if (availability?.answer) {
+      return { answer: String(availability.answer), source: String(availability.source || 'profile:application_answers.availability') };
+    }
+  }
   return null;
 }
 
@@ -189,13 +235,25 @@ function profileQuestionAnswer(profile, label) {
 function profileApplicationAnswer(profile, label) {
   const answerKey = isAiUsageQuestion(label)
     ? 'ai_usage'
-    : isProductionSystemQuestion(label)
-      ? 'production_system'
-      : isAgenticSystemsQuestion(label)
-        ? 'agentic_systems'
-        : isPythonProductionQuestion(label)
-          ? 'python_production'
-          : '';
+    : isAgenticSystemsQuestion(label)
+      ? 'agentic_systems'
+      : isCustomerDeliveryQuestion(label)
+        ? 'customer_delivery'
+        : isTechnicalFoundationsQuestion(label)
+          ? 'technical_foundations'
+          : isCloudInfrastructureQuestion(label)
+            ? 'cloud_infrastructure'
+            : isProductionSystemQuestion(label)
+              ? 'production_system'
+              : isPythonProductionQuestion(label)
+                ? 'python_production'
+                : isRecentEmployerPrompt(label)
+                  ? 'most_recent_employer'
+                  : isRecentTitlePrompt(label)
+                    ? 'most_recent_job_title'
+                    : isStartDatePrompt(label)
+                      ? 'availability'
+                      : '';
   if (!answerKey) return null;
   const configuredAnswers = profile.application_answers && typeof profile.application_answers === 'object'
     ? /** @type {Record<string, unknown>} */ (profile.application_answers)

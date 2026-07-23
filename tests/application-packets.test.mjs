@@ -416,6 +416,184 @@ test('experience prompts reuse distinct evidence-backed profile answers', async 
   }
 });
 
+test('corrected application answers resolve experience, identity, and availability prompts', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-corrected-answers-'));
+  try {
+    const ledgerPath = path.join(root, 'question-ledger.json');
+    const profilePath = path.join(root, 'application-profile.json');
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+    writeFileSync(profilePath, JSON.stringify({
+      application_answers: {
+        agentic_systems: {
+          answer: 'Yes. I have designed and built review-gated LLM-powered and agentic systems.',
+          source: 'profile:application_answers.agentic_systems',
+          evidence_backed: true,
+          evidence_refs: ['cv.md', 'config/project-accomplishment-ledger.json'],
+        },
+        production_system: {
+          answer: 'Yes. I have shipped and operated live production software, including BidCamp.',
+          source: 'profile:application_answers.production_system',
+          evidence_backed: true,
+          evidence_refs: ['cv.md', '/Users/jakyeamos/projects/BidCamp/README.md'],
+        },
+        customer_delivery: {
+          answer: 'Yes. I have built customer-facing demos and proof-of-concepts for client and startup work.',
+          source: 'profile:application_answers.customer_delivery',
+          evidence_backed: true,
+          evidence_refs: ['cv.md', 'config/project-accomplishment-ledger.json'],
+        },
+        technical_foundations: {
+          answer: 'Yes. I have strong Python, JavaScript, and systems fundamentals across product and backend work.',
+          source: 'profile:application_answers.technical_foundations',
+          evidence_backed: true,
+          evidence_refs: ['cv.md', 'article-digest.md'],
+        },
+        cloud_infrastructure: {
+          answer: 'Yes. I have cloud and Docker experience plus working knowledge of basic Kubernetes concepts.',
+          source: 'profile:application_answers.cloud_infrastructure',
+          answer_status: 'confirmed',
+          evidence_backed: false,
+          evidence_refs: ['cv.md'],
+        },
+        most_recent_employer: {
+          answer: 'Self-employed / Amazon',
+          source: 'profile:application_answers.most_recent_employer',
+          answer_status: 'confirmed',
+          evidence_backed: false,
+          evidence_refs: ['cv.md'],
+        },
+        most_recent_job_title: {
+          answer: 'Software Development Engineer',
+          source: 'profile:application_answers.most_recent_job_title',
+          answer_status: 'confirmed',
+          evidence_backed: false,
+          evidence_refs: ['cv.md'],
+        },
+        availability: {
+          answer: 'Soon (as soon as possible)',
+          source: 'profile:application_answers.availability',
+          answer_status: 'confirmed',
+          evidence_backed: false,
+          evidence_refs: ['config/profile.yml'],
+        },
+      },
+    }));
+    const item = {
+      id: 'packet-corrected-answers',
+      company: 'Acme',
+      title: 'Applied AI Engineer',
+      applyUrl: 'https://jobs.example/acme/applied-ai-corrected',
+      canonicalUrl: 'https://jobs.example/acme/applied-ai-corrected',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build reliable AI-enabled products with Python, JavaScript, systems design, Docker, cloud services, and production operations.',
+    };
+    const inspection = {
+      url: item.applyUrl,
+      title: 'Apply — Acme',
+      heading: 'Applied AI Engineer',
+      formCount: 1,
+      formReady: true,
+      controls: [
+        {
+          id: 'agentic-systems',
+          label: 'Have you designed agent-based or LLM-powered applications?',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'production-software',
+          label: 'Have you shipped and operated production software?',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'customer-delivery',
+          label: 'Have you built customer-facing demos or proof-of-concepts?',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'technical-foundations',
+          label: 'Do you have strong Python, JavaScript and systems fundamentals?',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'cloud-infrastructure',
+          label: 'Do you have experience with cloud environments, containers, and basic Kubernetes?',
+          kind: 'textarea',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'most-recent-employer',
+          label: 'Most Recent Employer',
+          kind: 'text',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'most-recent-title',
+          label: 'Most Recent Job Title',
+          kind: 'text',
+          category: 'question',
+          required: true,
+        },
+        {
+          id: 'start-date',
+          label: 'What is the earliest date you can join us?',
+          kind: 'text',
+          category: 'question',
+          required: true,
+        },
+      ],
+      buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+      pages: [],
+      manualSignals: [],
+      blocked: false,
+      blockedReason: '',
+    };
+    const packet = await buildApplicationPacket(item, {
+      inspection,
+      ledgerPath,
+      profilePath,
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    assert.equal(packet.status, 'ready-for-human-review');
+    assert.equal(packet.questions.length, 7);
+    assert.equal(packet.simpleFields.length, 1);
+    assert.equal(packet.unresolved.length, 0);
+    assert.deepEqual(packet.questions.map((question) => question.status), [
+      'evidence-backed',
+      'evidence-backed',
+      'evidence-backed',
+      'evidence-backed',
+      'confirmed',
+      'confirmed',
+      'confirmed',
+    ]);
+    assert.equal(packet.simpleFields[0].answer, 'Soon (as soon as possible)');
+    assert.equal(packet.simpleFields[0].status, 'confirmed');
+    assert.deepEqual(packet.questions.map((question) => question.answer), [
+      'Yes. I have designed and built review-gated LLM-powered and agentic systems.',
+      'Yes. I have shipped and operated live production software, including BidCamp.',
+      'Yes. I have built customer-facing demos and proof-of-concepts for client and startup work.',
+      'Yes. I have strong Python, JavaScript, and systems fundamentals across product and backend work.',
+      'Yes. I have cloud and Docker experience plus working knowledge of basic Kubernetes concepts.',
+      'Self-employed / Amazon',
+      'Software Development Engineer',
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('packet blocks incomplete posting evidence instead of presenting it as ready', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-blocked-'));
   try {

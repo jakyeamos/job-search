@@ -47,10 +47,18 @@ const PRODUCTION_SYSTEM_RE = /\b(?:production|live|shipped)\b/i;
 const END_USER_RE = /\bend[-\s]?user[-\s]?facing\b|\bcustomer[-\s]?facing\b|\buser[-\s]?facing\b/i;
 const OWNERSHIP_RE = /\b(?:owned|led|built|responsible)\b/i;
 const END_TO_END_RE = /\bend[-\s]?to[-\s]?end\b/i;
-const AGENTIC_SYSTEM_RE = /\bagentic\s+systems?\b/i;
-const AGENTIC_EXPERIENCE_RE = /\b(?:hands[-\s]?on|build(?:ing)?|evaluat(?:e|ed|ing))\b/i;
+const PRODUCTION_SOFTWARE_RE = /\b(?:software|system|application|service|product|code)\b/i;
+const PRODUCTION_SOFTWARE_EXPERIENCE_RE = /\b(?:ship(?:ped|ping)?|operat(?:e|ed|ing)|deploy(?:ed|ing)?|production|live)\b/i;
+const AGENTIC_SYSTEM_RE = /\b(?:agentic\s+systems?|agent[-\s]?based|llm[-\s]?powered|large language model(?:[-\s]?powered)?|ai agents?)\b/i;
+const AGENTIC_EXPERIENCE_RE = /\b(?:hands[-\s]?on|build(?:ing|t)?|built|design(?:ed|ing)?|develop(?:ed|ing)?|evaluat(?:e|ed|ing)|deploy(?:ed|ing)?|operat(?:e|ed|ing)|use(?:d|ing)?|workflow(?:s)?|production)\b/i;
 const PYTHON_PROJECT_RE = /\bpython\b[\s\S]{0,80}\b(?:project|system|application|service|product)\b|\b(?:project|system|application|service|product)\b[\s\S]{0,80}\bpython\b/i;
 const PRODUCTION_SHIPPING_RE = /\b(?:production|shipped|shipping|deployed|deployment|live)\b/i;
+const CUSTOMER_DELIVERY_RE = /\b(?:customers?|clients?|prospects?)\b/i;
+const CUSTOMER_DELIVERY_EXPERIENCE_RE = /\b(?:demo(?:s)?|proof[-\s]?of[-\s]?concept(?:s)?|poc(?:s)?|architecture\s+reviews?|technical\s+evaluations?|customer[-\s]?facing|worked\s+directly)\b/i;
+const TECHNICAL_FOUNDATIONS_TERM_RE = /\b(?:python|javascript|typescript|systems?)\b/gi;
+const TECHNICAL_FOUNDATIONS_EXPERIENCE_RE = /\b(?:fundamentals?|strong|experience|proficien(?:t|cy)|skills?|knowledge)\b/i;
+const CLOUD_INFRASTRUCTURE_RE = /\b(?:cloud|aws|gcp|azure|docker|kubernetes|k8s|containers?)\b/i;
+const CLOUD_INFRASTRUCTURE_EXPERIENCE_RE = /\b(?:experience|familiar|knowledge|concepts?|worked|used|proficien(?:t|cy)|skills?)\b/i;
 const ANSWER_STATUS_RANK = {
   unanswered: 0,
   unconfirmed: 1,
@@ -176,10 +184,13 @@ export function isAiUsageQuestion(question) {
 /** @param {string} question */
 export function isProductionSystemQuestion(question) {
   const normalized = normalizeQuestion(question);
-  return PRODUCTION_SYSTEM_RE.test(normalized)
+  return (PRODUCTION_SYSTEM_RE.test(normalized)
     && END_USER_RE.test(normalized)
     && OWNERSHIP_RE.test(normalized)
-    && END_TO_END_RE.test(normalized);
+    && END_TO_END_RE.test(normalized))
+    || (PRODUCTION_SOFTWARE_RE.test(normalized)
+      && PRODUCTION_SOFTWARE_EXPERIENCE_RE.test(normalized)
+      && /\b(?:owned|led|built|responsible|shipped|operated|deployed)\b/i.test(normalized));
 }
 
 /** @param {string} question */
@@ -194,6 +205,26 @@ export function isPythonProductionQuestion(question) {
   return PYTHON_PROJECT_RE.test(normalized) && PRODUCTION_SHIPPING_RE.test(normalized);
 }
 
+/** @param {string} question */
+export function isCustomerDeliveryQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  return CUSTOMER_DELIVERY_RE.test(normalized) && CUSTOMER_DELIVERY_EXPERIENCE_RE.test(normalized);
+}
+
+/** @param {string} question */
+export function isTechnicalFoundationsQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  const terms = normalized.match(TECHNICAL_FOUNDATIONS_TERM_RE) || [];
+  return new Set(terms.map((term) => term.toLowerCase())).size >= 2
+    && TECHNICAL_FOUNDATIONS_EXPERIENCE_RE.test(normalized);
+}
+
+/** @param {string} question */
+export function isCloudInfrastructureQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  return CLOUD_INFRASTRUCTURE_RE.test(normalized) && CLOUD_INFRASTRUCTURE_EXPERIENCE_RE.test(normalized);
+}
+
 /**
  * Produce a conservative semantic key without changing the legacy question id.
  * Exact ids remain stable; this key only lets new observations attach to an
@@ -203,8 +234,11 @@ export function isPythonProductionQuestion(question) {
 export function canonicalQuestionKey(question) {
   const normalized = normalizeQuestion(question);
   if (isAiUsageQuestion(normalized)) return 'ai usage';
-  if (isProductionSystemQuestion(normalized)) return 'production end-user system';
   if (isAgenticSystemsQuestion(normalized)) return 'agentic systems experience';
+  if (isCustomerDeliveryQuestion(normalized)) return 'customer delivery experience';
+  if (isTechnicalFoundationsQuestion(normalized)) return 'technical foundations';
+  if (isCloudInfrastructureQuestion(normalized)) return 'cloud and container experience';
+  if (isProductionSystemQuestion(normalized)) return 'production end-user system';
   if (isPythonProductionQuestion(normalized)) return 'python production project';
   const core = normalized
     .replace(/^yes\s*[-–—:]\s*/i, '')
