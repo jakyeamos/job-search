@@ -98,7 +98,7 @@
       "id": "research-domain-writing",
       "name": "Research Domain Writing",
       "kind": "published-tool",
-      "status": "published PyPI v0.1.0 package; v0.2.0 release candidate on dev",
+      "status": "published PyPI v0.1.0 package; v0.3.0 release candidate on dev",
       "visibility": "public",
       "approved": true,
       "priority": 8,
