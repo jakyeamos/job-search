@@ -70,5 +70,5 @@ test('queue refresh preserves imported discovery evidence and renders email cand
   assert.equal(state.items[0].companyWebsite, 'https://example.ai');
   const markdown = renderQueueMarkdown({ ...state, items: [{ ...state.items[0], selectedForToday: true, queueRank: 1 }] });
   assert.match(markdown, /ada@example\.ai/);
-  assert.match(markdown, /review-only hypothesis/);
+  assert.match(markdown, /unverified convention hypothesis/);
 });

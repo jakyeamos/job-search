@@ -70,7 +70,7 @@ Queue state is kept in the local ignored files `data/job-queue.json` and
 Every non-dry-run `queue.mjs refresh` now runs the bounded `discover-queue`
 pass before any existing outreach processing. It attaches a cached discovery
 snapshot to each attempted queue item, including public and first-party contact
-evidence, observed employer conventions, and review-only email hypotheses; the
+evidence, observed employer conventions, and unverified email hypotheses; the
 queue UI and Markdown queue render the same snapshot. Application selection is
 controlled by `--limit` (the UI and application flow use 6), while contact
 discovery has its own `--discovery-limit` batch (default and safety ceiling 20).
@@ -78,7 +78,7 @@ Selected roles are tried first, then roles without a discovery snapshot, and
 remaining due roles stay queued for a later refresh. The pass never sends email
 or marks a role applied. Imported evidence is reused when an application record
 is prepared, followed by the normal post-application revalidation and existing
-verified-email/send gates.
+explicit confirmation, Gmail-account, rate-limit, and send gates.
 
 ### 8 AM source-only boundary
 
@@ -206,23 +206,23 @@ node application-queue.mjs status
 It does not retry submitted, uncertain, anti-spam, CAPTCHA, MFA, or completed
 human-handoff records, and it never sends outreach before confirmation.
 
-Automatic email still requires a named or explicitly generic professional
-contact, a verified professional address, and `emailVerified: true`. Public
-contacts require a source URL and employer-domain evidence; first-party
-relationship contacts require a verified Gmail relationship and source message
-ID. Guessed addresses, private
-mailboxes, LinkedIn scraping, and TeamWork Online crawling are blocked. LinkedIn
-messages remain drafts for manual sending. Dry-run mode performs no web
-discovery and no network send.
+Automatic email requires a named professional contact plus either a verified
+professional address (`emailVerified: true`) or a convention-derived address
+when `outreach_policy.requireVerifiedPublicEmail: false`. Public contacts require
+a source URL and employer-domain evidence; first-party relationship contacts
+require a verified Gmail relationship and source message ID. Ad-hoc guessed
+addresses, private mailboxes, LinkedIn scraping, and TeamWork Online crawling
+are blocked. Convention-derived contacts remain marked `guessed` and
+`unverified-hypothesis`; they are not presented as verified. LinkedIn messages
+remain drafts for manual sending. Dry-run mode performs no web discovery and no
+network send.
 
-Discovery may also infer a review-only company email convention when it sees
-multiple named employees using the same employer domain across multiple public
-source URLs. It can apply that convention to a separately discovered name as an
-`unverified-hypothesis`, but the hypothesis is deliberately kept out of
-`record.contacts` and the outbox. It becomes eligible only after the exact
-address is independently observed in a public employer-domain source or in a
-first-party Gmail header with its source message ID. The discovery pass now runs
-a bounded exact-address Firecrawl query for each hypothesis; only a result that
+Discovery may infer a company email convention when it sees multiple named
+employees using the same employer domain across multiple public source URLs. In
+the opt-in policy, it can apply that convention to a separately discovered name
+and include the resulting unverified hypothesis in `record.contacts` and the
+outbox. With the default strict policy, it remains review-only. The discovery
+pass still runs a bounded exact-address Firecrawl query for each hypothesis; only a result that
 contains the exact address and the same named person is promoted to a verified
 contact. The original hypothesis remains marked as derived evidence for audit.
 The public pass also uses five bounded queries: the exact role, company recruiting

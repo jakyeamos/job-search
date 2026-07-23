@@ -125,8 +125,8 @@ function mergeDiscoveryEvidence(previous, fresh, key) {
   return merged;
 }
 
-/** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {boolean} dryRun @param {Array<Record<string, unknown>>} [discoveredContacts] */
-function prepareRecord(state, item, dryRun, discoveredContacts = []) {
+/** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {boolean} dryRun @param {Array<Record<string, unknown>>} [discoveredContacts] @param {Array<Record<string, unknown>>} [discoveredHypotheses] */
+function prepareRecord(state, item, dryRun, discoveredContacts = [], discoveredHypotheses = []) {
   const record = upsertSubmissionSignal(state, item, {
     source: 'queue_applied',
     at: item.appliedAt || new Date().toISOString(),
@@ -136,12 +136,15 @@ function prepareRecord(state, item, dryRun, discoveredContacts = []) {
   const policy = loadOutreachPolicy(profile);
   const persistedContacts = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
   const importedContacts = Array.isArray(item.outreach?.discovery?.contacts) ? item.outreach.discovery.contacts : [];
+  const importedHypotheses = Array.isArray(item.outreach?.discovery?.emailHypotheses) ? item.outreach.discovery.emailHypotheses : [];
   const contacts = selectContacts(rankContacts([
     ...contactsForItem(item, loadContactManifest()),
     ...persistedContacts,
     ...discoveredContacts,
     ...importedContacts,
-  ], item), policy.maxContactsPerApplication);
+    ...discoveredHypotheses,
+    ...importedHypotheses,
+  ], item, { allowUnverifiedHypotheses: policy.requireVerifiedPublicEmail === false }), policy.maxContactsPerApplication);
   const existing = new Map((record.contacts || []).map((contact) => [contact.id, contact]));
   record.contacts = contacts.map((contact) => {
     const old = existing.get(contact.id);
@@ -207,7 +210,12 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     return {
       status: String(record.discovery?.status || 'cached'),
       reason: `cached until ${new Date(cacheExpiresAtMs).toISOString()}`,
-      contacts: record.discoveredContacts,
+      contacts: [
+        ...record.discoveredContacts,
+        ...(Array.isArray(record.discovery?.emailHypotheses)
+          ? record.discovery.emailHypotheses.filter((hypothesis) => hypothesis.sendable === true)
+          : []),
+      ],
       emailConventions: Array.isArray(record.discovery?.emailConventions) ? record.discovery.emailConventions : [],
       emailHypotheses: Array.isArray(record.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [],
       emailVerification: Array.isArray(record.discovery?.emailVerification) ? record.discovery.emailVerification : [],
@@ -229,14 +237,6 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     )
     : { contacts: [], queries: [], sources: [], verifications: [], errors: [] };
   const previousContacts = Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [];
-  const contacts = [...publicResult.contacts, ...warmResult.contacts, ...candidateEmailResult.contacts];
-  const status = contacts.length
-    ? 'found'
-    : publicResult.status === 'unavailable' || warmResult.status === 'unavailable'
-      ? 'unavailable'
-      : publicResult.status === 'error' || warmResult.status === 'error' || publicResult.errors.length || warmResult.errors.length
-        ? 'error'
-      : 'no_contacts';
   const preservePreviousDiscoveryEvidence = publicResult.status === 'unavailable'
     || publicResult.status === 'error'
     || publicResult.errors.length > 0;
@@ -250,6 +250,15 @@ async function discoverForRecord(record, item, dryRun, options = {}) {
     publicResult.emailHypotheses,
     'email',
   );
+  const sendableHypotheses = emailHypotheses.filter((hypothesis) => hypothesis.sendable === true);
+  const contacts = [...publicResult.contacts, ...warmResult.contacts, ...candidateEmailResult.contacts, ...sendableHypotheses];
+  const status = contacts.length
+    ? 'found'
+    : publicResult.status === 'unavailable' || warmResult.status === 'unavailable'
+      ? 'unavailable'
+      : publicResult.status === 'error' || warmResult.status === 'error' || publicResult.errors.length || warmResult.errors.length
+        ? 'error'
+      : 'no_contacts';
   const emailVerification = mergeDiscoveryEvidence(
     preservePreviousDiscoveryEvidence ? record.discovery?.emailVerification : [],
     publicResult.emailVerification,
@@ -449,7 +458,7 @@ async function discoverQueue(dryRun, requestedLimit, force) {
   };
   console.log(`Queue contact discovery${dryRun ? ' (dry run)' : ''}: ${batch.length} role(s) attempted, ${summary.deferred} deferred.`);
   for (const result of results) {
-    console.log(`  ${result.company || 'Unknown'} / ${result.title || 'Job lead'} — ${result.status}; ${result.emails} email(s), ${result.hypotheses} review-only hypothesis/hypotheses`);
+    console.log(`  ${result.company || 'Unknown'} / ${result.title || 'Job lead'} — ${result.status}; ${result.emails} email(s), ${result.hypotheses} unverified convention hypothesis/hypotheses`);
   }
   for (const error of errors) console.log(`  ⚠️ ${error}`);
   return summary;
@@ -462,17 +471,22 @@ function printPrepared(item, record) {
   for (const contact of record.contacts || []) {
     console.log(`  ${contact.type}: ${contact.name} — ${contact.title}`);
     if (contact.relationshipLabel) console.log(`    Relationship: ${contact.relationshipLabel}`);
-    console.log(`    Email: ${contact.email || 'not eligible'}${contact.emailVerified ? ' (verified public professional)' : ''}`);
+    const emailState = contact.emailVerified
+      ? 'verified public professional'
+      : contact.emailEligible
+        ? 'unverified convention hypothesis'
+        : 'not eligible';
+    console.log(`    Email: ${contact.email || 'not eligible'} (${emailState})`);
     if (contact.initial?.subject) console.log(`    Email subject: ${contact.initial.subject}`);
     if (contact.linkedinDraft) console.log(`    LinkedIn draft: ${contact.linkedinDraft}`);
   }
   const hypotheses = Array.isArray(record.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [];
   if (hypotheses.length) {
-    console.log(`  Review-only email hypotheses (${hypotheses.length}; exact verification required before any send):`);
+    console.log(`  Unverified convention email hypotheses (${hypotheses.length}; explicit send action still required):`);
     for (const hypothesis of hypotheses) {
       const verification = hypothesis.emailVerificationState === 'verified-exact-public-source'
         ? '; exact public evidence found; verified contact created'
-        : '';
+        : '; address is unverified';
       console.log(`    ${hypothesis.name} — ${hypothesis.email} (${hypothesis.convention}, ${hypothesis.conventionConfidence}${verification})`);
     }
   }
@@ -775,7 +789,7 @@ function reconcileOutbox(state, items, client, sentIndex) {
 function enqueueOutboxEntries(state, item, record, policy) {
   if (!hasConfirmedSubmission(record)) return;
   for (const contact of record.contacts || []) {
-    if (contact.emailVerified && contact.email && ['pending', 'unknown', 'sending', 'failed'].includes(contact.initial?.status)) {
+    if (contact.emailEligible && contact.email && ['pending', 'unknown', 'sending', 'failed'].includes(contact.initial?.status)) {
       const initial = messageForSend(item, {
         to: contact.email,
         subject: contact.initial.subject,
@@ -790,7 +804,7 @@ function enqueueOutboxEntries(state, item, record, policy) {
       });
       contact.initial.outboxId = entry.id;
     }
-    if (contact.emailVerified && contact.email && contact.followUp?.status === 'scheduled') {
+    if (contact.emailEligible && contact.email && contact.followUp?.status === 'scheduled') {
       const followUp = messageForSend(item, {
         to: contact.email,
         subject: contact.followUp.subject,
@@ -946,7 +960,7 @@ function updateStatuses(state, items) {
     if (!contacts.length) { record.status = 'awaiting_contacts'; continue; }
     const initialSent = contacts.filter((contact) => contact.initial?.status === 'sent').length;
     const pendingFollowUp = contacts.some((contact) => contact.followUp?.status === 'scheduled');
-    const pendingInitial = contacts.some((contact) => contact.initial?.status === 'pending' && contact.emailVerified);
+    const pendingInitial = contacts.some((contact) => contact.initial?.status === 'pending' && contact.emailEligible);
     const retrying = contacts.some((contact) => ['unknown', 'sending'].includes(contact.initial?.status) || ['unknown', 'sending'].includes(contact.followUp?.status));
     const failed = contacts.some((contact) => ['failed'].includes(contact.initial?.status) || ['failed'].includes(contact.followUp?.status));
     record.status = failed ? 'error' : retrying ? 'retrying' : pendingInitial ? 'drafted' : pendingFollowUp ? 'followup_scheduled' : initialSent ? 'complete' : 'linkedin_ready';
@@ -962,9 +976,16 @@ function prepare(applicationId, dryRun) {
   if (!item) throw new Error(`application not found: ${applicationId}`);
   if (item.status !== 'applied') throw new Error('outreach preparation requires the role to be recorded as applied');
   const state = loadOutreachState(STATE_PATH);
-  const record = prepareRecord(state, item, dryRun);
-  printPrepared(item, record);
-  return record;
+  const record = findOutreachRecord(state, applicationKey(item));
+  const prepared = prepareRecord(
+    state,
+    item,
+    dryRun,
+    Array.isArray(record?.discoveredContacts) ? record.discoveredContacts : [],
+    Array.isArray(record?.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [],
+  );
+  printPrepared(item, prepared);
+  return prepared;
 }
 
 /** @param {boolean} dryRun */
@@ -1012,7 +1033,13 @@ async function processOutreach(dryRun) {
   }
   for (const record of state.records || []) {
     const item = items.find((candidate) => applicationKey(candidate) === record.key);
-    if (item) prepareRecord(state, item, true, Array.isArray(record.discoveredContacts) ? record.discoveredContacts : []);
+    if (item) prepareRecord(
+      state,
+      item,
+      true,
+      Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [],
+      Array.isArray(record.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [],
+    );
   }
   let responses = { checked: false, replies: 0, bounces: 0, reason: 'response scan unavailable' };
   if (!dryRun) {
@@ -1112,7 +1139,13 @@ async function discover(applicationId, dryRun, force) {
   const relationshipClient = await createRelationshipClient(dryRun);
   const result = await discoverForRecord(record, item, dryRun, { gmailClient: relationshipClient, force });
   if (!dryRun) {
-    prepareRecord(state, item, true, Array.isArray(record.discoveredContacts) ? record.discoveredContacts : []);
+    prepareRecord(
+      state,
+      item,
+      true,
+      Array.isArray(record.discoveredContacts) ? record.discoveredContacts : [],
+      Array.isArray(record.discovery?.emailHypotheses) ? record.discovery.emailHypotheses : [],
+    );
     saveOutreachState(STATE_PATH, state);
   }
   console.log(JSON.stringify({ application: applicationKey(item), ...result }, null, 2));
@@ -1177,7 +1210,11 @@ function status() {
       name: contact.name,
       type: contact.type,
       email: contact.email,
+      emailEligible: contact.emailEligible,
       emailVerified: contact.emailVerified,
+      emailVerificationType: contact.emailVerificationType,
+      emailVerificationState: contact.emailVerificationState,
+      guessed: contact.guessed,
       initial: contact.initial?.status || 'none',
       initialDelivery: contact.initial?.deliveryStatus || null,
       followUp: contact.followUp?.status || 'none',

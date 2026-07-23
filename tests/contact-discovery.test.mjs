@@ -301,7 +301,7 @@ test('public candidates receive bounded exact email verification', async () => {
   assert.equal(searchQueries.length, 6);
 });
 
-test('live discovery infers a review-only convention without making hypotheses sendable', async () => {
+test('live discovery infers a convention and marks hypotheses sendable when configured', async () => {
   const result = await discoverContactsForApplication({
     ...item,
     companyWebsite: 'https://example.ai',
@@ -347,5 +347,6 @@ test('live discovery infers a review-only convention without making hypotheses s
   assert.equal(result.emailHypotheses[0].email, 'morgan.example@example.ai');
   assert.equal(result.emailHypotheses[0].emailVerified, false);
   assert.equal(result.emailHypotheses[0].guessed, true);
+  assert.equal(result.emailHypotheses[0].sendable, true);
   assert.equal(result.emailVerification[0].status, 'not_observed');
 });

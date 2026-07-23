@@ -201,8 +201,8 @@ export function buildEmailHypotheses(conventions, candidates, options = {}) {
         conventionSampleCount: Number(convention.sampleCount) || 0,
         conventionCoverage: Number(convention.coverage) || 0,
         conventionEvidenceUrls: Array.isArray(convention.evidenceUrls) ? convention.evidenceUrls.slice(0, MAX_EVIDENCE_URLS) : [],
-        verificationRequired: 'exact public email evidence or first-party Gmail header with source message ID',
-        sendable: false,
+        verificationRequired: 'recommended, but not required when unverified hypothesis outreach is enabled',
+        sendable: true,
       });
       if (hypotheses.length >= maxHypotheses) return hypotheses;
     }

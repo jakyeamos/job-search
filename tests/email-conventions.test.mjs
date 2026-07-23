@@ -60,7 +60,7 @@ test('email convention inference requires multiple named public examples and sou
   ]).length, 0);
 });
 
-test('convention hypotheses remain ineligible until exact evidence is found', () => {
+test('convention hypotheses remain opt-in by default', () => {
   const conventions = inferEmailConventions([
     publicExample('Taylor Example', 'taylor.example@example.ai', 'https://example.ai/team/taylor'),
     publicExample('Jordan Example', 'jordan.example@example.ai', 'https://example.ai/team/jordan'),
@@ -84,9 +84,17 @@ test('convention hypotheses remain ineligible until exact evidence is found', ()
   assert.equal(hypotheses[0].emailVerified, false);
   assert.equal(hypotheses[0].guessed, true);
   assert.equal(hypotheses[0].emailVerificationState, 'unverified-hypothesis');
-  assert.equal(hypotheses[0].sendable, false);
+  assert.equal(hypotheses[0].sendable, true);
   assert.equal(rankContacts(hypotheses, item)[0].email, null);
   assert.equal(rankContacts(hypotheses, item)[0].emailEligible, false);
+  const optedIn = rankContacts(hypotheses, item, { allowUnverifiedHypotheses: true })[0];
+  assert.equal(optedIn.email, 'morgan.example@example.ai');
+  assert.equal(optedIn.emailEligible, true);
+  assert.equal(optedIn.emailVerified, false);
+  assert.equal(optedIn.emailVerificationType, 'unverified-convention-hypothesis');
+  const legacyHypothesis = rankContacts([{ ...hypotheses[0], sendable: false }], item, { allowUnverifiedHypotheses: true })[0];
+  assert.equal(legacyHypothesis.email, 'morgan.example@example.ai');
+  assert.equal(legacyHypothesis.emailEligible, true);
 });
 
 test('infers first-initial plus last-name conventions and carries ranked confidence', () => {
@@ -111,5 +119,5 @@ test('infers first-initial plus last-name conventions and carries ranked confide
   assert.equal(hypotheses[0].email, 'mexample@example.ai');
   assert.equal(hypotheses[0].convention, 'flast');
   assert.equal(hypotheses[0].conventionCoverage, 1);
-  assert.equal(hypotheses[0].sendable, false);
+  assert.equal(hypotheses[0].sendable, true);
 });

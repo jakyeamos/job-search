@@ -781,7 +781,7 @@ export async function discoverContactsForApplication(item, options = {}) {
     : 'no eligible public contact found';
   return {
     status: finalContacts.length ? 'found' : 'no_contacts',
-    reason: `${reason}${emailConventions.length ? `; inferred ${emailConventions.length} review-only email convention(s)` : ''}${emailHypotheses.length ? `; generated ${emailHypotheses.length} email hypothesis/hypotheses; exact verification observed ${emailVerification.contacts.length}` : ''}${candidateEmailVerification.contacts.length ? `; exact candidate email verification observed ${candidateEmailVerification.contacts.length}` : ''}`,
+    reason: `${reason}${emailConventions.length ? `; inferred ${emailConventions.length} email convention(s)` : ''}${emailHypotheses.length ? `; generated ${emailHypotheses.length} unverified email hypothesis/hypotheses; exact verification observed ${emailVerification.contacts.length}` : ''}${candidateEmailVerification.contacts.length ? `; exact candidate email verification observed ${candidateEmailVerification.contacts.length}` : ''}`,
     queries: finalQueries,
     sources: finalSources,
     contacts: finalContacts,

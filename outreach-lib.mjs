@@ -379,8 +379,8 @@ function contactId(contact) {
   ].join('|')).digest('hex').slice(0, 16);
 }
 
-/** @param {Record<string, unknown>} contact @param {Record<string, unknown>} item */
-function normalizeContact(contact, item) {
+/** @param {Record<string, unknown>} contact @param {Record<string, unknown>} item @param {{ allowUnverifiedHypotheses?: boolean }} [options] */
+function normalizeContact(contact, item, options = {}) {
   const name = asString(contact.name);
   const title = asString(contact.title);
   const email = lower(contact.email);
@@ -393,7 +393,15 @@ function normalizeContact(contact, item) {
   const firstPartyEvidenceEligible = sourceType === FIRST_PARTY_RELATIONSHIP_SOURCE
     && asBoolean(contact.relationshipVerified)
     && Boolean(asString(contact.sourceMessageId));
-  const emailEligible = Boolean(email)
+  const hypothesisEligible = options.allowUnverifiedHypotheses === true
+    && asBoolean(contact.emailHypothesis)
+    && asBoolean(contact.guessed)
+    && asString(contact.emailVerificationState) === 'unverified-hypothesis'
+    && Number(contact.conventionSampleCount) >= 2
+    && Number(contact.conventionCoverage) > 0
+    && Array.isArray(contact.conventionEvidenceUrls)
+    && contact.conventionEvidenceUrls.length > 0;
+  const verifiedEmailEligible = Boolean(email)
     && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     && !FREE_EMAIL_DOMAINS.has(domain)
     && asBoolean(contact.emailVerified)
@@ -401,6 +409,7 @@ function normalizeContact(contact, item) {
     && contact.guessed !== true
     && contact.private !== true
     && (publicEvidenceEligible || firstPartyEvidenceEligible);
+  const emailEligible = hypothesisEligible || verifiedEmailEligible;
   const relevance = lower(contact.roleRelevance || contact.relevance || 'high');
   const type = contactType(contact);
   const baseScore = type === 'hiring_manager' ? 100 : type === 'recruiter' ? 96 : type === 'connection' ? 91 : 85;
@@ -412,9 +421,13 @@ function normalizeContact(contact, item) {
     title,
     company: asString(contact.company || item.company),
     email: emailEligible ? email : null,
-    emailVerified: emailEligible,
-    emailVerificationType: asString(contact.emailVerificationType) || null,
+    emailVerified: verifiedEmailEligible && asBoolean(contact.emailVerified),
+    emailVerificationType: asString(contact.emailVerificationType) || (hypothesisEligible ? 'unverified-convention-hypothesis' : null),
+    emailVerificationState: asString(contact.emailVerificationState) || null,
     exactEmailEvidence: asBoolean(contact.exactEmailEvidence),
+    emailHypothesis: asBoolean(contact.emailHypothesis),
+    guessed: asBoolean(contact.guessed),
+    sendable: asBoolean(contact.sendable),
     verificationQuery: asString(contact.verificationQuery) || null,
     verificationSourceUrl: normalizeUrl(asString(contact.verificationSourceUrl)) || null,
     emailSourceUrl: sourceUrl || null,
@@ -436,8 +449,8 @@ function normalizeContact(contact, item) {
   };
 }
 
-/** @param {Array<Record<string, unknown>>} contacts @param {Record<string, unknown>} item */
-export function rankContacts(contacts, item) {
+/** @param {Array<Record<string, unknown>>} contacts @param {Record<string, unknown>} item @param {{ allowUnverifiedHypotheses?: boolean }} [options] */
+export function rankContacts(contacts, item, options = {}) {
   const normalized = contacts
     .filter((contact) => isRecord(contact)
       && asString(contact.name)
@@ -446,7 +459,7 @@ export function rankContacts(contacts, item) {
         || (lower(contact.sourceType || contact.source || '') === FIRST_PARTY_RELATIONSHIP_SOURCE && asString(contact.sourceMessageId)))
       && companyMatches(contact, item)
       && lower(contact.roleRelevance || contact.relevance || 'high') !== 'low')
-    .map((contact) => normalizeContact(contact, item));
+    .map((contact) => normalizeContact(contact, item, options));
   const deduped = new Map();
   for (const contact of normalized) {
     const key = lower(contact.email || contact.profileUrl || contact.name);

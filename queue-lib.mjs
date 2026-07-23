@@ -530,7 +530,7 @@ function contactDiscoveryMarkdown(item) {
     .map((contact) => markdown(`${contact.name || 'Contact'} <${contact.email}>`));
   const inferred = hypotheses
     .filter((hypothesis) => hypothesis && typeof hypothesis === 'object' && hypothesis.email)
-    .map((hypothesis) => markdown(`${hypothesis.name || 'Named candidate'} <${hypothesis.email}> (review-only hypothesis)`));
+    .map((hypothesis) => markdown(`${hypothesis.name || 'Named candidate'} <${hypothesis.email}> (unverified convention hypothesis)`));
   const entries = [...observed, ...inferred].slice(0, 10);
   if (!entries.length) return `- Email discovery: ${markdown(discovery.status || 'no contacts')} — ${markdown(discovery.reason || 'no email candidate recorded')}`;
   return `- Email candidates: ${entries.join('; ')}`;

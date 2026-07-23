@@ -107,21 +107,22 @@ Public company/job/profile sources qualify an email for automatic sending when
 the address is employer-domain verified. A first-party professional relationship
 from the authorized Gmail mailbox may also qualify when the address is observed
 in a Gmail header, the source message ID is retained, and the domain is
-professional. Never guess an address, use a personal mailbox, scrape LinkedIn,
-crawl TeamWork Online, or include a contact whose identity or role relevance is
-uncertain. LinkedIn output remains a manual draft. If discovery cannot identify
-a specific employer from the application evidence, the record is held for
-correction and cannot send.
+professional. Ad-hoc guesses, personal mailboxes, LinkedIn scraping, TeamWork
+Online crawling, and contacts whose identity or role relevance is uncertain
+remain blocked. LinkedIn output remains a manual draft. If discovery cannot
+identify a specific employer from the application evidence, the record is held
+for correction and cannot send.
 
-The processor may show a review-only email hypothesis when at least two named
-public examples support one employer-domain convention across distinct source
-URLs. A hypothesis is not a verified email: it remains marked guessed and
-unverified, is not placed in the sendable contact list, and must be checked
-against exact public evidence or a first-party Gmail header before anyone may
-add it as a contact. Discovery performs a bounded exact-address Firecrawl query
-for each hypothesis and promotes it only when the exact address and the same
-named person appear together in public evidence. Never test a hypothesis by
-sending mail or probing SMTP.
+When `outreach_policy.requireVerifiedPublicEmail: false`, a named convention
+hypothesis may also enter the sendable contact list when at least two named
+public examples support the same employer-domain convention across distinct
+source URLs. It remains marked guessed and unverified, and the UI preserves that
+state; it is not promoted to `emailVerified`. With the default `true` setting,
+the same hypothesis remains review-only. Discovery still performs a bounded
+exact-address Firecrawl query and promotes the hypothesis to verified only when
+the exact address and the same named person appear together in public evidence.
+Never test a hypothesis by sending mail or probing SMTP; any actual send still
+requires the explicit send path after application confirmation.
 
 When a named public candidate has no address, discovery may run at most two
 exact-name Firecrawl searches for each of the top four candidates, whether the
