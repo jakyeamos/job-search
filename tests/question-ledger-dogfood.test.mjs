@@ -80,6 +80,17 @@ test('shape-only mode samples supported forms while retaining verification warni
   assert.equal(plan.reasonCounts['status-excluded'], 1);
 });
 
+test('explicit all mode selects every eligible candidate while the default remains capped', () => {
+  const items = Array.from({ length: 45 }, (_, index) => item(`a-${index}`, 'ashby'));
+  assert.equal(buildDogfoodPlan(items).selected.length, 12);
+  assert.equal(buildDogfoodPlan(items, { sampleSize: 999 }).selected.length, 40);
+  const full = buildDogfoodPlan(items, { all: true });
+  assert.equal(full.eligible.length, 45);
+  assert.equal(full.selected.length, 45);
+  assert.equal(full.policy.all, true);
+  assert.equal(full.policy.sampleSize, null);
+});
+
 test('staging paths reject canonical data and packet roots', () => {
   assert.throws(() => resolveDogfoodStaging({ stagingRoot: DEFAULT_LEDGER_PATH }), /outside canonical/);
   assert.throws(() => resolveDogfoodStaging({ stagingRoot: DEFAULT_PACKET_ROOT }), /outside canonical/);

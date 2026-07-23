@@ -12,6 +12,7 @@ import {
   isSensitiveQuestion,
   loadLedger,
   lookupAnswer,
+  recordEvidenceBackedAnswerInLedger,
   pendingQuestions,
   recordQuestion,
 } from '../apply/question-ledger.mjs';
@@ -133,6 +134,45 @@ test('adapter-observed answers are not reusable until the user confirms them', (
     const ledger = loadLedger(file);
     assert.equal(ledger.entries[0].answerStatus, 'unconfirmed');
     assert.equal(lookupAnswer('Do you require sponsorship?', ledger), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('evidence-backed answers are reusable, scoped, and excluded from pending normal questions', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-evidence-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const entry = recordQuestion(file, 'Which accomplishment are you most proud of?', {
+      company: 'Acme', role: 'Backend Engineer', url: 'https://jobs.example/acme/1', fieldKind: 'textarea',
+    });
+    const ledger = loadLedger(file);
+    const promoted = recordEvidenceBackedAnswerInLedger(ledger, entry.id, 'I built a reliable platform.', {
+      scope: 'role',
+      company: 'Acme',
+      role: 'Backend Engineer',
+      url: 'https://jobs.example/acme/1',
+      evidenceRefs: ['cv.md', '/Users/jakyeamos/projects/acme/README.md'],
+    });
+    assert.ok(promoted);
+    assert.equal(promoted.answer.answerStatus, 'evidence-backed');
+    assert.equal(findReusableAnswer(entry.question, ledger, { company: 'Acme', role: 'Backend Engineer', fieldKind: 'textarea' }).answer, 'I built a reliable platform.');
+    assert.equal(findReusableAnswer(entry.question, ledger, { company: 'Other', role: 'Backend Engineer', fieldKind: 'textarea' }), null);
+    assert.equal(pendingQuestions(ledger).length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('evidence-backed answers never auto-confirm sensitive questions', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-evidence-sensitive-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const entry = recordQuestion(file, 'Will you now or in the future require visa sponsorship?', { fieldKind: 'radio' });
+    const ledger = loadLedger(file);
+    assert.equal(recordEvidenceBackedAnswerInLedger(ledger, entry.id, 'No', { scope: 'question', evidenceRefs: ['config/application-profile.json'] }), null);
+    assert.equal(lookupAnswer(entry.question, ledger), null);
+    assert.equal(pendingQuestions(ledger).length, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

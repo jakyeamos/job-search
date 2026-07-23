@@ -25,6 +25,7 @@ import {
   isSensitiveQuestion,
   loadLedger,
   pendingQuestions,
+  recordEvidenceBackedAnswerInLedger,
   recordQuestionInLedger,
   saveLedger,
 } from './question-ledger.mjs';
@@ -299,6 +300,9 @@ function answerForControl(control, item, profile, ledger, options = {}) {
       source: reusable.answerRef || `question-ledger:${reusable.entry.id}`,
       answerRef: reusable.answerRef || null,
       kind: 'confirmed',
+      evidenceBacked: false,
+      answerStatus: reusable.answerStatus,
+      evidenceRefs: reusable.evidenceRefs,
       reuse: {
         matchType: reusable.matchType,
         confidence: reusable.confidence,
@@ -330,14 +334,26 @@ function answerForControl(control, item, profile, ledger, options = {}) {
       approvedAnswer: null,
       source: `project-accomplishment:${accomplishment.id}`,
       kind: narrative ? 'draft' : 'verified-evidence',
-      evidenceRefs: [`project-accomplishment:${accomplishment.id}`],
+      evidenceBacked: accomplishment.approved !== false && Number(accomplishment.evidenceStrength || 0) > 0,
+      answerScope: narrative ? 'role' : 'question',
+      evidenceRefs: [
+        `project-accomplishment:${accomplishment.id}`,
+        ...(Array.isArray(accomplishment.sourceRefs) ? accomplishment.sourceRefs.map(String) : []),
+      ],
       reuse: { matchType: 'job-aware-project-selection', confidence: Number(accomplishment.score || 0) },
       humanization: narrative ? auditHumanizedText(answer, '') : { status: 'not-applicable', passed: true, errors: [] },
     };
   }
 
   const profileValue = profileAnswer(profile, label) || profileQuestionAnswer(profile, label);
-  if (profileValue) return { ...profileValue, kind: 'verified-profile' };
+  if (profileValue) {
+    return {
+      ...profileValue,
+      kind: 'verified-profile',
+      evidenceBacked: !profileValue.sensitive,
+      evidenceRefs: [profileValue.source],
+    };
+  }
 
   const common = answerFor(label, [commonQuestions(profile)]);
   if (common !== null) return { answer: common, source: 'profile:common-question-rule', kind: 'verified-profile', sensitive: sensitivity === 'high' };
@@ -448,11 +464,30 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
       manual.push({ label, required: control.required === true, reason: manualFieldReason, options: control.options || [] });
       continue;
     }
-    const resolved = answerForControl(control, item, profile, ledger, options);
+    let resolved = answerForControl(control, item, profile, ledger, options);
     const answer = resolved?.answer || null;
+    if (entry && answer && resolved?.evidenceBacked === true) {
+      const evidenceAnswer = recordEvidenceBackedAnswerInLedger(ledger, entry.id, answer, {
+        scope: resolved.answerScope || (isNarrativeControl(control) ? 'role' : 'question'),
+        company: item.company,
+        role: item.title,
+        url: item.applyUrl || item.canonicalUrl,
+        queueId: item.id,
+        evidenceRefs: resolved.evidenceRefs,
+      });
+      if (evidenceAnswer) {
+        resolved = {
+          ...resolved,
+          answerRef: evidenceAnswer.answerRef,
+          answerStatus: evidenceAnswer.answer.answerStatus,
+          evidenceRefs: evidenceAnswer.answer.evidenceRefs || resolved.evidenceRefs || [],
+        };
+      }
+    }
     const status = resolved?.approvedAnswer ? 'approved'
         : resolved?.kind === 'humanized' ? 'humanized'
         : resolved?.kind === 'draft' ? 'draft'
+          : resolved?.evidenceBacked === true ? 'evidence-backed'
           : answer !== null ? 'confirmed' : 'unanswered';
     const field = {
       id: entry?.id || null,
@@ -466,6 +501,7 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
       humanizedAnswer: resolved?.humanizedAnswer || null,
       approvedAnswer: resolved?.approvedAnswer || null,
       status,
+      answerStatus: resolved?.answerStatus || null,
       source: resolved?.source || null,
       answerRef: resolved?.answerRef || null,
       provenance: {
@@ -564,7 +600,7 @@ export function buildPacketMarkdown(packet) {
   lines.push(`- Standard profile fields excluded from copy/paste: ${Number(answerPrep.standardFieldCount || 0)}`);
   lines.push(`- Human-only fields: ${Number(answerPrep.manualFieldCount ?? manualItems.length)}`, '');
   lines.push('## Copy/paste answers', '');
-  for (const question of questions.filter((entry) => ['known', 'confirmed', 'approved', 'humanized', 'draft'].includes(entry.status) && entry.answer !== null)) {
+  for (const question of questions.filter((entry) => ['known', 'confirmed', 'evidence-backed', 'approved', 'humanized', 'draft'].includes(entry.status) && entry.answer !== null)) {
     lines.push(`### ${question.question}`, '', `Answer: ${question.answer}`, `Status: ${question.status}`, `Source: ${question.source || 'verified ledger'}`);
     if (question.answerRef) lines.push(`Answer reference: ${question.answerRef}`);
     if (question.rawAnswer && question.humanizedAnswer) lines.push(`Raw draft: ${question.rawAnswer}`, `Humanized: ${question.humanizedAnswer}`);

@@ -195,6 +195,14 @@ pnpm application-ledger-dogfood --sample 12
 pnpm application-ledger-dogfood --shape-only --sample 12
 ```
 
+The default sample remains capped at 40. Use `--all` explicitly to inspect
+every queue item that passes the selected adapter, status, liveness, and posting
+evidence preflight:
+
+```bash
+pnpm application-ledger-dogfood --all
+```
+
 Normal runs require an active supported posting. If the queue description is
 missing or short, the runner hydrates it from the rendered application page
 during the read-only inspection; the packet remains blocked if that page does
@@ -207,6 +215,22 @@ pnpm application-ledger-dogfood --run --sample 12
 pnpm application-ledger-dogfood --run --shape-only --sample 12 --headed
 pnpm application-ledger-dogfood --run --sample 12 --staging-root /private/tmp/career-ops-ledger-review
 ```
+
+For a queue-wide pass, keep the packet run staged and explicitly opt into
+merging observed questions plus evidence-backed normal answers into the
+canonical ledger. User-confirmed answers are preserved; sensitive/legal/EEO/
+consent/identity fields remain human-only:
+
+```bash
+pnpm application-ledger-dogfood --run --all \
+  --promote-evidence \
+  --staging-root /private/tmp/career-ops-ledger-full \
+  --report /private/tmp/career-ops-ledger-full-report.json
+```
+
+Evidence-backed narrative answers are still reviewable drafts where wording
+needs humanizer approval. Promotion never fills a control, uploads an
+artifact, clicks a final Apply/Submit/Send control, or sends outreach.
 
 `--shape-only` is an explicit diagnostic exception for sampling supported ATS
 form shapes when queue liveness or JD evidence is incomplete. Its output is

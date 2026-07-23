@@ -2,7 +2,7 @@
 // @ts-check
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ import { applicationAdapter, normalizeApplicationUrl } from './form-inspection.m
 import {
   DEFAULT_LEDGER_PATH,
   loadLedger,
+  mergeLedgerObservations,
   pendingQuestions,
   saveLedger,
 } from './question-ledger.mjs';
@@ -57,6 +58,7 @@ const TERMINAL_APPLICATION_STATES = new Set([
 /**
  * @typedef {object} DogfoodSelectionOptions
  * @property {boolean} [shapeOnly]
+ * @property {boolean} [all]
  * @property {number} [sampleSize]
  * @property {number|null} [perAdapter]
  * @property {number} [minDescriptionLength]
@@ -77,7 +79,7 @@ const TERMINAL_APPLICATION_STATES = new Set([
  * @property {Record<string, number>} sourceByLiveness
  * @property {Record<string, number>} reasonCounts
  * @property {Record<string, number>} verificationWarningCounts
- * @property {{ sampleSize: number, perAdapter: number|null, minDescriptionLength: number, minFitScore: number, statuses: string[] }} policy
+ * @property {{ all: boolean, sampleSize: number|null, perAdapter: number|null, minDescriptionLength: number, minFitScore: number, statuses: string[] }} policy
  */
 
 /** @param {unknown} value */
@@ -120,12 +122,14 @@ function finiteNumber(value, fallback) {
 /** @param {DogfoodSelectionOptions} options */
 function selectionPolicy(options = {}) {
   const requestedSample = Math.max(0, Math.floor(finiteNumber(options.sampleSize, DEFAULT_SAMPLE_SIZE)));
-  const sampleSize = Math.min(MAX_SAMPLE_SIZE, requestedSample);
+  const all = options.all === true;
+  const sampleSize = all ? null : Math.min(MAX_SAMPLE_SIZE, requestedSample);
   const requestedPerAdapter = options.perAdapter === null || options.perAdapter === undefined
     ? null
     : Math.max(1, Math.floor(finiteNumber(options.perAdapter, 1)));
   return {
     shapeOnly: options.shapeOnly === true,
+    all,
     sampleSize,
     perAdapter: requestedPerAdapter,
     minDescriptionLength: Math.max(0, Math.floor(finiteNumber(options.minDescriptionLength, DEFAULT_MIN_DESCRIPTION_LENGTH))),
@@ -206,15 +210,16 @@ export function selectDogfoodSample(candidates, options = {}) {
 
   const adapters = [...buckets.keys()].sort();
   const selected = [];
+  const targetSize = policy.all ? Number.MAX_SAFE_INTEGER : (policy.sampleSize || 0);
   let index = 0;
-  while (selected.length < policy.sampleSize && adapters.length) {
+  while (selected.length < targetSize && adapters.length) {
     let added = false;
     for (const adapter of adapters) {
       const candidate = buckets.get(adapter)?.[index];
       if (!candidate) continue;
       selected.push(candidate);
       added = true;
-      if (selected.length >= policy.sampleSize) break;
+      if (selected.length >= targetSize) break;
     }
     if (!added) break;
     index += 1;
@@ -410,7 +415,7 @@ function fileHash(file) {
 /**
  * Run or plan a bounded question-ledger dogfood pass. The default run copies
  * the canonical ledger into a staging root and never writes back to it.
- * @param {{ mode?: 'plan'|'run', shapeOnly?: boolean, queuePath?: string, sourceLedgerPath?: string, stagingRoot?: string, sampleSize?: number, perAdapter?: number|null, minDescriptionLength?: number, minFitScore?: number, statuses?: string[], browser?: string, headed?: boolean, cdpEndpoint?: string, profilePath?: string, maxPages?: number, buildPacket?: typeof buildApplicationPacket }} [options]
+ * @param {{ mode?: 'plan'|'run', shapeOnly?: boolean, all?: boolean, queuePath?: string, sourceLedgerPath?: string, stagingRoot?: string, sampleSize?: number, perAdapter?: number|null, minDescriptionLength?: number, minFitScore?: number, statuses?: string[], browser?: string, headed?: boolean, cdpEndpoint?: string, profilePath?: string, maxPages?: number, promoteEvidence?: boolean, reportPath?: string, buildPacket?: typeof buildApplicationPacket }} [options]
  * @returns {Promise<{ report: Record<string, unknown>, plan: DogfoodPlan }>}
  */
 export async function runLedgerDogfood(options = {}) {
@@ -449,8 +454,11 @@ export async function runLedgerDogfood(options = {}) {
     },
     safety: {
       browserActions: 'read-only form inspection; may click posting-page Apply and safe local continuation controls; no fill, select, upload, final apply, submit, or send',
-      promotion: 'staging ledger is never promoted automatically',
+      promotion: options.promoteEvidence === true
+        ? 'explicit promotion requested: observed questions and evidence-backed normal answers may be merged; user-confirmed answers are preserved'
+        : 'staging ledger is not promoted',
       sampleCap: MAX_SAMPLE_SIZE,
+      fullQueueFlag: '--all is required to exceed the default sample cap',
     },
   };
 
@@ -522,13 +530,26 @@ export async function runLedgerDogfood(options = {}) {
     observedQuestionCount: runs.reduce((total, run) => total + Number(run.questionCount || 0), 0),
     observedPrepQuestionCount: runs.reduce((total, run) => total + Number(run.prepQuestionCount || run.questionCount || 0), 0),
   };
+  report.ledger.canonicalAfter = null;
+  report.ledger.promotion = null;
+  if (options.promoteEvidence === true) {
+    const canonicalBefore = loadLedger(sourceLedgerPath);
+    const merged = mergeLedgerObservations(canonicalBefore, after);
+    saveLedger(sourceLedgerPath, merged);
+    const canonicalHashAfter = fileHash(sourceLedgerPath);
+    report.staging.canonicalLedgerTouched = canonicalHashAfter !== sourceLedgerHashBefore;
+    report.ledger.canonicalAfter = ledgerStats(merged);
+    report.ledger.promotion = summarizeLedgerDelta(canonicalBefore, merged);
+  }
   report.sourceQueueHashBefore = sourceQueueHashBefore;
   report.sourceQueueHashAfter = fileHash(queuePath);
   report.sourceLedgerHashBefore = sourceLedgerHashBefore;
   report.sourceLedgerHashAfter = fileHash(sourceLedgerPath);
   report.warnings = plan.shapeOnly
     ? ['Shape-only mode intentionally sampled postings without active/liveness/JD verification; do not use these results as ready application evidence.', 'Review staged entries before any manual promotion.']
-    : ['Review staged entries before any manual promotion.'];
+    : options.promoteEvidence === true
+      ? ['Evidence-backed normal answers and observed questions were merged into the canonical ledger; review drafts, sensitive fields, and all final submissions manually.']
+      : ['Review staged entries before any manual promotion.'];
   return { report, plan };
 }
 
@@ -540,6 +561,7 @@ function parseCli(argv) {
       run: { type: 'boolean', default: false },
       plan: { type: 'boolean', default: false },
       'shape-only': { type: 'boolean', default: false },
+      all: { type: 'boolean', default: false },
       sample: { type: 'string' },
       'per-adapter': { type: 'string' },
       'min-description-length': { type: 'string' },
@@ -554,11 +576,14 @@ function parseCli(argv) {
       'cdp-endpoint': { type: 'string' },
       profile: { type: 'string' },
       'max-pages': { type: 'string' },
+      'promote-evidence': { type: 'boolean', default: false },
+      report: { type: 'string' },
     },
   });
   if (values.run === true && values.plan === true) throw new Error('choose --run or --plan, not both');
   if (values.headed === true && values.headless === true) throw new Error('choose --headed or --headless, not both');
   const sampleSize = values.sample === undefined ? DEFAULT_SAMPLE_SIZE : finiteNumber(values.sample, NaN);
+  if (values.all === true && values.sample !== undefined) throw new Error('choose --all or --sample, not both');
   if (!Number.isFinite(sampleSize) || sampleSize < 0) throw new Error('--sample must be a non-negative number');
   const perAdapter = values['per-adapter'] === undefined ? null : finiteNumber(values['per-adapter'], NaN);
   if (perAdapter !== null && (!Number.isFinite(perAdapter) || perAdapter < 1)) throw new Error('--per-adapter must be a positive number');
@@ -576,6 +601,7 @@ function parseCli(argv) {
   return {
     mode: values.run === true ? 'run' : 'plan',
     shapeOnly: values['shape-only'] === true,
+    all: values.all === true,
     sampleSize,
     perAdapter,
     minDescriptionLength,
@@ -589,12 +615,20 @@ function parseCli(argv) {
     cdpEndpoint: values['cdp-endpoint'],
     profilePath: values.profile,
     maxPages,
+    promoteEvidence: values['promote-evidence'] === true,
+    reportPath: values.report,
   };
 }
 
 if (import.meta.url === new URL(process.argv[1] || '', 'file:').href) {
   try {
-    const { report } = await runLedgerDogfood(parseCli(process.argv.slice(2)));
+    const options = parseCli(process.argv.slice(2));
+    const { report } = await runLedgerDogfood(options);
+    if (options.reportPath) {
+      mkdirSync(path.dirname(path.resolve(String(options.reportPath))), { recursive: true });
+      writeFileSync(path.resolve(String(options.reportPath)), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+      report.reportPath = path.resolve(String(options.reportPath));
+    }
     console.log(`CAREER_OPS_LEDGER_DOGFOOD ${JSON.stringify(report)}`);
   } catch (error) {
     console.error(`CAREER_OPS_LEDGER_DOGFOOD_ERROR ${error instanceof Error ? error.message : String(error)}`);

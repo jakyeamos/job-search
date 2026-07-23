@@ -10,6 +10,7 @@ export const DEFAULT_LEDGER_PATH = path.join(ROOT, 'data', 'application-question
 export const QUESTION_LEDGER_SCHEMA_VERSION = 2;
 
 const SENSITIVE_RE = /authorization|visa|sponsor|relocat|salary|compensation|background|legal|degree|education|citizenship|demographic|gender|race|veteran|disab|self[-\s]?identif|criminal|conviction|consent/i;
+const EVIDENCE_BACKED_ANSWER_STATUS = 'evidence-backed';
 const QUESTION_STOP_WORDS = new Set([
   'a', 'an', 'and', 'any', 'are', 'at', 'be', 'can', 'could', 'do', 'does', 'for', 'from',
   'have', 'how', 'i', 'if', 'in', 'is', 'it', 'me', 'of', 'on', 'or', 'please',
@@ -72,11 +73,17 @@ function normalizeEntry(entry) {
   const explicitlyConfirmed = entry.answerStatus === 'confirmed'
     || entry.answerSource === 'user'
     || entry.source === 'profile-confirmed';
+  const evidenceBacked = entry.answerStatus === EVIDENCE_BACKED_ANSWER_STATUS
+    || entry.answerSource === 'career-ops-evidence';
   return {
     ...entry,
     answer,
     answerVersion: hasAnswer ? Math.max(1, Number(entry.answerVersion || 1)) : 0,
-    answerStatus: hasAnswer && explicitlyConfirmed ? 'confirmed' : hasAnswer ? 'unconfirmed' : 'unanswered',
+    answerStatus: hasAnswer && explicitlyConfirmed
+      ? 'confirmed'
+      : hasAnswer && evidenceBacked
+        ? EVIDENCE_BACKED_ANSWER_STATUS
+        : hasAnswer ? 'unconfirmed' : 'unanswered',
     answerVariants: Array.isArray(entry.answerVariants)
       ? entry.answerVariants.filter((variant) => variant && typeof variant === 'object').map((variant) => ({
         ...variant,
@@ -86,7 +93,9 @@ function normalizeEntry(entry) {
           : Math.max(1, Number(variant.answerVersion || 1)),
         answerStatus: variant.answerStatus === 'confirmed' || variant.answerSource === 'user' || variant.source === 'profile-confirmed' || entry.source === 'profile-confirmed'
           ? 'confirmed'
-          : variant.answer ? 'unconfirmed' : 'unanswered',
+          : variant.answerStatus === EVIDENCE_BACKED_ANSWER_STATUS || variant.answerSource === 'career-ops-evidence'
+            ? EVIDENCE_BACKED_ANSWER_STATUS
+            : variant.answer ? 'unconfirmed' : 'unanswered',
       }))
       : [],
   };
@@ -102,7 +111,8 @@ export function answerReference(entry, answer = entry) {
 export function isConfirmedAnswer(entry, answer = entry) {
   return answer?.answerStatus === 'confirmed'
     || answer?.answerSource === 'user'
-    || entry?.source === 'profile-confirmed';
+    || entry?.source === 'profile-confirmed'
+    || (answer?.answerStatus === EVIDENCE_BACKED_ANSWER_STATUS && String(entry?.sensitivity || 'normal') !== 'high');
 }
 
 /** @param {Record<string, unknown>} entry */
@@ -115,7 +125,10 @@ function answerVariants(entry) {
 function matchesAnswerScope(variant, options) {
   if (variant.scope === 'question' || variant.scope === 'global') return true;
   if (variant.scope === 'company') return normalizeKey(variant.company) === normalizeKey(options.company);
-  if (variant.scope === 'role') return normalizeKey(variant.role) === normalizeKey(options.role);
+  if (variant.scope === 'role') {
+    return normalizeKey(variant.role) === normalizeKey(options.role)
+      && (!variant.company || !options.company || normalizeKey(variant.company) === normalizeKey(options.company));
+  }
   if (variant.scope === 'posting') return Boolean(variant.url && variant.url === options.url);
   return false;
 }
@@ -307,6 +320,148 @@ export function recordQuestionInLedger(ledger, question, metadata = {}) {
 }
 
 /**
+ * Record an answer derived from explicit Career Ops evidence. These answers
+ * are reusable for normal questions, but sensitive/legal/identity questions
+ * remain human-confirmed only.
+ * @param {{ entries: Array<Record<string, unknown>> }} ledger
+ * @param {string|Record<string, unknown>} target
+ * @param {string} answer
+ * @param {{ scope?: string, company?: string, role?: string, url?: string, queueId?: string, evidenceRefs?: string[], source?: string }} [options]
+ * @returns {{ entry: Record<string, unknown>, answer: Record<string, unknown>, answerRef: string }|null}
+ */
+export function recordEvidenceBackedAnswerInLedger(ledger, target, answer, options = {}) {
+  const answerText = String(answer ?? '').trim();
+  if (!answerText) return null;
+  const targetId = typeof target === 'object' ? String(target.id || '') : String(target || '');
+  const targetQuestion = typeof target === 'object' ? String(target.question || '') : String(target || '');
+  let entry = targetId ? ledger.entries.find((candidate) => String(candidate.id || '') === targetId) : null;
+  if (!entry && targetQuestion) {
+    entry = findQuestionMatch(targetQuestion, ledger)?.entry || null;
+  }
+  if (!entry || String(entry.sensitivity || 'normal') === 'high' || isSensitiveQuestion(String(entry.question || ''))) return null;
+
+  const requestedScope = String(options.scope || (options.role ? 'role' : 'question'));
+  const scope = ['question', 'global', 'company', 'role', 'posting'].includes(requestedScope) ? requestedScope : 'question';
+  const now = new Date().toISOString();
+  const context = {
+    scope,
+    company: options.company || entry.company || null,
+    role: options.role || entry.role || null,
+    url: options.url || entry.url || null,
+    queueId: options.queueId || entry.queueId || null,
+  };
+  const existingVariants = answerVariants(entry);
+  const contextMatches = (candidate) => answerContextKey(candidate) === answerContextKey(context);
+  const sameContext = existingVariants.find((candidate) => contextMatches(candidate));
+  if (sameContext && String(sameContext.answer || '') !== answerText && isConfirmedAnswer(entry, sameContext)) return null;
+
+  const evidenceRefs = [...new Set([
+    ...(Array.isArray(sameContext?.evidenceRefs) ? sameContext.evidenceRefs.map(String) : []),
+    ...(Array.isArray(options.evidenceRefs) ? options.evidenceRefs.map(String) : []),
+  ].filter(Boolean))];
+  const maxVersion = Math.max(Number(entry.answerVersion || 0), ...existingVariants.map((variant) => Number(variant.answerVersion || 0)));
+  const nextVersion = sameContext && String(sameContext.answer || '') === answerText
+    ? Math.max(1, Number(sameContext.answerVersion || 1))
+    : Math.max(1, maxVersion + 1);
+  const variant = {
+    ...(sameContext || {}),
+    answer: answerText,
+    answerStatus: EVIDENCE_BACKED_ANSWER_STATUS,
+    answerVersion: nextVersion,
+    answerSource: options.source || 'career-ops-evidence',
+    evidenceRefs,
+    answeredAt: sameContext?.answeredAt || now,
+    updatedAt: now,
+    ...context,
+  };
+  const variants = existingVariants.length
+    ? existingVariants.map((candidate) => (contextMatches(candidate) ? { ...candidate, ...variant } : candidate))
+    : [variant];
+  if (!sameContext) variants.push(variant);
+
+  const topLevelConfirmed = isConfirmedAnswer(entry, entry) && entry.answerStatus === 'confirmed';
+  const updated = normalizeEntry({
+    ...entry,
+    answer: topLevelConfirmed ? entry.answer : answerText,
+    status: 'answered',
+    answerStatus: topLevelConfirmed ? entry.answerStatus : EVIDENCE_BACKED_ANSWER_STATUS,
+    answerVersion: topLevelConfirmed ? entry.answerVersion : nextVersion,
+    answerSource: topLevelConfirmed ? entry.answerSource : options.source || 'career-ops-evidence',
+    evidenceRefs: topLevelConfirmed ? entry.evidenceRefs : evidenceRefs,
+    answeredAt: topLevelConfirmed ? entry.answeredAt : (entry.answeredAt || now),
+    updatedAt: now,
+    answerVariants: variants,
+  });
+  ledger.entries = ledger.entries.map((candidate) => (candidate.id === entry.id ? updated : candidate));
+  const selectedAnswer = updated.answerVariants.find((candidate) => contextMatches(candidate)) || variant;
+  return {
+    entry: updated,
+    answer: selectedAnswer,
+    answerRef: answerReference(updated, selectedAnswer),
+  };
+}
+
+/**
+ * Merge observed questions and evidence-backed variants from a staging ledger
+ * into a canonical ledger without replacing user-confirmed answers.
+ * @param {{ entries: Array<Record<string, unknown>> }} target
+ * @param {{ entries: Array<Record<string, unknown>> }} source
+ * @returns {{ entries: Array<Record<string, unknown>> }}
+ */
+export function mergeLedgerObservations(target, source) {
+  for (const incoming of source.entries || []) {
+    const observed = recordQuestionInLedger(target, String(incoming.question || ''), {
+      company: incoming.company,
+      role: incoming.role,
+      url: incoming.url,
+      queueId: incoming.queueId,
+      jdHash: incoming.contexts?.[0]?.jdHash || null,
+      source: incoming.source || 'application-packet:form-inspection',
+      options: Array.isArray(incoming.options) ? incoming.options : [],
+      fieldKind: incoming.fieldKind,
+      required: incoming.required === true,
+      sensitivity: incoming.sensitivity,
+      pattern: incoming.pattern,
+    });
+    if (!observed) continue;
+    const targetEntry = target.entries.find((candidate) => candidate.id === observed.id);
+    if (!targetEntry) continue;
+    targetEntry.aliases = [...new Set([
+      ...(Array.isArray(targetEntry.aliases) ? targetEntry.aliases.map(String) : []),
+      ...(Array.isArray(incoming.aliases) ? incoming.aliases.map(String) : []),
+    ])];
+    const contextKey = (context) => [context.queueId, context.url, context.company, context.role].map((value) => String(value || '')).join('|');
+    const contexts = [...(Array.isArray(targetEntry.contexts) ? targetEntry.contexts : [])];
+    for (const context of Array.isArray(incoming.contexts) ? incoming.contexts : []) {
+      if (!context || typeof context !== 'object') continue;
+      if (!contexts.some((candidate) => contextKey(candidate) === contextKey(context))) contexts.push(context);
+    }
+    targetEntry.contexts = contexts;
+    targetEntry.options = [...new Set([
+      ...(Array.isArray(targetEntry.options) ? targetEntry.options.map(String) : []),
+      ...(Array.isArray(incoming.options) ? incoming.options.map(String) : []),
+    ].filter(Boolean))];
+
+    const incomingAnswers = Array.isArray(incoming.answerVariants) && incoming.answerVariants.length
+      ? incoming.answerVariants
+      : [incoming];
+    for (const candidate of incomingAnswers) {
+      if (!candidate?.answer || candidate.answerStatus !== EVIDENCE_BACKED_ANSWER_STATUS) continue;
+      recordEvidenceBackedAnswerInLedger(target, targetEntry.id, String(candidate.answer), {
+        scope: candidate.scope,
+        company: candidate.company,
+        role: candidate.role,
+        url: candidate.url,
+        queueId: candidate.queueId,
+        evidenceRefs: candidate.evidenceRefs,
+        source: candidate.answerSource || 'career-ops-evidence',
+      });
+    }
+  }
+  return target;
+}
+
+/**
  * @param {string} file
  * @param {string} question
  * @param {Record<string, unknown>} [metadata]
@@ -426,6 +581,8 @@ export function findReusableAnswer(question, ledger, context = {}) {
   best.answer.lastUsedAt = new Date().toISOString();
   return {
     answer: String(best.answer.answer),
+    answerStatus: best.answer.answerStatus || null,
+    evidenceRefs: Array.isArray(best.answer.evidenceRefs) ? best.answer.evidenceRefs.map(String) : [],
     entry: chosen,
     answerRef: answerReference(chosen, best.answer),
     matchType: matchTypeFor(chosen, question, best.score),
