@@ -48,6 +48,15 @@ Drained a 165-item inbox: cleared 7 API-dead + deferred 119 out-of-scope (senior
 - **The defense deal-breaker works end-to-end.** Palantir Denver "SWE New Grad" full-eval confirmed a US-security-clearance / intelligence (Gotham) requirement → auto-Discarded per `config/profile.yml` deal_breakers. The Commercial FDSE variant passed. Location/title alone can't tell them apart — the JD body does.
 - **Best fits reward remote-US + no-relocation + AI-tooling overlap:** Mercury (Remote-US incl NY), Cohere (agent/automation platform = candidate's Terrace/tmcp lane), Notion (TS/Next/tRPC core). Comp was a non-issue everywhere (all ≥ target).
 
+## 7. Queue sortScore can rank a hard-blocked role #1 (2026-07-24)
+
+The application queue's `sortScore` ranked **Celonis "Associate (AI) Solution Consultant — Orbit Program" #1 of today's selection**, but full-eval is a **1.5/5 SKIP** — two hard blockers the sort ignored:
+
+- **Language MUST buried in the JD body.** *"fluency in German and English (must)."* Candidate has no German. Same failure mode as tracker #44 (the Japanese Orbit variant) — the Orbit program localizes by market, and each variant carries a native-language MUST that title/location metadata don't expose.
+- **Location + EU work-auth.** Madrid-based 2 yrs → Munich relocation, DACH customer base. `deal_breakers.location_policy.requires_sponsorship_abroad: true` applies; this is a local Spain hire.
+
+Lessons: (a) **a high sortScore is not a fit verdict** — never surface a queued role as "ready" without confirming the JD-body language/work-auth requirements; (b) **graduate/rotational programs (Orbit, etc.) are language-gated per market** — treat any DACH/LatAm/APAC-based grad track as carrying a native-language MUST until the JD says otherwise; (c) consider a queue pre-filter that down-ranks non-US grad-program postings with a foreign-language token in the JD.
+
 ## Net-new employers added (Level 3 discovery, US early-career SWE)
 
 SeatGeek (SWE New Grad, NYC) · Sigma Computing (New Grad Program + FDE, SF/NYC) · Nuro (SWE AI Platform New Grad, Mountain View — AV differentiator). Added to `tracked_companies` and the pipeline.
