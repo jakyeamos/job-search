@@ -9,6 +9,7 @@ data/search-ops.md
 data/pipeline.md
 data/scan-history.tsv
 data/job-queue.json
+data/job-queue.json.bak-*
 data/job-queue.md
 data/queue-ui-launch-state.json
 data/gmail-state.json
