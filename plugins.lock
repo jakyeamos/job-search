@@ -31,11 +31,11 @@
     "jackandjill": {
       "source": "bundled",
       "version": "1.0.0",
-      "integrity": "sha256-e1cafe58814e2c66a3a3052bd8989599d1edbc324e9146df0ffe32a7bf0970b6",
+      "integrity": "sha256-06e9c65a82d4b16245f99da5dc06b0dc4d277d9e6ccb4c32095033f4b4c13d5d",
       "files": {
         "index.mjs": "sha256-29b9f75d62f28e528f33208033f9bb7de0027b29e2dc17bf25166c90e80b3355",
         "manifest.json": "sha256-e986667845a58b3fd0faefaa9f25c36d241a742a958da114791c4bcc7f50af88",
-        "skill.md": "sha256-11931ab74ff7503dd0ede6dadf8c951c1194abce502477d8171d162e7ecc03d7"
+        "skill.md": "sha256-c7134157ea9e7fdfe16c180071334daa6ea071aa4e6fd74a20750ff7b432b35a"
       },
       "consent": {
         "hooks": [
