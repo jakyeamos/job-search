@@ -72,21 +72,46 @@ new-grad req in the same lane and record the redirect in the tracker note. Sever
 already do this well ("redirect to early-career OpenAI roles", "Pivot to SDE I + warm Amazon
 outreach") — make it standard.
 
-## Scanner implication (not yet implemented)
+## Scanner implication — built 2026-07-25
 
 `scan-calibration-lessons-2026-07.md` covers title/geo/sector filtering. Experience floors are the
-gap it does not close, because the floor lives in the JD body rather than the title. Two candidate
-changes, both unbuilt:
+gap it does not close, because the floor lives in the JD body rather than the title. This is now
+closed by `experience-floor.mjs`, called from `scoreCandidate()` in `queue-lib.mjs`.
 
-1. Regex the fetched description for `\b([3-9]|1[0-9])\+?\s*(-\s*\d+)?\s*(years|yrs|YOE)\b` during
-   enrichment and downscore or auto-archive on a match ≥3.
-2. Parse published comp bands where available and flag base floors above ~$170K for manual review.
+The naive version proposed here — regex `\b([3-9]|1[0-9])\+?\s*(-\s*\d+)?\s*(years|yrs|YOE)\b` and
+DQ on any match ≥3 — is what shipped originally and it was **wrong twice over**:
 
-Item 1 is the higher-value one — it addresses ~30% of wasted evals directly and does not depend on
-comp being published (most reqs do not publish it).
+- **Context-blind.** It fired on benefits prose ("25 days after five years of service"), vesting
+  schedules, ROI copy ("payback in one to three years"), company history, four-year degrees, and
+  descriptions of the *colleagues* you'd work with. Measured against the live queue, 116 of its 131
+  hits were either not hiring bars at all or floors low enough to be harmless.
+- **Structurally blind to the worst cases.** A `[3-9]` character class cannot see a 10+ year floor.
+  Four genuinely senior reqs (Slack/Salesforce Staff SWE at 10, Sundayy at 12, Reserv at 10) sailed
+  through the filter it was supposed to be.
+
+What replaced it:
+
+- Match `3+ / 3-5 / 1 to 3 / three` year quantities, then require an experience anchor nearby
+  (experience, background, expertise, track record, professional, industry, career) and reject on
+  negative context (vesting, accrual, PTO, tuition, ROI, company history, degree length, peers).
+- Clip every context window to its sentence, or preference cues and negatives leak across
+  boundaries — this was the source of two separate bugs during implementation.
+- Required floors shadow preferred ones entirely. Across separate bullets the **highest** floor
+  binds (requirement bullets are conjunctive — UiPath asking `5+ yrs Java` *and* `1+ yrs B2B` has a
+  bar of 5, not 1); within a single range the **low end** binds (`1–4 years` admits a 1-yr
+  candidate).
+- Response is graduated, not binary: ≤2 free, 3 costs 0.5, 4–5 costs 1.2 and blocks only when the
+  role's substance also misses, ≥6 is a hard DQ. See `modes/_profile.md` → "Your Scoring Rules".
+
+Live-queue effect: 1,282 items, 168 carrying a real required floor (≤2: 62, 3: 48, 4–5: 39, ≥6: 19).
+Hard DQs drop from 131 to 19.
+
+Still unbuilt: parsing published comp bands and flagging base floors above ~$170K for manual review
+(Heuristic 1). Lower value — most reqs do not publish comp.
 
 ## Related
 
 - `scan-calibration-lessons-2026-07.md` — the filtering layers that run *before* this one
 - `pipeline-latency-lessons-2026-07.md` — the opposite failure: good-fit reqs lost to delay
-- `modes/_profile.md` → "Your Scoring Rules" — where the ≥3-year Hard DQ rule is defined
+- `modes/_profile.md` → "Your Scoring Rules" — the graduated floor policy
+- `experience-floor.mjs` / `tests/experience-floor.test.mjs` — the implementation and its cases

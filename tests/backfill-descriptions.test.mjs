@@ -62,7 +62,7 @@ test('a rescore that excludes an item pulls it out of the daily slate', () => {
     title: 'Software Engineer',
     company: 'Acme',
     location: 'New York, NY',
-    description: 'Requires 5+ years of professional software engineering experience.',
+    description: 'Requires 7+ years of professional software engineering experience.',
   }, 'active', {});
 
   assert.equal(rescored.status, 'excluded');

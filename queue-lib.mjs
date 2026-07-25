@@ -6,6 +6,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { buildResumeRequest } from './resume-contract.mjs';
 import { freshnessPenalty } from './queue-aging.mjs';
+import { detectExperienceFloor } from './experience-floor.mjs';
 import { normalizeJackJobUrl } from './jackandjill-lib.mjs';
 import {
   companyRecommendationKey,
@@ -59,7 +60,17 @@ const LANE_RULES = [
 ];
 
 const HARD_TITLE_RE = /\b(senior|sr\.?|staff|principal|lead|director|manager|architect|head of|founding)\b/i;
-const EXPERIENCE_DQ_RE = /(?:\b[3-9]\+?\s*years?|\b(?:three|four|five|six|seven|eight|nine)\s+years?|minimum\s+(?:of\s+)?[3-9]\s+years?)/i;
+/**
+ * Graduated response to a stated years-of-experience floor. A floor is a
+ * negotiable signal until it gets steep, so only >= 6 is unconditionally fatal;
+ * the 4-5 band kills a posting only when the role's substance misses too.
+ * See `modes/_profile.md` -> "Your Scoring Rules".
+ */
+const EXPERIENCE_HARD_DQ_FLOOR = 6;
+const EXPERIENCE_CONDITIONAL_DQ_FLOOR = 4;
+const EXPERIENCE_HEAVY_PENALTY = 1.2;
+const EXPERIENCE_MILD_FLOOR = 3;
+const EXPERIENCE_MILD_PENALTY = 0.5;
 const DEFENSE_DQ_RE = /\b(defense|defence|military|clearance|cleared|government|national security|classified|dod|department of defense|armed forces|army|navy|air force|space force|intelligence community)\b/i;
 const DEFENSE_CONTRACTOR_RE = /\b(palantir|anduril|lockheed martin|northrop grumman|raytheon|rtx|general dynamics|bae systems|l3harris|leidos|caci|saic|peraton|booz allen|mitre|gdit|amentum|kratos|aerovironment|shield ai|epirus|saronic)\b/i;
 const GAMBLING_SECTOR_RE = /\b(gambling|gamble|sports betting|online betting|sportsbook|casino|poker|wagering|lotter(?:y|ies)|daily fantasy(?: sports)?|fantasy sports|real[- ]money gaming|prediction market)\b/i;
@@ -320,9 +331,28 @@ export function scoreCandidate(candidate, profile = {}) {
   const location = normalizeText(candidate.location);
   const company = normalizeText(candidate.company);
   const text = `${title} ${description} ${location} ${company}`;
+
+  // Needed before the blocker gate: a 4-5 year floor only disqualifies when the
+  // role's substance misses as well.
+  const targetRoles = Array.isArray(profile.target_roles?.primary)
+    ? profile.target_roles.primary.filter((role) => typeof role === 'string')
+    : [];
+  const targetMatch = targetRoles.some((role) => title.toLowerCase().includes(role.toLowerCase())) || POSITIVE_ROLE_RE.test(title);
+  const backendSignal = /\b(backend|back-end|api|platform|service|serverless|distributed)\b/i.test(title);
+  const aiDataSignal = /\b(ai|ml|machine learning|llm|genai|data|analytics|sql|pipeline)\b/i.test(text);
+  const substanceMatch = targetMatch || backendSignal || aiDataSignal;
+
   const blockers = [];
   if (HARD_TITLE_RE.test(title)) blockers.push('seniority title suggests a role above the target level');
-  if (EXPERIENCE_DQ_RE.test(`${title} ${description}`)) blockers.push('posting states a 3+ year experience floor');
+  const experience = detectExperienceFloor(`${title}. ${description}`);
+  const experienceFloor = experience.required ? experience.floor : null;
+  if (experienceFloor !== null) {
+    if (experienceFloor >= EXPERIENCE_HARD_DQ_FLOOR) {
+      blockers.push(`posting states a ${experienceFloor}+ year experience floor`);
+    } else if (experienceFloor >= EXPERIENCE_CONDITIONAL_DQ_FLOOR && !substanceMatch) {
+      blockers.push(`posting states a ${experienceFloor}+ year experience floor and the role's substance does not match the target lanes`);
+    }
+  }
   if (DEFENSE_DQ_RE.test(text)) blockers.push('defense, intelligence, clearance, or government-mission role');
   if (DEFENSE_CONTRACTOR_RE.test(company)) blockers.push('defense-contractor employer is outside the target search');
   if (isGamblingCandidate(candidate)) blockers.push('gambling, betting, casino, or fantasy-sports employer or role is outside the target search');
@@ -345,23 +375,22 @@ export function scoreCandidate(candidate, profile = {}) {
     return { score: 0, eligible: false, status: 'excluded', confidence: 'low', reasons: [], blockers, lane: selectLane(title, description) };
   }
 
-  const targetRoles = Array.isArray(profile.target_roles?.primary)
-    ? profile.target_roles.primary.filter((role) => typeof role === 'string')
-    : [];
-  const targetMatch = targetRoles.some((role) => title.toLowerCase().includes(role.toLowerCase())) || POSITIVE_ROLE_RE.test(title);
   const reasons = [];
   let score = 2.8;
   if (targetMatch) { score += 0.9; reasons.push('title matches a target technical role'); }
-  if (/\b(backend|back-end|api|platform|service|serverless|distributed)\b/i.test(title)) {
-    score += 0.35; reasons.push('backend/platform signal');
-  }
-  if (/\b(ai|ml|machine learning|llm|genai|data|analytics|sql|pipeline)\b/i.test(text)) {
-    score += 0.35; reasons.push('AI/data signal');
-  }
+  if (backendSignal) { score += 0.35; reasons.push('backend/platform signal'); }
+  if (aiDataSignal) { score += 0.35; reasons.push('AI/data signal'); }
   if (/\b(remote|united states|us|new york|nyc|chicago|seattle|buffalo|san francisco|austin|boston)\b/i.test(location)
     || EUROPE_LOCATION_RE.test(location)
     || CANADA_LOCATION_RE.test(location)) {
     score += 0.2; reasons.push('location appears compatible');
+  }
+  if (experienceFloor !== null && experienceFloor >= EXPERIENCE_CONDITIONAL_DQ_FLOOR) {
+    score -= EXPERIENCE_HEAVY_PENALTY;
+    reasons.push(`posting states a ${experienceFloor}-year experience floor, offset by a matching role substance`);
+  } else if (experienceFloor === EXPERIENCE_MILD_FLOOR) {
+    score -= EXPERIENCE_MILD_PENALTY;
+    reasons.push(`posting states a ${experienceFloor}-year experience floor`);
   }
   if (candidate.liveness === 'active') { score += 0.25; reasons.push('public URL passed liveness'); }
   if (description) { score += 0.2; reasons.push('job description is available for review'); }
