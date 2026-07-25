@@ -101,12 +101,16 @@ const plugin = {
         processedIds.add(id);
         continue;
       }
-      const seed = parseRoleAtCompany(subject);
+      const parsed = parseRoleAtCompany(subject);
+      // A digest subject names only its first job. Which URL that is cannot be known
+      // from here, so stamping it on all of them mislabels every one but at most one.
+      // Leave them unlabelled instead — the queue fetches the real posting at ingest.
+      const seed = parsed?.digest && urls.length > 1 ? null : parsed;
       for (const url of urls) {
         if (seenUrls.has(url)) continue;
         seenUrls.add(url);
         jobs.push({
-          title: seed?.role || subject || 'Job lead (email)',
+          title: seed?.role || (parsed?.digest ? 'Job lead (email)' : subject) || 'Job lead (email)',
           url,
           canonicalUrl: url,
           sourceUrl: url,

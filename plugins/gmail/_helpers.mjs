@@ -200,21 +200,39 @@ export function isAuthenticEmail(headers) {
   return false;
 }
 
+// Alert digests append a tail to the FIRST job's "{Role} at {Company}":
+//   "Data Analyst at F-ADA and 7 more jobs in New York, NY for you. Apply Now."
+// The company capture is greedy, so without this the whole tail lands in `company`
+// — and it is short enough to slip past a length check.
+const DIGEST_TAIL = /\s+(?:and|&)\s+\d+\s+(?:more|other)\b/i;
+const CTA_TAIL = /\s*(?:[-–—|]\s*)?(?:apply now|apply today|see (?:all|more)|view job)\b[\s\S]*$/i;
+
 /**
  * Parse "{Role} at {Company}" from a subject line.
+ *
+ * `digest` marks a subject that describes more than the one job — the caller must
+ * not stamp these values onto every URL in the message.
  * @param {string} subject
- * @returns {{ role: string, company: string } | null}
+ * @returns {{ role: string, company: string, digest: boolean } | null}
  */
 export function parseRoleAtCompany(subject) {
   if (!subject) return null;
   let clean = subject.replace(/^(re|fwd|new match|job alert|alert|match|notification|alert for|daily alert for):\s*/i, '').trim();
   clean = clean.split(/\s+[-|]\s+/)[0].trim();
+  const digest = DIGEST_TAIL.test(clean) || /\b\d+\s+new jobs?\b/i.test(clean);
+  clean = clean.split(DIGEST_TAIL)[0].replace(CTA_TAIL, '').trim();
   const match = clean.match(/^(.+?)\s+at\s+(.+)$/i);
   if (match) {
     const role = match[1].trim();
-    const company = match[2].trim();
-    if (role && company && role.length < 100 && company.length < 100) {
-      return { role, company };
+    const company = match[2]
+      .replace(/\s+for you\b[\s\S]*$/i, '')
+      .replace(/[\s.,;:!]+$/, '')
+      .trim();
+    // A real company name is short and few-worded ("Bank of New York Mellon" is five).
+    // Anything past that is leftover subject-line prose, not a name.
+    const words = company.split(/\s+/).filter(Boolean).length;
+    if (role && company && role.length < 100 && company.length < 60 && words <= 6) {
+      return { role, company, digest };
     }
   }
   return null;

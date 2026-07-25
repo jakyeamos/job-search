@@ -34,6 +34,7 @@ import {
 } from './queue-lib.mjs';
 import { applyPostingAging } from './queue-aging.mjs';
 import { checkPublicLiveness } from './liveness-http.mjs';
+import { enrichCandidates } from './posting-fetch.mjs';
 
 export { checkPublicLiveness } from './liveness-http.mjs';
 
@@ -326,6 +327,16 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
     const gamblingExcluded = candidates.filter((candidate) => isGamblingCandidate(candidate)).length;
     candidates = candidates.filter((candidate) => !isGamblingCandidate(candidate));
     const profile = loadProfile(root);
+    // Email alerts arrive as a subject line and a link, nothing more. Scored on that
+    // alone every one of them lands on the same title-match-only number, so they are
+    // mutually indistinguishable and the digest-subject garbage in `company` survives
+    // into the queue. Fetch the real posting first; a posting that is gone comes back
+    // `expired` and is dropped below, and correcting the company can newly match an
+    // application, so both filters are re-applied.
+    const enrichment = await enrichCandidates(candidates, { log: (message) => console.log(message) });
+    candidates = enrichment.candidates.filter(
+      (candidate) => candidate.liveness !== 'expired' && !applications.has(applicationKey(candidate)),
+    );
     const previousForBuild = {
       ...previous,
       items: Array.isArray(previous.items)
@@ -351,6 +362,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       },
       errors: sourceErrors,
       exclusions: { gambling: gamblingExcluded },
+      enrichment: enrichment.outcomes,
       aging,
     };
     if (!dryRun) saveQueue(root, state);
