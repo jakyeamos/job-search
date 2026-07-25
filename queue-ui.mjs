@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 
 import { recordApplication, saveQueue } from './queue.mjs';
 import { DEFAULT_CONTACT_DISCOVERY_LIMIT, normalizeUrl, readQueueState, topUpSelection } from './queue-lib.mjs';
+import { readBoard, setRowNotes, setRowStatus } from './tracker-board.mjs';
 import { OUTREACH_STATE_PATH, loadOutreachState, recordSubmissionSignal, summarizeOutbox } from './outreach-lib.mjs';
 import { loadLedger, answerQuestion, findQuestionMatch, isSensitiveQuestion, questionId } from './apply/question-ledger.mjs';
 import { selectProjectAccomplishment } from './project-accomplishment-ledger.mjs';
@@ -50,6 +51,13 @@ function sendJson(response, status, payload) {
 /** @param {import('node:http').ServerResponse} response @param {number} status @param {string} message */
 function sendError(response, status, message) {
   sendJson(response, status, { error: message });
+}
+
+/** Map a tracker-board error message onto an HTTP status. @param {string} message */
+function boardErrorStatus(message) {
+  if (/not found/i.test(message)) return 404;
+  if (/is missing/i.test(message)) return 500;
+  return 400;
 }
 
 /** @param {import('node:http').IncomingMessage} request */
@@ -526,6 +534,35 @@ async function handleRequest(request, response) {
     const refill = topUpSelection(loadState());
     if (refill.added > 0) saveQueue(ROOT, refill.state);
     sendJson(response, 200, queuePayload(refill.state));
+    return;
+  }
+  if (request.method === 'GET' && requestUrl.pathname === '/api/board') {
+    try {
+      sendJson(response, 200, readBoard(ROOT));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendError(response, boardErrorStatus(message), message);
+    }
+    return;
+  }
+  if (request.method === 'POST' && requestUrl.pathname === '/api/board/status') {
+    try {
+      const payload = await readJsonBody(request);
+      sendJson(response, 200, setRowStatus(ROOT, Number(payload.num), stringValue(payload, 'status')));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendError(response, boardErrorStatus(message), message);
+    }
+    return;
+  }
+  if (request.method === 'POST' && requestUrl.pathname === '/api/board/notes') {
+    try {
+      const payload = await readJsonBody(request);
+      sendJson(response, 200, setRowNotes(ROOT, Number(payload.num), stringValue(payload, 'notes')));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendError(response, boardErrorStatus(message), message);
+    }
     return;
   }
   if (request.method === 'POST' && requestUrl.pathname === '/api/action') {
