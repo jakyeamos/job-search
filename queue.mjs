@@ -30,6 +30,8 @@ import {
   parseScanHistory,
   readQueueState,
   renderQueueMarkdown,
+  scoreCandidate,
+  topUpSelection,
   writeQueueState,
 } from './queue-lib.mjs';
 import { applyPostingAging } from './queue-aging.mjs';
@@ -510,6 +512,74 @@ function verifyQueue(root) {
 }
 
 /** @param {string} value */
+function blockerSlug(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/**
+ * Pulls archived records back into the live queue and rescores them. The
+ * following save re-evicts whatever still scores `excluded`, so this is safe
+ * to run broadly.
+ *
+ * @param {string} root @param {string|null} blocker @param {boolean} dryRun
+ */
+export function rehydrateQueue(root, blocker, dryRun) {
+  const profile = loadProfile(root);
+  const archiveFile = path.join(root, 'data', 'job-queue-archive.json');
+  const archive = readArchive(archiveFile);
+  const state = readQueueState(path.join(root, 'data', 'job-queue.json'));
+  const wanted = blocker ? blockerSlug(blocker) : null;
+  const matches = archive.records.filter((record) => {
+    if (!wanted) return true;
+    return (Array.isArray(record.blockers) ? record.blockers : [])
+      .some((entry) => blockerSlug(entry).includes(wanted));
+  });
+
+  const now = new Date().toISOString();
+  const rescored = matches.map((record) => {
+    const evaluation = scoreCandidate(record, profile);
+    return {
+      ...record,
+      fitScore: evaluation.score,
+      fitConfidence: evaluation.confidence,
+      fitReasons: evaluation.reasons,
+      blockers: evaluation.blockers,
+      lane: evaluation.lane,
+      status: evaluation.status,
+      selectedForToday: false,
+      queueRank: null,
+      rehydratedAt: now,
+      updatedAt: now,
+    };
+  });
+
+  const label = wanted ? ` matching blocker "${blocker}"` : '';
+  if (dryRun) {
+    console.log(`Rehydrate (dry run): ${rescored.length} archived record(s)${label}.`);
+    const counts = new Map();
+    for (const entry of rescored) counts.set(entry.status, (counts.get(entry.status) || 0) + 1);
+    for (const [status, count] of [...counts.entries()].sort()) console.log(`  ${status}: ${count}`);
+    console.log(`  ${rescored.filter((entry) => entry.status !== 'excluded').length} would stay live after the next write.`);
+    return;
+  }
+
+  const ids = new Set(rescored.map((entry) => entry.id));
+  const previousItems = Array.isArray(state.items) ? state.items : [];
+  const previousIndex = Array.isArray(state.archivedIndex) ? state.archivedIndex : [];
+  const next = {
+    ...state,
+    items: [...previousItems.filter((entry) => !ids.has(entry.id)), ...rescored],
+    archivedIndex: previousIndex.filter((stub) => !ids.has(stub.id)),
+  };
+  // The archive is trimmed before the save so the save's read-modify-write can
+  // put back only the records that still score `excluded`.
+  writeArchive(archiveFile, { ...archive, updatedAt: now, records: archive.records.filter((record) => !ids.has(record.id)) });
+  const saved = saveQueue(root, topUpSelection(next).state);
+  const live = saved.items.filter((entry) => ids.has(entry.id)).length;
+  console.log(`Rehydrated ${rescored.length} record(s)${label}: ${live} stayed live, ${rescored.length - live} were evicted again.`);
+}
+
+/** @param {string} value */
 function xmlEscape(value) {
   return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -568,6 +638,10 @@ async function main() {
   if (command === 'list' || command === 'today') { listQueue(ROOT); return; }
   if (command === 'clear') { await clearQueue(ROOT); return; }
   if (command === 'verify') { verifyQueue(ROOT); return; }
+  if (command === 'rehydrate') {
+    rehydrateQueue(ROOT, readFlag(args, '--blocker', '') || null, args.includes('--dry-run'));
+    return;
+  }
   if (command === 'health') {
     const health = await import('./queue-health.mjs');
     const healthLimit = Math.max(1, Math.min(2_000, Number(readFlag(args, '--limit', '100')) || 100));

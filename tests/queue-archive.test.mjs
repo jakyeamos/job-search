@@ -12,7 +12,7 @@ import {
   readArchive,
   writeArchive,
 } from '../queue-archive.mjs';
-import { saveQueue } from '../queue.mjs';
+import { rehydrateQueue, saveQueue } from '../queue.mjs';
 import { buildQueue, writeQueueState } from '../queue-lib.mjs';
 
 /** @param {Record<string, unknown>} overrides */
@@ -266,4 +266,77 @@ test('saveQueue leaves skipped and applied rows live', () => {
   });
   assert.deepEqual(saved.items.map((entry) => entry.id), ['skipped', 'applied', 'stale']);
   assert.deepEqual(saved.archivedIndex, []);
+});
+
+/** @param {string} root @param {Record<string, unknown>} record */
+function seedArchive(root, record) {
+  writeQueueState(path.join(root, 'data', 'job-queue.json'), {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [],
+    archivedIndex: [archiveStub(record, '2026-07-10T00:00:00.000Z')],
+  });
+  writeArchive(path.join(root, 'data', 'job-queue-archive.json'), {
+    schemaVersion: 1,
+    updatedAt: '2026-07-10T00:00:00.000Z',
+    records: [record],
+  });
+}
+
+test('rehydrate returns a matching record and rescored it live when it now passes', () => {
+  const root = tempRoot();
+  seedArchive(root, item({
+    id: 'exp',
+    status: 'excluded',
+    description: 'Backend engineer building APIs. Remote, United States.',
+    location: 'Remote, United States',
+    liveness: 'active',
+    blockers: ['posting states a 3+ year experience floor'],
+  }));
+  rehydrateQueue(root, 'experience-floor', false);
+  const live = JSON.parse(readFileSync(path.join(root, 'data', 'job-queue.json'), 'utf8'));
+  assert.deepEqual(live.items.map((entry) => entry.id), ['exp']);
+  assert.deepEqual(live.archivedIndex, []);
+  assert.equal(readArchive(path.join(root, 'data', 'job-queue-archive.json')).records.length, 0);
+});
+
+test('a record that still fails its blocker is evicted again by the same run', () => {
+  const root = tempRoot();
+  seedArchive(root, item({
+    id: 'exp',
+    status: 'excluded',
+    description: 'We require 7+ years of experience.',
+    blockers: ['posting states a 3+ year experience floor'],
+  }));
+  rehydrateQueue(root, 'experience-floor', false);
+  const live = JSON.parse(readFileSync(path.join(root, 'data', 'job-queue.json'), 'utf8'));
+  assert.deepEqual(live.items, []);
+  assert.deepEqual(live.archivedIndex.map((stub) => stub.id), ['exp']);
+  assert.equal(readArchive(path.join(root, 'data', 'job-queue-archive.json')).records.length, 1);
+});
+
+test('a non-matching blocker filter rehydrates nothing', () => {
+  const root = tempRoot();
+  seedArchive(root, item({ id: 'exp', status: 'excluded', blockers: ['posting states a 3+ year experience floor'] }));
+  rehydrateQueue(root, 'defense-contractor', false);
+  const live = JSON.parse(readFileSync(path.join(root, 'data', 'job-queue.json'), 'utf8'));
+  assert.deepEqual(live.items, []);
+  assert.deepEqual(live.archivedIndex.map((stub) => stub.id), ['exp']);
+});
+
+test('a dry run changes neither file', () => {
+  const root = tempRoot();
+  seedArchive(root, item({
+    id: 'exp',
+    status: 'excluded',
+    description: 'Backend engineer building APIs. Remote, United States.',
+    location: 'Remote, United States',
+    liveness: 'active',
+    blockers: ['posting states a 3+ year experience floor'],
+  }));
+  rehydrateQueue(root, 'experience-floor', true);
+  const live = JSON.parse(readFileSync(path.join(root, 'data', 'job-queue.json'), 'utf8'));
+  assert.deepEqual(live.items, []);
+  assert.deepEqual(live.archivedIndex.map((stub) => stub.id), ['exp']);
+  assert.equal(readArchive(path.join(root, 'data', 'job-queue-archive.json')).records.length, 1);
 });
