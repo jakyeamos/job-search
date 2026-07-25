@@ -7,6 +7,7 @@ import yaml from 'js-yaml';
 import { buildResumeRequest } from './resume-contract.mjs';
 import { freshnessPenalty } from './queue-aging.mjs';
 import { normalizeJackJobUrl } from './jackandjill-lib.mjs';
+import { selectApplicationRecommendations } from './apply/application-recommendations.mjs';
 
 export const QUEUE_SCHEMA_VERSION = 1;
 export const DEFAULT_QUEUE_LIMIT = 10;
@@ -393,19 +394,38 @@ function sortScore(item) {
   return readiness + Number(item.fitScore || 0) * weight + postedFreshness - freshnessPenalty(String(item.freshness || 'unknown'));
 }
 
-/** @param {Record<string, unknown>} item */
-function selectionIdentity(item) {
-  const company = normalizeKey(String(item.company || ''));
-  const title = normalizeKey(String(item.title || ''));
-  const location = normalizeKey(String(item.location || ''));
-  if (!company || !title) return `item:${String(item.id || '')}`;
-  return `role:${company}|${title}|${location}`;
+/**
+ * Pick the roles worth showing today: eligible, at or above the fit floor, highest
+ * sortScore first, capped for company and role-family diversity.
+ * @param {Array<Record<string, unknown>>} items
+ * @param {{ limit?: number, minFitScore?: number, maxPerCompany?: number, maxPerJobFamily?: number, pinned?: Array<Record<string, unknown>> }} [options]
+ * @returns {Array<Record<string, unknown>>}
+ */
+export function selectDailyQueue(items, options = {}) {
+  const limit = Math.max(1, Math.min(50, Number(options.limit || DEFAULT_QUEUE_LIMIT)));
+  const minFitScore = Number.isFinite(Number(options.minFitScore))
+    ? Number(options.minFitScore)
+    : APPLY_THRESHOLD;
+  const pinned = Array.isArray(options.pinned) ? options.pinned : [];
+  const pinnedIds = new Set(pinned.map((item) => item?.id).filter(Boolean));
+  const candidates = [...items]
+    .filter((item) => !(item?.id && pinnedIds.has(item.id)))
+    .filter(eligibleForSelection)
+    .filter((item) => Number(item.fitScore || 0) >= minFitScore)
+    .sort((a, b) => sortScore(b) - sortScore(a));
+  return selectApplicationRecommendations(candidates, {
+    limit,
+    maxPerCompany: options.maxPerCompany,
+    maxPerJobFamily: options.maxPerJobFamily,
+    pinned,
+    compare: (left, right) => sortScore(right) - sortScore(left),
+  });
 }
 
 /**
  * @param {Array<Record<string, unknown>>} candidates
  * @param {Record<string, unknown>} previous
- * @param {{ limit?: number, now?: string, retainUnseen?: boolean }} [options]
+ * @param {{ limit?: number, now?: string, retainUnseen?: boolean, minFitScore?: number, maxPerCompany?: number, maxPerJobFamily?: number }} [options]
  */
 export function buildQueue(candidates, previous = {}, options = {}) {
   const limit = Math.max(1, Math.min(50, Number(options.limit || DEFAULT_QUEUE_LIMIT)));
@@ -465,21 +485,12 @@ export function buildQueue(candidates, previous = {}, options = {}) {
     if (!merged.has(old.id) && options.retainUnseen !== false) merged.set(old.id, old);
   }
 
-  const selectedIdentities = new Set();
-  const selectedCompanies = new Set();
-  const selected = [...merged.values()]
-    .filter(eligibleForSelection)
-    .sort((a, b) => sortScore(b) - sortScore(a))
-    .filter((item) => {
-      const identity = selectionIdentity(item);
-      if (selectedIdentities.has(identity)) return false;
-      const company = normalizeKey(String(item.company || ''));
-      if (company && selectedCompanies.has(company)) return false;
-      selectedIdentities.add(identity);
-      if (company) selectedCompanies.add(company);
-      return true;
-    })
-    .slice(0, limit);
+  const selected = selectDailyQueue([...merged.values()], {
+    limit,
+    minFitScore: options.minFitScore,
+    maxPerCompany: options.maxPerCompany,
+    maxPerJobFamily: options.maxPerJobFamily,
+  });
   const selectedIds = new Set(selected.map((item) => item.id));
   const items = [...merged.values()].map((item) => ({
     ...item,
