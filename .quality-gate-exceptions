@@ -1,0 +1,26 @@
+# Quality gate exceptions
+#
+# Format: <rule> <repo-relative-path>  # reason
+#
+# career-ops is a script-oriented repo: each root-level .mjs is a single
+# self-contained CLI entry point (`node scan.mjs`, `node queue.mjs`, ...) with
+# its shared logic in a matching *-lib.mjs. The gate classifies them as
+# production source (500-line limit) rather than scripts (650). These files
+# predate the limit and splitting them further would fragment one command per
+# several files without improving the boundaries that already exist.
+#
+# Adding a new file here requires a reason. Growth inside an excepted file is
+# still reviewable — the exception waives the line count, not the design.
+
+oversized-source application-queue.mjs   # tracker <-> queue bridge, one concern
+oversized-source contact-discovery.mjs   # per-provider contact lookup, one concern
+oversized-source merge-tracker.mjs       # applications.md merge + column mapping
+oversized-source openrouter-runner.mjs   # single model-runner client
+oversized-source outreach-lib.mjs        # outreach shared logic behind outreach.mjs
+oversized-source outreach.mjs            # outreach CLI, all subcommands
+oversized-source queue-lib.mjs           # queue scoring/selection/merge shared logic
+oversized-source queue-ui.mjs            # queue UI server: routes + static handler
+oversized-source queue.mjs               # queue CLI, all subcommands
+oversized-source scan-ats-full.mjs       # full-ATS scan pass
+oversized-source scan.mjs                # portal scan CLI, all providers
+oversized-source queue-ui/app.js         # queue UI front-end, no build step
