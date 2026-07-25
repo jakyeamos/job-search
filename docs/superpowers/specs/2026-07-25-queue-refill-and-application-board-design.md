@@ -5,23 +5,31 @@
 
 ## Goal
 
-Two changes to the local queue UI (`queue-ui.mjs` + `queue-ui/`):
+Three changes to the local queue UI (`queue-ui.mjs` + `queue-ui/`):
 
 1. **Auto-refill.** When today's selection drops below 10 roles, top it back up to 10
    from the already-scored pool in `data/job-queue.json`. No network calls, no waiting.
 2. **Application board.** A second screen — a six-column kanban over
    `data/applications.md` — so an application stays visible after it leaves the daily
    queue. Today, marking a job applied makes it disappear from the UI entirely.
+3. **Archive tier.** Move terminally-filtered rows out of the hot queue file into a
+   sidecar, keeping a compact stub index behind for dedup. Half the working file is rows
+   that can never be selected again.
 
 ## Deliverables
 
-- `queue-lib.mjs` — new exports `selectDailyQueue`, `topUpSelection`
+- `queue-lib.mjs` — new exports `selectDailyQueue`, `topUpSelection`, `evictToArchive`,
+  `archiveStub`; `buildQueue` consults the stub index
 - `apply/application-recommendations.mjs` — new `pinned` option
 - `tracker-board.mjs` — read/write board state over `data/applications.md`
+- `queue-archive.mjs` — read/write `data/job-queue-archive.json`, rehydrate pass
+- `queue.mjs` — `saveQueue` evicts before write; new `rehydrate` subcommand; integrity
+  check covers the index
 - `queue-ui.mjs` — refill wire-in; `GET /api/board`, `POST /api/board/status`,
-  `POST /api/board/notes`
+  `POST /api/board/notes`; totals read the index
 - `queue-ui/board.html`, `queue-ui/board.js`, additions to `queue-ui/styles.css`
-- `tests/queue-topup.test.mjs`, `tests/tracker-board.test.mjs`
+- `tests/queue-topup.test.mjs`, `tests/tracker-board.test.mjs`,
+  `tests/queue-archive.test.mjs`
 
 ## Feature 1 — Auto-refill to 10
 
@@ -187,6 +195,154 @@ No change to the queue card at all. `Confirm submitted` keeps its exact current 
 `Applied`, it appears in the board's first column on the next board load. No new button,
 no rename, and the outreach guardrail is untouched.
 
+## Feature 3 — Archive tier
+
+### The cost
+
+Measured on `data/job-queue.json`, 2026-07-25 after the description backfill (these
+counts supersede the pre-backfill figures quoted in Feature 1):
+
+| Status | Items | JSON bytes |
+|--------|------:|-----------:|
+| `excluded` | 648 | 2.06 MB |
+| `in_review` | 321 | 0.99 MB |
+| `skipped` | 156 | 0.41 MB |
+| `ready` | 133 | 0.83 MB |
+| `stale` | 23 | 0.05 MB |
+| `applied` | 1 | — |
+| **total** | **1282** | **4.34 MB** (5.4 MB on disk) |
+
+Every `queue.mjs` run, every `/api/queue` request, and every `saveQueue` parses and
+rewrites all 1282 items in order to choose 10. The 648 `excluded` rows are 47% of that
+and can never be selected — `eligibleForSelection` (`queue-lib.mjs:465`) rejects them
+outright.
+
+### What must never be evicted
+
+`skipped` and `applied`. `buildQueue` preserves those two statuses across rebuilds
+(`queue-lib.mjs:503`) and that record is the only thing standing between the user and a
+job they already rejected walking back into the daily selection — the queue is rebuilt
+from Gmail alerts and portal scans, which keep re-surfacing the same postings. They are
+also cheap: 157 rows, 0.41 MB. They stay live forever, with no age rule.
+
+### Eviction triggers on status, not age
+
+An age threshold was the first instinct and it does not survive contact with the data.
+Queue history spans 22 days (earliest `firstSeenAt` 2026-07-04); dead-row age is median
+9 days, max 21:
+
+```
+>60d: 0    >45d: 0    >30d: 0    >21d: 0    >14d: 4    >7d: 545
+```
+
+A 60-day rule matching `POSTING_AGE_POLICY.archiveAfterDays` (`queue-aging.mjs:14`)
+evicts nothing today and nothing for another 40 days. A 7-day rule evicts 545 rows
+including all 147 `excluded` rows whose descriptions the backfill just fetched. Age is
+either inert or indiscriminate here, because `lastSeenAt` on an `excluded` row records
+when its alert email arrived, not how long it has been waiting for anything.
+
+So:
+
+| Status | Rule | Why |
+|--------|------|-----|
+| `excluded` | evict on the next `saveQueue` | Exclusion is deterministic. Nothing but a blocker-rule change makes one selectable again, and that change triggers an explicit rehydrate. |
+| `archived` | evict on the next `saveQueue` | Already the terminal state `applyPostingAging` assigns at 60 days (`queue-aging.mjs:116-122`). The age wait has happened. |
+| `stale` | stays live | The 45-to-60-day waiting room, and it reactivates on re-observation (`queue-lib.mjs:529`). 23 rows, 0.05 MB — not worth the round trip. |
+| `skipped`, `applied` | never | See above. |
+| `ready`, `in_review`, `snoozed` | never | Selectable. |
+
+### Two files, one stub index
+
+`data/job-queue-archive.json` holds the full evicted records, descriptions included.
+**Nothing is deleted** — the 147 backfilled descriptions move to another file on the same
+disk, they do not disappear.
+
+The live file gains a top-level `archivedIndex`: one stub per evicted row.
+
+```
+{ id, company, title, url, status, fitScore, blockers, lane,
+  firstSeenAt, lastSeenAt, archivedAt }
+```
+
+Measured at 0.19 MB for all 671 currently-dead rows. Live file drops to ~3.4 MB on disk
+and items parsed per run from 1282 to 634.
+
+The index lives in the live file rather than being derived by reading the archive each
+run, because dedup and suppression need only ids and dates — reading a 2 MB sidecar in
+order to select 10 roles is the exact cost this feature removes. The archive is opened
+only on rehydrate.
+
+```
+evictToArchive(state, archive, { now }) -> { state, archive, evicted, index }
+archiveStub(item) -> stub
+```
+
+`saveQueue` (`queue.mjs:275`) calls `evictToArchive` before writing, then writes both
+files. Archive write is read-modify-write on the sidecar, appending by id, so a record
+evicted twice does not duplicate.
+
+### Suppression and reactivation
+
+`buildQueue` loads `archivedIndex` alongside `previous.items`. For a candidate whose id
+hits the index:
+
+- **Not observed now** — dropped from the merge. It stays archived; the stub is enough to
+  keep it from re-entering as a new row. `stableQueueId` (`queue-lib.mjs:173`) hashes
+  company plus title, so a re-sent alert for the same posting collides with the stub as
+  intended.
+- **Observed now** — re-enters live `items` with `firstSeenAt` carried from the stub and
+  `reactivatedAt` stamped, and the stub is removed from the index. No archive read: an
+  observed candidate arrives with fresh data, and the stub carries the one field
+  (`firstSeenAt`) that the candidate cannot supply. This preserves the reactivation
+  semantics already at `queue-lib.mjs:529`.
+
+An `excluded` row re-observed this way gets rescored by `scoreCandidate` like any other
+candidate. If the blockers still apply it is excluded again and evicted again on the same
+write. That churn is bounded by how often an alert repeats a posting.
+
+### Rehydrate
+
+```
+node queue.mjs rehydrate [--blocker <name>] [--dry-run]
+```
+
+Pulls matching records out of the archive back into live `items`, rescores each with
+`scoreCandidate`, and lets the next `saveQueue` re-evict whatever is still excluded. This
+is the answer to a loosened blocker rule: `--blocker experience-floor` brings back 131
+rows with their descriptions intact and no network calls. Without it, relaxing a rule
+would mean another backfill pass.
+
+`--dry-run` reports what would return and how each row rescores, changing nothing.
+
+### Counts must not lie
+
+`buildSnapshot` (`queue-ui.mjs:241-253`) computes `totals` by scanning `items`, so
+`excluded` and `archived` would both read 0 once eviction lands. Those two counts come
+from `archivedIndex` instead; `retained` becomes live items plus index length so the
+headline number keeps meaning "everything the system remembers".
+
+The UI then collapses `excluded` / `skipped` / `stale` / `archived` into a single
+`Filtered (N)` disclosure line in the topbar, expandable to the per-status breakdown.
+Four dead-end counts on screen daily is what prompted this feature; the fix is one line,
+not four deletions.
+
+### Integrity
+
+`queue.mjs`'s status validation (`queue.mjs:482`) extends to the archive: every stub id
+must be absent from live `items`, every stub must resolve to a record in the sidecar, and
+`archived` / `excluded` must not appear as a live item status. A stub without a record,
+or an id in both places, is an error rather than a silent repair — the two files drifting
+apart is the failure mode worth catching loudly.
+
+### Consequences accepted
+
+- The archive grows without bound. At current ingest that is roughly 2 MB/month of
+  records nothing reads unless a rule changes. Trimming it is a later problem and needs
+  its own retention decision.
+- Two files to keep in sync, where there was one.
+- Hand-editing `data/job-queue.json` to resurrect a specific job stops working for
+  evicted rows; `rehydrate` is the supported path.
+
 ## Error handling
 
 - Unknown status value → `400`, listing the six accepted values.
@@ -197,6 +353,11 @@ no rename, and the outreach guardrail is untouched.
   `showToast(..., true)` pattern from `app.js`.
 - `topUpSelection` never throws on an empty pool; it returns `shortBy > 0` and the queue
   renders short.
+- `data/job-queue-archive.json` missing → treated as empty, created on first eviction. A
+  fresh clone has no archive and must not fail.
+- Archive file present but unparseable → `saveQueue` aborts before writing either file
+  rather than evicting into a void.
+- `rehydrate --blocker` matching nothing → exits 0 reporting zero matches.
 
 ## Testing
 
@@ -223,6 +384,24 @@ no rename, and the outreach guardrail is untouched.
 `tests/application-recommendations.test.mjs` gains coverage for `pinned`: seeding the
 counts, preserving order, and defaulting to `[]` for existing callers.
 
+`tests/queue-archive.test.mjs`, against temp-file fixtures
+
+- `excluded` and `archived` are evicted; `ready`, `in_review`, `snoozed`, `stale` are not
+- `skipped` and `applied` are never evicted, at any age
+- an evicted record is byte-identical in the sidecar, description included
+- the stub carries every documented field and no others
+- a re-ingested candidate matching a stub and not observed now is dropped from the merge
+- a re-ingested candidate matching a stub and observed now returns to live `items` with
+  `firstSeenAt` from the stub, `reactivatedAt` set, and the stub gone from the index
+- evicting the same id twice leaves one archive record
+- no id appears in both live `items` and `archivedIndex` after a full build-then-save cycle
+- `rehydrate --blocker` returns only rows carrying that blocker, and rescores them
+- `rehydrate --dry-run` leaves both files unmodified
+- missing archive file behaves as empty; unparseable archive aborts the write with both
+  files unchanged
+- `totals.excluded` and `totals.archived` read from the index, and `retained` counts live
+  items plus stubs
+
 ## Out of scope
 
 - Structured per-stage fields (interview dates, recruiter contact, next action). Status
@@ -231,3 +410,8 @@ counts, preserving order, and defaulting to `[]` for existing callers.
 - Fetching descriptions for the 307-item 3.7-score cluster. Worth doing, but it is a
   scoring-pipeline problem, not a queue-UI one.
 - Any change to outreach triggering.
+- Retention or compaction of `data/job-queue-archive.json`. It grows unbounded by design
+  here; deciding when a record is truly dead is a separate call.
+- Deleting anything. The archive tier moves records between files and never removes them.
+- Migrating the existing 671 dead rows in a dedicated pass. The first `saveQueue` after
+  this ships evicts them, and `queue.mjs verify` confirms the split.
