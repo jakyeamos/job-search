@@ -10,6 +10,11 @@ import { parseArgs } from 'node:util';
 
 import { readQueueState, stableQueueId, normalizeUrl } from '../queue-lib.mjs';
 import { buildApplicationPacket } from './application-packets.mjs';
+import {
+  jobFamilyKey,
+  recommendationGroupKey,
+  selectApplicationRecommendations,
+} from './application-recommendations.mjs';
 import { applicationAdapter, normalizeApplicationUrl } from './form-inspection.mjs';
 import {
   DEFAULT_LEDGER_PATH,
@@ -74,6 +79,7 @@ const TERMINAL_APPLICATION_STATES = new Set([
  * @property {DogfoodCandidate[]} classifications
  * @property {DogfoodCandidate[]} eligible
  * @property {DogfoodCandidate[]} selected
+ * @property {DogfoodCandidate[]} applicationRecommendations
  * @property {Record<string, number>} sourceByStatus
  * @property {Record<string, number>} sourceByAdapter
  * @property {Record<string, number>} sourceByLiveness
@@ -234,6 +240,16 @@ export function buildDogfoodPlan(items, options = {}) {
   const classifications = sourceItems.map((item) => classifyQueueItem(item, policy));
   const eligible = classifications.filter((candidate) => candidate.eligible);
   const selected = selectDogfoodSample(eligible, policy);
+  const eligibleById = new Map(eligible.map((candidate) => [candidate.id, candidate]));
+  const recommendationItems = selectApplicationRecommendations(eligible.map((candidate) => candidate.item), {
+    compare: (left, right) => Number(right.fitScore || 0) - Number(left.fitScore || 0)
+      || String(left.id || '').localeCompare(String(right.id || '')),
+  });
+  const applicationRecommendations = [];
+  for (const item of recommendationItems) {
+    const candidate = eligibleById.get(String(item.id || ''));
+    if (candidate) applicationRecommendations.push(candidate);
+  }
   const sourceByStatus = {};
   const sourceByAdapter = {};
   const sourceByLiveness = {};
@@ -253,6 +269,7 @@ export function buildDogfoodPlan(items, options = {}) {
     classifications,
     eligible,
     selected,
+    applicationRecommendations,
     sourceByStatus,
     sourceByAdapter,
     sourceByLiveness,
@@ -357,6 +374,8 @@ function publicCandidate(candidate) {
     url: candidate.url,
     company: normalizedText(candidate.item.company),
     title: normalizedText(candidate.item.title),
+    jobFamily: jobFamilyKey(candidate.item),
+    recommendationGroup: recommendationGroupKey(candidate.item),
     status: candidate.status,
     liveness: candidate.liveness,
     descriptionLength: candidate.descriptionLength,
@@ -377,6 +396,11 @@ function publicPlan(plan) {
     eligibleCount: plan.eligible.length,
     sampleCount: plan.selected.length,
     sample: plan.selected.map(publicCandidate),
+    applicationRecommendationCount: plan.applicationRecommendations.length,
+    applicationRecommendations: plan.applicationRecommendations.map((candidate, index) => ({
+      ...publicCandidate(candidate),
+      recommendationRank: index + 1,
+    })),
     preflight: {
       blockingReasonCounts: plan.reasonCounts,
       verificationWarningCounts: plan.verificationWarningCounts,
@@ -503,6 +527,7 @@ export async function runLedgerDogfood(options = {}) {
   report.ledger.before = ledgerStats(before);
   const buildPacket = options.buildPacket || buildApplicationPacket;
   const runs = [];
+  const recommendationRanks = new Map(plan.applicationRecommendations.map((candidate, index) => [candidate.id, index + 1]));
   for (const candidate of plan.selected) {
     try {
       const result = await buildPacket(candidate.item, {
@@ -517,7 +542,15 @@ export async function runLedgerDogfood(options = {}) {
         dryRun: false,
         maxPages: options.maxPages,
       });
-      runs.push(summarizePacketResult(result, candidate));
+      const summary = summarizePacketResult(result, candidate);
+      summary.jobFamily = jobFamilyKey(candidate.item);
+      summary.recommendationGroup = recommendationGroupKey(candidate.item);
+      summary.applicationRecommendation = recommendationRanks.has(candidate.id);
+      summary.applicationRecommendationRank = recommendationRanks.get(candidate.id) || null;
+      summary.packetPurpose = recommendationRanks.has(candidate.id)
+        ? 'application-recommendation'
+        : 'ledger-coverage-only';
+      runs.push(summary);
     } catch (error) {
       runs.push({
         id: candidate.id,
@@ -525,6 +558,13 @@ export async function runLedgerDogfood(options = {}) {
         url: candidate.url,
         company: normalizedText(candidate.item.company),
         title: normalizedText(candidate.item.title),
+        jobFamily: jobFamilyKey(candidate.item),
+        recommendationGroup: recommendationGroupKey(candidate.item),
+        applicationRecommendation: recommendationRanks.has(candidate.id),
+        applicationRecommendationRank: recommendationRanks.get(candidate.id) || null,
+        packetPurpose: recommendationRanks.has(candidate.id)
+          ? 'application-recommendation'
+          : 'ledger-coverage-only',
         ok: false,
         status: 'error',
         questionCount: 0,

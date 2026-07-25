@@ -203,6 +203,13 @@ evidence preflight:
 pnpm application-ledger-dogfood --all
 ```
 
+`--all` is ledger coverage, not an instruction to apply to every posting. The
+report separately lists `applicationRecommendations`, capped by default to the
+strongest role per company; role-family de-duplication also applies if that
+company cap is raised. Country-specific duplicates and nearby variants can
+therefore contribute questions to the ledger without being presented as
+separate application recommendations.
+
 Normal runs require an active supported posting. If the queue description is
 missing or short, the runner hydrates it from the rendered application page
 during the read-only inspection; the packet remains blocked if that page does
@@ -268,7 +275,8 @@ node application-queue.mjs handoff --queue-id <id> --timeout 600
 ```
 
 `clear` refreshes the queue, selects at most six active high-fit supported-ATS
-roles with one role per company, and processes them headlessly. Required
+recommendations with one role per company by default and role-family
+de-duplication, and processes them headlessly. Required
 questions appear in the daily queue UI as `blocked_by_question`; CAPTCHA, MFA,
 anti-spam, uncertain-submit, and ambiguous-control states use the single-window
 human-handoff flow. No outreach is sent unless confirmation evidence records a

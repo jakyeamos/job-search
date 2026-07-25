@@ -19,6 +19,7 @@ import { beginRun, countSubmitted, DEFAULT_RUNS_PATH, finishRun, roleKey } from 
 import { DEFAULT_LEDGER_PATH } from './apply/question-ledger.mjs';
 import { registerResumeArtifact, resolveResumeArtifact } from './resume-contract.mjs';
 import { generateApplicationArtifacts, inspectArtifactCache } from './apply/application-artifacts.mjs';
+import { selectApplicationRecommendations } from './apply/application-recommendations.mjs';
 import {
   acquireClearLock,
   DEFAULT_CLEAR_STATE_PATH,
@@ -256,15 +257,15 @@ export function persistApplicationResult(state, item, result) {
 /**
  * Select the clear-run batch from the refreshed queue. The normal review queue
  * can contain alert-only and unsupported links; automatic clearing may only
- * select active, high-fit, supported ATS postings and one role per company.
+ * select active, high-fit, supported ATS postings and one recommendation per
+ * company/job-family group.
  * @param {Record<string, unknown>} state
  * @param {Record<string, unknown>} policy
  * @param {number} limit
  * @returns {Array<Record<string, unknown>>}
  */
 export function selectClearItems(state, policy, limit) {
-  const selectedCompanies = new Set();
-  const candidates = (state.items || [])
+  const eligible = (state.items || [])
     .filter((item) => ['ready', 'in_review'].includes(String(item.status || '')))
     .filter((item) => !TERMINAL_APPLICATION_STATES.has(String(item.applicationState || '')))
     .filter((item) => Number(item.fitScore || 0) >= Number(policy.minFitScore || 0))
@@ -272,14 +273,15 @@ export function selectClearItems(state, policy, limit) {
     .filter((item) => Boolean(adapterForUrl(String(item.applyUrl || item.canonicalUrl || ''))))
     .sort((left, right) => Number(right.fitScore || 0) - Number(left.fitScore || 0)
       || String(right.postedAt || '').localeCompare(String(left.postedAt || ''))
-      || String(left.id || '').localeCompare(String(right.id || '')))
-    .filter((item) => {
-      const company = String(item.company || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-      if (company && selectedCompanies.has(company)) return false;
-      if (company) selectedCompanies.add(company);
-      return true;
-    })
-    .slice(0, Math.max(1, Math.min(Number(limit || policy.dailyLimit || 6), Number(policy.dailyLimit || 6))));
+      || String(left.id || '').localeCompare(String(right.id || '')));
+  const candidates = selectApplicationRecommendations(eligible, {
+    limit: Math.max(1, Math.min(Number(limit || policy.dailyLimit || 6), Number(policy.dailyLimit || 6))),
+    maxPerCompany: 1,
+    maxPerJobFamily: 1,
+    compare: (left, right) => Number(right.fitScore || 0) - Number(left.fitScore || 0)
+      || String(right.postedAt || '').localeCompare(String(left.postedAt || ''))
+      || String(left.id || '').localeCompare(String(right.id || '')),
+  });
   const selectedIds = new Set(candidates.map((item) => item.id));
   state.items = (state.items || []).map((item) => ({
     ...item,
