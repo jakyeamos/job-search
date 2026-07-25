@@ -423,6 +423,39 @@ export function selectDailyQueue(items, options = {}) {
 }
 
 /**
+ * Refill today's selection back to `limit` from the already-scored pool, keeping the
+ * roles the user is already looking at and renumbering ranks contiguously.
+ * @param {Record<string, unknown>} state
+ * @param {{ limit?: number, minFitScore?: number, maxPerCompany?: number, maxPerJobFamily?: number }} [options]
+ * @returns {{ state: Record<string, unknown>, added: number, shortBy: number }}
+ */
+export function topUpSelection(state, options = {}) {
+  const limit = Math.max(1, Math.min(50, Number(options.limit || DEFAULT_QUEUE_LIMIT)));
+  const items = Array.isArray(state?.items) ? state.items : [];
+  const pinned = items
+    .filter((item) => item.selectedForToday)
+    .sort((left, right) => Number(left.queueRank || 999) - Number(right.queueRank || 999));
+  const selected = pinned.length >= limit ? pinned : selectDailyQueue(items, {
+    limit,
+    minFitScore: options.minFitScore,
+    maxPerCompany: options.maxPerCompany,
+    maxPerJobFamily: options.maxPerJobFamily,
+    pinned,
+  });
+  const ranks = new Map(selected.map((item, index) => [item.id, index + 1]));
+  const nextItems = items.map((item) => ({
+    ...item,
+    selectedForToday: ranks.has(item.id),
+    queueRank: ranks.get(item.id) || null,
+  }));
+  return {
+    state: { ...state, items: nextItems },
+    added: Math.max(0, selected.length - pinned.length),
+    shortBy: Math.max(0, limit - selected.length),
+  };
+}
+
+/**
  * @param {Array<Record<string, unknown>>} candidates
  * @param {Record<string, unknown>} previous
  * @param {{ limit?: number, now?: string, retainUnseen?: boolean, minFitScore?: number, maxPerCompany?: number, maxPerJobFamily?: number }} [options]
