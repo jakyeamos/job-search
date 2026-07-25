@@ -12,7 +12,7 @@ import {
   readArchive,
   writeArchive,
 } from '../queue-archive.mjs';
-import { rehydrateQueue, saveQueue } from '../queue.mjs';
+import { collectQueueErrors, rehydrateQueue, saveQueue } from '../queue.mjs';
 import { buildQueue, writeQueueState } from '../queue-lib.mjs';
 
 /** @param {Record<string, unknown>} overrides */
@@ -339,4 +339,69 @@ test('a dry run changes neither file', () => {
   assert.deepEqual(live.items, []);
   assert.deepEqual(live.archivedIndex.map((stub) => stub.id), ['exp']);
   assert.equal(readArchive(path.join(root, 'data', 'job-queue-archive.json')).records.length, 1);
+});
+
+test('a clean queue and archive report no errors', () => {
+  const root = tempRoot();
+  saveQueue(root, {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [item({ id: 'live', status: 'ready' }), item({ id: 'dead', status: 'excluded' })],
+  });
+  assert.deepEqual(collectQueueErrors(root), []);
+});
+
+test('a stub that is also a live item is an error', () => {
+  const root = tempRoot();
+  writeQueueState(path.join(root, 'data', 'job-queue.json'), {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [item({ id: 'dup', status: 'ready' })],
+    archivedIndex: [archiveStub(item({ id: 'dup', status: 'excluded' }), '2026-07-10T00:00:00.000Z')],
+  });
+  writeArchive(path.join(root, 'data', 'job-queue-archive.json'), {
+    schemaVersion: 1,
+    updatedAt: null,
+    records: [item({ id: 'dup', status: 'excluded' })],
+  });
+  assert.ok(collectQueueErrors(root).some((error) => /also a live queue item/.test(error)));
+});
+
+test('a stub with no record in the sidecar is an error', () => {
+  const root = tempRoot();
+  writeQueueState(path.join(root, 'data', 'job-queue.json'), {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [],
+    archivedIndex: [archiveStub(item({ id: 'orphan', status: 'excluded' }), '2026-07-10T00:00:00.000Z')],
+  });
+  writeArchive(path.join(root, 'data', 'job-queue-archive.json'), {
+    schemaVersion: 1,
+    updatedAt: null,
+    records: [],
+  });
+  assert.ok(collectQueueErrors(root).some((error) => /no record in the archive/.test(error)));
+});
+
+test('an evicted status left live is an error', () => {
+  const root = tempRoot();
+  writeQueueState(path.join(root, 'data', 'job-queue.json'), {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [item({ id: 'stuck', status: 'excluded' })],
+    archivedIndex: [],
+  });
+  assert.ok(collectQueueErrors(root).some((error) => /still live/.test(error)));
+});
+
+test('an unparseable archive is reported as an error rather than throwing', () => {
+  const root = tempRoot();
+  writeQueueState(path.join(root, 'data', 'job-queue.json'), {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [],
+    archivedIndex: [],
+  });
+  writeFileSync(path.join(root, 'data', 'job-queue-archive.json'), '{ not json', 'utf8');
+  assert.ok(collectQueueErrors(root).some((error) => /unreadable/.test(error)));
 });

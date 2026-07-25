@@ -491,8 +491,8 @@ function listQueue(root) {
   for (const item of items) console.log(`${item.queueRank}. ${item.company || 'Unknown'} | ${item.title} | ${item.fitScore.toFixed(1)}/5 | ${item.status} | ${item.applyUrl}`);
 }
 
-/** @param {string} root */
-function verifyQueue(root) {
+/** @param {string} root @returns {string[]} */
+export function collectQueueErrors(root) {
   const state = readQueueState(path.join(root, 'data', 'job-queue.json'));
   const errors = [];
   if (state.schemaVersion !== 1) errors.push(`unsupported schema version ${state.schemaVersion}`);
@@ -505,10 +505,31 @@ function verifyQueue(root) {
     if (!normalizeUrl(item.applyUrl || item.canonicalUrl)) errors.push(`invalid URL for ${item.title}`);
     if (item.selectedForToday) selected++;
     if (!['ready', 'in_review', 'applied', 'skipped', 'snoozed', 'stale', 'archived', 'excluded'].includes(item.status)) errors.push(`invalid status ${item.status}`);
+    if (['archived', 'excluded'].includes(String(item.status || ''))) errors.push(`item ${item.id} has evicted status ${item.status} but is still live`);
   }
   if (selected > 10) errors.push(`selected queue exceeds 10 roles (${selected})`);
+  let records = [];
+  try {
+    records = readArchive(path.join(root, 'data', 'job-queue-archive.json')).records;
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+  const archivedIds = new Set(records.map((record) => record.id));
+  for (const stub of Array.isArray(state.archivedIndex) ? state.archivedIndex : []) {
+    if (ids.has(stub.id)) errors.push(`archived stub ${stub.id} is also a live queue item`);
+    if (!archivedIds.has(stub.id)) errors.push(`archived stub ${stub.id} has no record in the archive`);
+  }
+  return errors;
+}
+
+/** @param {string} root */
+function verifyQueue(root) {
+  const state = readQueueState(path.join(root, 'data', 'job-queue.json'));
+  const errors = collectQueueErrors(root);
   if (errors.length) { for (const error of errors) console.error(`❌ ${error}`); process.exitCode = 1; return; }
-  console.log(`✅ Queue valid: ${state.items.length} item(s), ${selected} selected.`);
+  const selected = (state.items || []).filter((item) => item.selectedForToday).length;
+  const archived = Array.isArray(state.archivedIndex) ? state.archivedIndex.length : 0;
+  console.log(`✅ Queue valid: ${state.items.length} live item(s), ${selected} selected, ${archived} archived.`);
 }
 
 /** @param {string} value */
