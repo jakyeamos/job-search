@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { rescoreStoredItem } from '../rescore-queue.mjs';
+import { rescoreStoredItem, verdictChanged } from '../rescore-queue.mjs';
 
 /** @param {Record<string, any>} overrides */
 function item(overrides) {
@@ -57,6 +57,33 @@ test('a decision already taken is never reversed by a rule change', () => {
     assert.equal(rescored.status, status, status);
     assert.ok(rescored.fitScore > 3.7, `${status} still gets a refreshed score`);
   }
+});
+
+test('a retired blocker is written back even when the item stays excluded', () => {
+  // Double-blocked: a defense posting that also used to trip the old 3-year floor.
+  // The floor no longer applies, but defense still holds it out — so score stays 0
+  // and status stays `excluded`, and only the blocker list moves.
+  const before = item({
+    description: 'Support our defense and intelligence mission. Requires 3+ years of experience.',
+    blockers: [
+      'defense, intelligence, clearance, or government-mission role',
+      'posting states a 3+ year experience floor',
+    ],
+  });
+  const after = rescoreStoredItem(before, {});
+
+  assert.equal(after.status, before.status, 'still excluded for the other reason');
+  assert.equal(Number(after.fitScore), Number(before.fitScore), 'a blocked item scores 0 either way');
+  assert.ok(
+    !after.blockers.some((b) => /experience floor/i.test(b)),
+    'the retired experience-floor blocker must be gone',
+  );
+  assert.ok(verdictChanged(before, after), 'the write must not be skipped just because score and status held');
+});
+
+test('an untouched item is not rewritten', () => {
+  const original = item({});
+  assert.equal(verdictChanged(original, { ...original }), false);
 });
 
 test('an item that newly fails a blocker drops off the daily slate', () => {

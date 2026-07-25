@@ -32,6 +32,21 @@ const QUEUE_PATH = path.join(ROOT, 'data', 'job-queue.json');
 /** Statuses that reflect a decision already taken, not a score. */
 const STICKY_STATUSES = new Set(['applied', 'skipped', 'snoozed', 'archived', 'stale']);
 
+/** Fields a rule change is allowed to move. Anything else is identity or history. */
+const JUDGEMENT_FIELDS = ['fitScore', 'fitConfidence', 'status', 'lane', 'blockers', 'fitReasons'];
+
+/**
+ * Whether a rescore actually changed the verdict. Score and status alone are not
+ * enough: an item held out by two blockers keeps score 0 and status `excluded`
+ * even after one of those blockers stops applying, and skipping the write would
+ * leave the retired blocker on the record forever.
+ * @param {Record<string, any>} before
+ * @param {Record<string, any>} after
+ */
+export function verdictChanged(before, after) {
+  return JUDGEMENT_FIELDS.some((field) => JSON.stringify(before[field] ?? null) !== JSON.stringify(after[field] ?? null));
+}
+
 /**
  * Rescore one item against its stored description, preserving identity and history.
  * @param {Record<string, any>} item
@@ -83,10 +98,9 @@ async function main() {
       continue;
     }
     const rescored = rescoreStoredItem(item, profile);
-    const scoreMoved = Number(rescored.fitScore) !== Number(item.fitScore);
-    const statusMoved = rescored.status !== item.status;
-    if (scoreMoved || statusMoved) changes.push({ before: item, after: rescored });
-    nextItems.push(scoreMoved || statusMoved ? rescored : item);
+    const changed = verdictChanged(item, rescored);
+    if (changed) changes.push({ before: item, after: rescored });
+    nextItems.push(changed ? rescored : item);
   }
 
   console.log(`Rescored ${items.length - skipped} item(s) with stored descriptions (${skipped} skipped for having none).`);
