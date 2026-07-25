@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -12,6 +12,8 @@ import {
   readArchive,
   writeArchive,
 } from '../queue-archive.mjs';
+import { saveQueue } from '../queue.mjs';
+import { buildQueue, writeQueueState } from '../queue-lib.mjs';
 
 /** @param {Record<string, unknown>} overrides */
 function item(overrides) {
@@ -140,8 +142,6 @@ test('an archive round-trips through write and read', () => {
   assert.equal(archive.updatedAt, '2026-07-25T00:00:00.000Z');
 });
 
-import { buildQueue } from '../queue-lib.mjs';
-
 /** @param {Record<string, unknown>} overrides */
 function candidate(overrides) {
   return {
@@ -210,4 +210,60 @@ test('unseen retention still works for rows that are not archived', () => {
   const previous = { items: [{ ...item({ id: 'kept', status: 'in_review' }), selectedForToday: false }], archivedIndex: [] };
   const result = buildQueue([candidate({ id: 'c1' })], previous, { now: '2026-07-25T00:00:00.000Z', retainUnseen: true });
   assert.deepEqual(result.items.map((entry) => entry.id).sort(), ['c1', 'kept']);
+});
+
+/** @returns {string} */
+function tempRoot() {
+  const root = tempDir();
+  mkdirSync(path.join(root, 'data'), { recursive: true });
+  return root;
+}
+
+test('saveQueue evicts dead rows into the sidecar and leaves stubs behind', () => {
+  const root = tempRoot();
+  const state = {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [item({ id: 'live', status: 'ready' }), item({ id: 'dead', status: 'excluded' })],
+  };
+  const saved = saveQueue(root, state);
+  assert.deepEqual(saved.items.map((entry) => entry.id), ['live']);
+  assert.deepEqual(saved.archivedIndex.map((stub) => stub.id), ['dead']);
+
+  const live = JSON.parse(readFileSync(path.join(root, 'data', 'job-queue.json'), 'utf8'));
+  assert.deepEqual(live.items.map((entry) => entry.id), ['live']);
+  assert.deepEqual(live.archivedIndex.map((stub) => stub.id), ['dead']);
+
+  const archive = readArchive(path.join(root, 'data', 'job-queue-archive.json'));
+  assert.equal(archive.records.length, 1);
+  assert.equal(archive.records[0].description, 'a long job description');
+});
+
+test('saveQueue creates the archive on first eviction in a fresh tree', () => {
+  const root = tempRoot();
+  saveQueue(root, { schemaVersion: 1, account: { gmail: 'jakyejobs@gmail.com' }, items: [item({ id: 'dead', status: 'excluded' })] });
+  assert.equal(readArchive(path.join(root, 'data', 'job-queue-archive.json')).records.length, 1);
+});
+
+test('saveQueue aborts and writes nothing when the archive is unparseable', () => {
+  const root = tempRoot();
+  const queueFile = path.join(root, 'data', 'job-queue.json');
+  writeFileSync(queueFile, JSON.stringify({ schemaVersion: 1, items: [] }), 'utf8');
+  writeFileSync(path.join(root, 'data', 'job-queue-archive.json'), '{ not json', 'utf8');
+  assert.throws(
+    () => saveQueue(root, { schemaVersion: 1, account: { gmail: 'jakyejobs@gmail.com' }, items: [item({ id: 'dead', status: 'excluded' })] }),
+    /unreadable/,
+  );
+  assert.deepEqual(JSON.parse(readFileSync(queueFile, 'utf8')).items, []);
+});
+
+test('saveQueue leaves skipped and applied rows live', () => {
+  const root = tempRoot();
+  const saved = saveQueue(root, {
+    schemaVersion: 1,
+    account: { gmail: 'jakyejobs@gmail.com' },
+    items: [item({ id: 'skipped', status: 'skipped' }), item({ id: 'applied', status: 'applied' }), item({ id: 'stale', status: 'stale' })],
+  });
+  assert.deepEqual(saved.items.map((entry) => entry.id), ['skipped', 'applied', 'stale']);
+  assert.deepEqual(saved.archivedIndex, []);
 });

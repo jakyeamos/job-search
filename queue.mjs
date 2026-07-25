@@ -33,6 +33,7 @@ import {
   writeQueueState,
 } from './queue-lib.mjs';
 import { applyPostingAging } from './queue-aging.mjs';
+import { evictToArchive, readArchive, writeArchive } from './queue-archive.mjs';
 import { checkPublicLiveness } from './liveness-http.mjs';
 import { enrichCandidates } from './posting-fetch.mjs';
 
@@ -272,10 +273,19 @@ function openUrl(url) {
   catch { console.log(`Open manually: ${url}`); }
 }
 
-/** @param {string} root @param {Record<string, unknown>} state */
+/**
+ * Writes the live queue, evicting dead rows into the archive sidecar first.
+ * Returns the persisted state so callers work from the post-eviction view.
+ *
+ * @param {string} root @param {Record<string, unknown>} state
+ */
 export function saveQueue(root, state) {
-  writeQueueState(path.join(root, 'data', 'job-queue.json'), state);
-  writeFileSync(path.join(root, 'data', 'job-queue.md'), renderQueueMarkdown(state), 'utf8');
+  const archiveFile = path.join(root, 'data', 'job-queue-archive.json');
+  const result = evictToArchive(state, readArchive(archiveFile), { now: new Date().toISOString() });
+  writeQueueState(path.join(root, 'data', 'job-queue.json'), result.state);
+  writeArchive(archiveFile, result.archive);
+  writeFileSync(path.join(root, 'data', 'job-queue.md'), renderQueueMarkdown(result.state), 'utf8');
+  return result.state;
 }
 
 /** @param {string} root @param {boolean} scheduled */
@@ -365,12 +375,14 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       enrichment: enrichment.outcomes,
       aging,
     };
-    if (!dryRun) saveQueue(root, state);
+    if (!dryRun) state = saveQueue(root, state);
     const discoveryArgs = buildContactDiscoveryArgs(discoveryLimit, dryRun);
     const contactDiscovery = await runNodeScript('outreach.mjs', discoveryArgs, { timeoutMs: 900_000 });
     if (!dryRun) {
       const discoveredState = readQueueState(QUEUE_JSON);
-      if (Array.isArray(discoveredState.items)) state = { ...state, items: discoveredState.items };
+      // Adopt the persisted state wholesale: the archived index on disk is
+      // newer than the in-memory one after eviction.
+      if (Array.isArray(discoveredState.items)) state = { ...discoveredState, lastRun: state.lastRun };
     }
     if (!contactDiscovery.ok) {
       sourceErrors.push(`queue contact discovery failed: ${contactDiscovery.error}`);
@@ -394,7 +406,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       };
     }
     state.lastRun.errors = sourceErrors;
-    if (!dryRun) saveQueue(root, state);
+    if (!dryRun) state = saveQueue(root, state);
     const selected = state.items.filter((item) => item.selectedForToday);
     console.log(`Queue refresh${dryRun ? ' (dry run)' : ''}: ${selected.length} role(s) selected, ${state.items.length} total retained.`);
     if (sourceErrors.length) for (const error of sourceErrors) console.log(`  ⚠️ ${error}`);
