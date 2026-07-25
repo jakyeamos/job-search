@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { recordApplication, saveQueue } from './queue.mjs';
-import { DEFAULT_CONTACT_DISCOVERY_LIMIT, normalizeUrl, readQueueState } from './queue-lib.mjs';
+import { DEFAULT_CONTACT_DISCOVERY_LIMIT, normalizeUrl, readQueueState, topUpSelection } from './queue-lib.mjs';
 import { OUTREACH_STATE_PATH, loadOutreachState, recordSubmissionSignal, summarizeOutbox } from './outreach-lib.mjs';
 import { loadLedger, answerQuestion, findQuestionMatch, isSensitiveQuestion, questionId } from './apply/question-ledger.mjs';
 import { selectProjectAccomplishment } from './project-accomplishment-ledger.mjs';
@@ -303,8 +303,9 @@ function applyQueueAction(payload) {
   }
 
   state.generatedAt = new Date().toISOString();
-  saveQueue(ROOT, state);
-  return { state: queuePayload(state), item, action };
+  const refilled = topUpSelection(state).state;
+  saveQueue(ROOT, refilled);
+  return { state: queuePayload(refilled), item, action };
 }
 
 async function refreshQueue() {
@@ -312,7 +313,7 @@ async function refreshQueue() {
     path.join(ROOT, 'queue.mjs'),
     'refresh',
     '--limit',
-    '6',
+    '10',
     '--discovery-limit',
     String(DEFAULT_CONTACT_DISCOVERY_LIMIT),
   ], {
@@ -522,7 +523,9 @@ async function handleRequest(request, response) {
     return;
   }
   if (request.method === 'GET' && requestUrl.pathname === '/api/queue') {
-    sendJson(response, 200, queuePayload(loadState()));
+    const refill = topUpSelection(loadState());
+    if (refill.added > 0) saveQueue(ROOT, refill.state);
+    sendJson(response, 200, queuePayload(refill.state));
     return;
   }
   if (request.method === 'POST' && requestUrl.pathname === '/api/action') {
