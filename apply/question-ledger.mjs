@@ -59,6 +59,8 @@ const TECHNICAL_FOUNDATIONS_TERM_RE = /\b(?:python|javascript|typescript|systems
 const TECHNICAL_FOUNDATIONS_EXPERIENCE_RE = /\b(?:fundamentals?|strong|experience|proficien(?:t|cy)|skills?|knowledge)\b/i;
 const CLOUD_INFRASTRUCTURE_RE = /\b(?:cloud|aws|gcp|azure|docker|kubernetes|k8s|containers?)\b/i;
 const CLOUD_INFRASTRUCTURE_EXPERIENCE_RE = /\b(?:experience|familiar|knowledge|concepts?|worked|used|proficien(?:t|cy)|skills?)\b/i;
+const REFERRAL_SOURCE_RE = /^\s*(?:how|where)(?:\s+did|(?:'|’)d)\s+you(?:\s+first)?\s+hear\s+about\b/i;
+const NON_QUESTION_RE = /^(?:\s*(?:(?:[a-z0-9&.'’()/-]+\s+){0,4})privacy\s+(?:notice|policy)(?:\s+confirmation)?\s*$|\s*(?:by submitting|i\s+confirm|please\s+double[- ]check|ai\s+policy\b|point\s+of\s+data\s+transfer\b)[\s\S]*$)/i;
 const ANSWER_STATUS_RANK = {
   unanswered: 0,
   unconfirmed: 1,
@@ -225,6 +227,20 @@ export function isCloudInfrastructureQuestion(question) {
   return CLOUD_INFRASTRUCTURE_RE.test(normalized) && CLOUD_INFRASTRUCTURE_EXPERIENCE_RE.test(normalized);
 }
 
+/** @param {string} question */
+export function isReferralSourceQuestion(question) {
+  return REFERRAL_SOURCE_RE.test(normalizeQuestion(question));
+}
+
+/** @param {string} question */
+export function isNonQuestionPrompt(question) {
+  const normalized = normalizeQuestion(question);
+  if (NON_QUESTION_RE.test(normalized)) return true;
+  return /\bprivacy\s+(?:notice|policy)\b/i.test(normalized)
+    && /\b(?:acknowledge|confirm|confirmed|read|understand|handling\s+of\s+my\s+personal\s+data|application\s+process)\b/i.test(normalized)
+    && !/\b(?:do|would|will|can|are)\s+you\b[\s\S]*\b(?:contact|allow|receive|subscribe|consent)\b/i.test(normalized);
+}
+
 /**
  * Produce a conservative semantic key without changing the legacy question id.
  * Exact ids remain stable; this key only lets new observations attach to an
@@ -240,10 +256,11 @@ export function canonicalQuestionKey(question) {
   if (isCloudInfrastructureQuestion(normalized)) return 'cloud and container experience';
   if (isProductionSystemQuestion(normalized)) return 'production end-user system';
   if (isPythonProductionQuestion(normalized)) return 'python production project';
+  if (isReferralSourceQuestion(normalized)) return 'referral source';
   const core = normalized
     .replace(/^yes\s*[-–—:]\s*/i, '')
     .replace(/\bplease note\b[\s\S]*$/i, '')
-    .replace(/\b(?:for employment|in the united states|in the us)\b[\s\S]*$/i, '')
+    .replace(/\bfor employment\b[\s\S]*$/i, '')
     .replace(/\bsite reliability engineering\b/gi, 'sre')
     .replace(/\([^)]*\)/g, ' ')
     .split('?')[0]
@@ -334,7 +351,7 @@ export function findQuestionMatch(question, ledger, metadata = {}) {
  */
 export function recordQuestionInLedger(ledger, question, metadata = {}) {
   const normalized = normalizeQuestion(question);
-  if (!normalized || /^EEO\s*:/i.test(normalized)) return null;
+  if (!normalized || /^EEO\s*:/i.test(normalized) || isNonQuestionPrompt(normalized)) return null;
   const matched = findQuestionMatch(normalized, ledger, {
     fieldKind: String(metadata.fieldKind || ''),
     options: Array.isArray(metadata.options) ? metadata.options.map(String) : [],
@@ -451,11 +468,11 @@ function uniqueObjects(values, keyFor) {
 export function compactLedger(ledger) {
   const groups = new Map();
   let mergedCount = 0;
-  for (const rawEntry of ledger.entries || []) {
+  for (const rawEntry of (ledger.entries || []).filter((entry) => !isNonQuestionPrompt(String(entry?.question || '')))) {
     const entry = normalizeEntry(rawEntry);
     const key = canonicalQuestionKey(String(entry.question || ''));
     const groupKey = key
-      ? `${key}|${String(entry.sensitivity || 'normal')}|${fieldKindFamily(String(entry.fieldKind || ''))}`
+      ? `${key}|${String(entry.sensitivity || 'normal')}|${key === 'referral source' ? '' : fieldKindFamily(String(entry.fieldKind || ''))}`
       : `id:${String(entry.id || '')}`;
     const existing = groups.get(groupKey);
     if (!existing) {
@@ -814,7 +831,8 @@ export function answerTable(ledger, context = {}) {
  */
 export function pendingQuestions(ledger, context = {}) {
   return ledger.entries
-    .filter((entry) => (entry.answer === null || entry.answer === undefined || !isConfirmedAnswer(entry))
+    .filter((entry) => !isNonQuestionPrompt(String(entry.question || ''))
+      && (entry.answer === null || entry.answer === undefined || !isConfirmedAnswer(entry))
       && (!context.company || matchesScope({ ...entry, scope: 'company' }, context) || (Array.isArray(entry.contexts) && entry.contexts.some((item) => normalizeKey(item.company) === normalizeKey(context.company)))))
     .map((entry) => ({
       questionId: entry.id,
@@ -836,13 +854,16 @@ function compatibleQuestion(entry, metadata) {
   const targetSensitivity = String(metadata.sensitivity || (metadata.fieldKind ? 'normal' : entrySensitivity));
   if (entrySensitivity !== targetSensitivity) return false;
 
-  const entryKind = fieldKindFamily(String(entry.fieldKind || ''));
-  const targetKind = fieldKindFamily(String(metadata.fieldKind || ''));
-  if (entryKind && targetKind && entryKind !== targetKind) return false;
+  const referralFamily = canonicalQuestionKey(String(entry.question || '')) === 'referral source';
+  if (!referralFamily) {
+    const entryKind = fieldKindFamily(String(entry.fieldKind || ''));
+    const targetKind = fieldKindFamily(String(metadata.fieldKind || ''));
+    if (entryKind && targetKind && entryKind !== targetKind) return false;
 
-  const entryOptions = optionKeys(entry.options);
-  const targetOptions = optionKeys(metadata.options);
-  if (entryOptions.length && targetOptions.length && !entryOptions.some((option) => targetOptions.includes(option))) return false;
+    const entryOptions = optionKeys(entry.options);
+    const targetOptions = optionKeys(metadata.options);
+    if (entryOptions.length && targetOptions.length && !entryOptions.some((option) => targetOptions.includes(option))) return false;
+  }
   return true;
 }
 

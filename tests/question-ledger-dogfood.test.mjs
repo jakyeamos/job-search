@@ -63,6 +63,7 @@ test('dogfood selection is deterministic and round-robins supported ATS adapters
   assert.deepEqual(first.selected.map((candidate) => candidate.id), second.selected.map((candidate) => candidate.id));
   assert.deepEqual(first.selected.map((candidate) => candidate.adapter), ['ashby', 'greenhouse', 'lever', 'ashby']);
   assert.equal(first.eligible.length, 7);
+  assert.equal(first.applicationRecommendations.length, 1);
   assert.equal(first.reasonCounts['unsupported-adapter'], 1);
   assert.equal(first.reasonCounts['liveness-uncertain'], 1);
   assert.equal(first.verificationWarningCounts['missing-description'], 1);
@@ -80,6 +81,7 @@ test('shape-only mode samples supported forms while retaining verification warni
 
   assert.equal(plan.eligible.length, 2);
   assert.equal(plan.selected.length, 2);
+  assert.equal(plan.applicationRecommendations.length, 1);
   const uncertain = plan.selected.find((candidate) => candidate.id === 'uncertain');
   assert.ok(uncertain);
   assert.deepEqual(uncertain.verificationWarnings, ['liveness-uncertain', 'missing-description']);
@@ -94,6 +96,7 @@ test('explicit all mode selects every eligible candidate while the default remai
   const full = buildDogfoodPlan(items, { all: true });
   assert.equal(full.eligible.length, 45);
   assert.equal(full.selected.length, 45);
+  assert.equal(full.applicationRecommendations.length, 1);
   assert.equal(full.policy.all, true);
   assert.equal(full.policy.sampleSize, null);
 });
@@ -172,6 +175,9 @@ test('run mode copies the ledger into staging and reports duplicate observations
 
     assert.equal(result.report.mode, 'run');
     assert.equal(result.report.runs.length, 2);
+    assert.equal(result.report.applicationRecommendationCount, 1);
+    assert.equal(result.report.runs[0].packetPurpose, 'application-recommendation');
+    assert.equal(result.report.runs[1].packetPurpose, 'ledger-coverage-only');
     assert.equal(result.report.ledger.before.total, 0);
     assert.equal(result.report.ledger.after.total, 1);
     assert.equal(result.report.ledger.delta.observedQuestionCount, 2);

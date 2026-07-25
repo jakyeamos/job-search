@@ -15,8 +15,10 @@ import {
   isAiUsageQuestion,
   isCloudInfrastructureQuestion,
   isCustomerDeliveryQuestion,
+  isNonQuestionPrompt,
   isProductionSystemQuestion,
   isPythonProductionQuestion,
+  isReferralSourceQuestion,
   isSensitiveQuestion,
   isTechnicalFoundationsQuestion,
   loadLedger,
@@ -127,6 +129,29 @@ test('different semantic questions do not collapse into one ledger entry', () =>
   }
 });
 
+test('geography-specific location questions do not reuse one another', () => {
+  const questions = [
+    'Are you located in the United States?',
+    'Are you located in North America?',
+    'Are you located in the San Francisco Bay Area?',
+  ];
+  assert.equal(new Set(questions.map((question) => canonicalQuestionKey(question))).size, questions.length);
+
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-location-families-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const entries = questions.map((question) => recordQuestion(file, question, {
+      fieldKind: 'checkbox',
+      options: ['Yes', 'No'],
+      required: true,
+    }));
+    assert.equal(new Set(entries.map((entry) => entry.id)).size, questions.length);
+    assert.equal(loadLedger(file).entries.length, questions.length);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('AI usage prompts share one evidence-backed question family', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-ai-usage-'));
   try {
@@ -219,6 +244,51 @@ test('ledger compaction migrates legacy AI usage duplicates without losing conte
   assert.equal(ledger.entries[0].id, 'q_first');
   assert.equal(ledger.entries[0].contexts.length, 3);
   assert.deepEqual(ledger.entries[0].aliases, [secondQuestion]);
+});
+
+test('referral wording collapses to one family and acknowledgements stay out of the question ledger', () => {
+  const referralQuestions = [
+    'How did you hear about us?',
+    'How did you hear about Attio?',
+    'How did you hear about this opportunity? — 3How did you hear about this position? — 3',
+    'Where did you first hear about this role?',
+  ];
+  for (const question of referralQuestions) {
+    assert.equal(isReferralSourceQuestion(question), true);
+    assert.equal(canonicalQuestionKey(question), 'referral source');
+  }
+
+  const nonQuestions = [
+    'Celonis Privacy Notice confirmation',
+    'AI Policy for Application',
+    'Please double-check all the information provided above.',
+    'I confirm, that I have read the Celonis Privacy Notice for the handling of my personal data in the application process.',
+  ];
+  for (const question of nonQuestions) assert.equal(isNonQuestionPrompt(question), true);
+  assert.equal(isNonQuestionPrompt('Do you agree to allow us to contact you about future opportunities? Recruiting Privacy Policy'), false);
+
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-referral-ack-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const first = recordQuestion(file, referralQuestions[0], { fieldKind: 'radio' });
+    for (const [index, question] of referralQuestions.slice(1).entries()) {
+      const entry = recordQuestion(file, question, { fieldKind: index === 1 ? 'textarea' : 'radio', options: index === 1 ? [] : ['Job board', 'Referral'] });
+      assert.equal(entry.id, first.id);
+    }
+    for (const question of nonQuestions) assert.equal(recordQuestion(file, question), null);
+    assert.equal(loadLedger(file).entries.length, 1);
+    assert.equal(loadLedger(file).entries[0].questionKey, 'referral source');
+    assert.equal(loadLedger(file).entries[0].aliases.length, referralQuestions.length - 1);
+
+    const legacy = {
+      entries: nonQuestions.map((question, index) => ({ id: `q_nonquestion_${index}`, question, answer: null })),
+    };
+    compactLedger(legacy);
+    assert.equal(legacy.entries.length, 0);
+    assert.equal(pendingQuestions(legacy).length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('adapter-observed answers are not reusable until the user confirms them', () => {
