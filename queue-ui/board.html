@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#eef3f0">
+    <title>Application board · career-ops</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/board.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="wordmark" href="/board.html" aria-label="Career operations application board">
+          <span>career-ops</span><span class="wordmark-slash">/</span><span class="wordmark-current">application board</span>
+        </a>
+        <div class="topbar-actions">
+          <span class="connection-status" id="connectionStatus"><span class="status-dot" aria-hidden="true"></span>Local board</span>
+          <a class="button button-quiet" href="/">Daily queue</a>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro intro-solo" aria-labelledby="pageTitle">
+          <div class="intro-copy">
+            <p class="kicker">After the application</p>
+            <h1 id="pageTitle">Track what happens next.</h1>
+            <p class="intro-lede">Every row in your tracker that has left the queue. Drag a card to change its stage; notes save when you click away.</p>
+          </div>
+        </section>
+
+        <section class="queue-section" aria-labelledby="boardHeading">
+          <div class="section-heading">
+            <div>
+              <h2 id="boardHeading">Pipeline</h2>
+              <p id="boardSummary">Loading…</p>
+            </div>
+          </div>
+          <div class="board" id="board" aria-busy="true"></div>
+        </section>
+      </main>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+  </body>
+</html>
