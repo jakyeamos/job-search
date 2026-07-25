@@ -188,6 +188,130 @@ test('queue scoring excludes senior, defense, and gambling roles', () => {
   assert.equal(toronto.eligible, true);
 });
 
+test('queue scoring excludes roles that require a foreign language the candidate lacks', () => {
+  // Regression: Celonis Orbit ranked #1 despite a German-fluency MUST buried in the JD.
+  const celonis = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate (AI) Solution Consultant - Orbit Program',
+    description: 'Join our DACH team. Requires fluency in German and English (must). Work with GenAI and RAG.',
+    location: 'Madrid, Spain',
+    liveness: 'active',
+  }, {});
+  const japaneseMust = scoreCandidate({
+    company: 'Example AI',
+    title: 'Associate Solution Consultant',
+    description: 'Native-level Japanese is required for this role.',
+    location: 'Remote US',
+    liveness: 'active',
+  }, {});
+  const dutchWrittenSpoken = scoreCandidate({
+    company: 'Example AI',
+    title: 'Software Engineer',
+    description: 'Excellent written and spoken Dutch is essential.',
+    location: 'Amsterdam',
+    liveness: 'active',
+  }, {});
+  // Candidate DOES speak French + English — these must NOT be blocked.
+  const frenchOk = scoreCandidate({
+    company: 'Example AI',
+    title: 'Backend Engineer',
+    description: 'Fluency in French and English required.',
+    location: 'Paris, France',
+    liveness: 'active',
+  }, {});
+  const englishOnly = scoreCandidate({
+    company: 'Example AI',
+    title: 'Data Platform Engineer',
+    description: 'Strong written and spoken English. Nice to have: exposure to Kubernetes.',
+    location: 'Stockholm',
+    liveness: 'active',
+  }, {});
+  // A passing mention with no requirement marker must NOT block.
+  const germanNiceToHave = scoreCandidate({
+    company: 'Example AI',
+    title: 'Software Engineer',
+    description: 'Our team is based in Berlin. English is our working language.',
+    location: 'Berlin',
+    liveness: 'active',
+  }, {});
+  // Profile override: a candidate who lists German should not be blocked by a German MUST.
+  const germanSpeaker = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate Solution Consultant',
+    description: 'Requires fluency in German and English (must).',
+    location: 'Munich',
+    liveness: 'active',
+  }, { spoken_languages: ['english', 'german'] });
+
+  assert.equal(celonis.eligible, false);
+  assert.equal(celonis.blockers.some((b) => b.includes('german')), true);
+  assert.equal(japaneseMust.eligible, false);
+  assert.equal(japaneseMust.blockers.some((b) => b.includes('japanese')), true);
+  assert.equal(dutchWrittenSpoken.eligible, false);
+  assert.equal(frenchOk.eligible, true);
+  assert.equal(englishOnly.eligible, true);
+  assert.equal(germanNiceToHave.eligible, true);
+  assert.equal(germanSpeaker.eligible, true);
+});
+
+test('queue scoring gates foreign-language markets from title/location metadata (no description)', () => {
+  // Real queue items store no JD body — the language MUST is only inferable from
+  // the title market token or a grad-program-in-a-foreign-market pattern.
+  const dachTitle = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate (AI) Solution Consultant (DACH) - Orbit Program',
+    location: 'Madrid, Spain',
+    liveness: 'active',
+  }, {});
+  const germanSpeakingTitle = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate Applied (AI) Value Engineer (Scale EMEA/German-Speaking) - Orbit Program',
+    location: 'Madrid, Spain',
+    liveness: 'active',
+  }, {});
+  const munichProgram = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate (AI) Solution Consultant - Orbit Program (Madrid-based)',
+    location: 'Munich, Germany',
+    liveness: 'active',
+  }, {});
+  const beneluxProgram = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate (AI) Solution Consultant (Benelux) - Orbit Program',
+    location: 'Amsterdam, Netherlands',
+    liveness: 'active',
+  }, {});
+  // US-based Orbit/Galaxy programs are English — must NOT be gated.
+  const usOrbit = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate Value Engineer (AI-Driven Data Science & Analytics) - Orbit Program',
+    location: 'New York, US, New York',
+    liveness: 'active',
+  }, {});
+  const usGalaxy = scoreCandidate({
+    company: 'Celonis',
+    title: 'Associate Technology Consultant - Galaxy Graduate Program',
+    location: 'New York, US, New York',
+    liveness: 'active',
+  }, {});
+  // A non-program SWE role in Germany is NOT gated (English-language roles exist there).
+  const munichPlainSwe = scoreCandidate({
+    company: 'Example AI',
+    title: 'Backend Engineer',
+    location: 'Munich, Germany',
+    liveness: 'active',
+  }, {});
+
+  assert.equal(dachTitle.eligible, false);
+  assert.equal(germanSpeakingTitle.eligible, false);
+  assert.equal(munichProgram.eligible, false);
+  assert.equal(munichProgram.blockers.some((b) => b.includes('non-English-primary market')), true);
+  assert.equal(beneluxProgram.eligible, false);
+  assert.equal(usOrbit.eligible, true);
+  assert.equal(usGalaxy.eligible, true);
+  assert.equal(munichPlainSwe.eligible, true);
+});
+
 test('queue selection is capped and preserves applied state', () => {
   const candidates = Array.from({ length: 4 }, (_, index) => ({
     id: stableQueueId({ url: `https://example.com/${index}`, company: 'Example', title: `Backend Engineer ${index}` }),

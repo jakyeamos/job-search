@@ -57,6 +57,13 @@ The application queue's `sortScore` ranked **Celonis "Associate (AI) Solution Co
 
 Lessons: (a) **a high sortScore is not a fit verdict** — never surface a queued role as "ready" without confirming the JD-body language/work-auth requirements; (b) **graduate/rotational programs (Orbit, etc.) are language-gated per market** — treat any DACH/LatAm/APAC-based grad track as carrying a native-language MUST until the JD says otherwise; (c) consider a queue pre-filter that down-ranks non-US grad-program postings with a foreign-language token in the JD.
 
+**Durable fix landed (2026-07-24) in `queue-lib.mjs` `scoreCandidate`** — two complementary blockers, both drop the role to `0/5 excluded`:
+
+- **Fix A — description-based** (`requiredForeignLanguage`): when the full JD body is present (evaluate/apply time), scans for a foreign-language *requirement* (fluency/native/proficiency/"must") in any language the candidate lacks. Candidate languages default to `['english','french']`; override via `config/profile.yml` → `spoken_languages`. Catches the Celonis German MUST, the tracker-#44 Japanese variant, Dutch "written and spoken … essential", etc. Nice-to-have mentions ("English is our working language") do **not** trigger it.
+- **Fix B — metadata-based** (`foreignMarketLanguageGate`): stored queue items retain **no JD body** (all descriptions are empty), so Fix A can't fire retroactively. Fix B gates on title/location alone: DACH/German-speaking or Benelux tokens in the title, or a graduate/rotational-program token (Orbit/Galaxy/"grad program") located in a non-English-primary market (Germany, Spain, Japan, etc.). US-based Orbit/Galaxy variants and plain non-program SWE roles in those cities are **not** gated.
+
+Re-scoring today's queue with both fixes dropped Celonis to `0/5 excluded`; the DACH/Benelux/foreign-market program variants no longer surface. Europe/Canada roles **without** a language barrier (e.g. N26 Barcelona backend, Wayve Germany ML) remain in scope per `profile.yml` `location_policy` (`europe_allowed: true`, sponsorship verified per posting) — the fix targets language, not geography. Covered by tests in `tests/queue-gmail.test.mjs`.
+
 ## Net-new employers added (Level 3 discovery, US early-career SWE)
 
 SeatGeek (SWE New Grad, NYC) · Sigma Computing (New Grad Program + FDE, SF/NYC) · Nuro (SWE AI Platform New Grad, Mountain View — AV differentiator). Added to `tracked_companies` and the pipeline.

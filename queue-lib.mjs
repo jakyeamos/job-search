@@ -7,7 +7,12 @@ import yaml from 'js-yaml';
 import { buildResumeRequest } from './resume-contract.mjs';
 import { freshnessPenalty } from './queue-aging.mjs';
 import { normalizeJackJobUrl } from './jackandjill-lib.mjs';
-import { selectApplicationRecommendations } from './apply/application-recommendations.mjs';
+import {
+  companyRecommendationKey,
+  jobFamilyKey,
+  recommendationGroupKey,
+  selectApplicationRecommendations,
+} from './apply/application-recommendations.mjs';
 
 export const QUEUE_SCHEMA_VERSION = 1;
 export const DEFAULT_QUEUE_LIMIT = 10;
@@ -63,6 +68,75 @@ const NON_US_LOCATION_RE = /\b(london|uk|united kingdom|berlin|germany|paris|fra
 const EUROPE_LOCATION_RE = /\b(europe|european union|emea|eu|uk|united kingdom|england|scotland|wales|ireland|france|germany|spain|netherlands|belgium|luxembourg|switzerland|italy|austria|czech(?:ia)?|poland|romania|hungary|slovakia|slovenia|croatia|serbia|bosnia|montenegro|albania|greece|bulgaria|moldova|ukraine|belarus|lithuania|latvia|estonia|sweden|norway|denmark|finland|iceland|portugal|malta|cyprus|turkey|london|berlin|paris|madrid|amsterdam|dublin|stockholm|oslo|prague|vienna|lisbon|barcelona|munich|zurich|milan|copenhagen|helsinki|warsaw|budapest|bucharest)\b/i;
 const CANADA_LOCATION_RE = /\b(canada|ontario|toronto|vancouver|montreal|calgary|ottawa|edmonton|quebec|winnipeg|halifax|waterloo|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|labrador)\b/i;
 const POSITIVE_ROLE_RE = /\b(software|backend|back-end|full[- ]?stack|data|analytics|ai|ml|machine learning|platform|developer tools|product engineer|solutions|forward[- ]deployed|implementation)\b/i;
+
+// Languages the candidate can work in. English is universal; French is the only
+// other one on the profile. A JD that MUSTs any other language is a hard blocker
+// (candidate can't do the job), even when the location itself is allowed.
+const CANDIDATE_LANGUAGES_DEFAULT = ['english', 'french'];
+const KNOWN_JOB_LANGUAGES = [
+  'german', 'spanish', 'french', 'italian', 'portuguese', 'dutch', 'flemish',
+  'japanese', 'mandarin', 'cantonese', 'chinese', 'korean', 'arabic', 'russian',
+  'polish', 'swedish', 'norwegian', 'danish', 'finnish', 'turkish', 'hebrew',
+  'hindi', 'thai', 'vietnamese', 'indonesian', 'greek', 'czech', 'hungarian',
+  'romanian', 'ukrainian', 'english',
+];
+// Requirement markers that turn a language mention into a hard requirement.
+const LANGUAGE_REQ_MARKERS = 'fluen(?:t|cy)|native|mother\\s*tongue|proficien(?:t|cy)|business[- ]level|professional working proficiency|command of|written and spoken|spoken and written|spoken';
+const LANGUAGE_MUST_MARKERS = 'fluen(?:t|cy)|native|proficien(?:t|cy)|required|mandatory|\\(?\\s*must\\s*\\)?|is a must|essential|obligatory';
+
+/**
+ * Returns the name of a foreign language the posting requires (fluency/native/
+ * proficiency/must), or null. Only languages NOT in `spoken` count as blockers.
+ * @param {string} text
+ * @param {string[]} spoken
+ */
+export function requiredForeignLanguage(text, spoken = CANDIDATE_LANGUAGES_DEFAULT) {
+  const known = new Set(spoken.map((l) => String(l).toLowerCase()));
+  for (const lang of KNOWN_JOB_LANGUAGES) {
+    if (known.has(lang)) continue;
+    const l = lang.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const before = new RegExp(`(?:${LANGUAGE_REQ_MARKERS})\\b[^.\\n]{0,40}\\b${l}\\b`, 'i');
+    const after = new RegExp(`\\b${l}\\b[^.\\n]{0,40}(?:${LANGUAGE_MUST_MARKERS})`, 'i');
+    if (before.test(text) || after.test(text)) return lang;
+  }
+  return null;
+}
+
+// Metadata-level language gate. Queue items store only title/company/location
+// (the JD body is not retained), so requiredForeignLanguage() above — which reads
+// the description — can't see a language MUST for an already-queued role. These
+// title/location signals catch the common case: a market designation baked into
+// the title, or a graduate/rotational program hosted in a non-English-primary
+// market (encodes research lesson: Orbit/Galaxy-style programs are language-gated
+// per market). Candidate speaks English + French, so French markets are excluded.
+const GERMAN_MARKET_TOKEN_RE = /\b(dach|german[- ]speaking|germanophone|deutschsprachig)\b/i;
+const BENELUX_MARKET_TOKEN_RE = /\bbenelux\b/i;
+const ROTATIONAL_PROGRAM_RE = /\b(orbit|galaxy)\b[^,\n]*\bprogram\b|\b(graduate|grad|rotational|rotation|leadership development|early[- ]career)\s+program\b/i;
+// Non-English-primary markets whose local grad programs require a language the
+// candidate lacks. France/Belgium/Luxembourg (French) and UK/Ireland (English)
+// are deliberately excluded.
+const NON_ENGLISH_MARKET_RE = /\b(germany|munich|münchen|munchen|berlin|frankfurt|hamburg|cologne|stuttgart|düsseldorf|dusseldorf|austria|vienna|wien|switzerland|zurich|zürich|geneva|netherlands|amsterdam|rotterdam|the hague|spain|madrid|barcelona|valencia|seville|italy|milan|milano|rome|roma|turin|naples|portugal|lisbon|porto|poland|warsaw|krakow|kraków|wrocław|sweden|stockholm|norway|oslo|denmark|copenhagen|finland|helsinki|greece|athens|czech(?:ia)?|prague|hungary|budapest|romania|bucharest|japan|tokyo|osaka|south korea|seoul|china|beijing|shanghai|shenzhen|taiwan|taipei|brazil|são paulo|sao paulo|mexico|mexico city)\b/i;
+
+/**
+ * Detects a foreign-language market gate from title/location metadata alone.
+ * Returns a human-readable blocker reason, or null.
+ * @param {string} title
+ * @param {string} location
+ * @param {string[]} spoken
+ */
+export function foreignMarketLanguageGate(title, location, spoken = CANDIDATE_LANGUAGES_DEFAULT) {
+  const known = new Set(spoken.map((l) => String(l).toLowerCase()));
+  if (!known.has('german') && GERMAN_MARKET_TOKEN_RE.test(title)) {
+    return 'title targets a German-speaking (DACH) market — requires German the candidate does not have';
+  }
+  if (!known.has('dutch') && BENELUX_MARKET_TOKEN_RE.test(title)) {
+    return 'title targets the Benelux market — requires Dutch the candidate does not have';
+  }
+  if (ROTATIONAL_PROGRAM_RE.test(title) && NON_ENGLISH_MARKET_RE.test(location)) {
+    return 'graduate/rotational program in a non-English-primary market — carries a native-language requirement the candidate does not have';
+  }
+  return null;
+}
 
 /** @param {string} value */
 export function normalizeText(value) {
@@ -258,6 +332,15 @@ export function scoreCandidate(candidate, profile = {}) {
     && !CANADA_LOCATION_RE.test(location)) {
     blockers.push('location appears outside the US/Europe/Canada target search');
   }
+  const spoken = Array.isArray(profile.spoken_languages)
+    ? profile.spoken_languages.filter((l) => typeof l === 'string')
+    : CANDIDATE_LANGUAGES_DEFAULT;
+  const foreignLanguage = requiredForeignLanguage(`${description} ${title}`, spoken);
+  if (foreignLanguage) {
+    blockers.push(`posting requires ${foreignLanguage}-language fluency the candidate does not have`);
+  }
+  const marketGate = foreignMarketLanguageGate(title, location, spoken);
+  if (marketGate) blockers.push(marketGate);
   if (blockers.length > 0) {
     return { score: 0, eligible: false, status: 'excluded', confidence: 'low', reasons: [], blockers, lane: selectLane(title, description) };
   }
@@ -355,6 +438,11 @@ export function buildQueueItem(candidate, profile, root) {
     queueRank: null,
     selectedForToday: false,
     updatedAt: new Date().toISOString(),
+  };
+  item.applicationRecommendation = {
+    companyKey: companyRecommendationKey(item),
+    jobFamilyKey: jobFamilyKey(item),
+    groupKey: recommendationGroupKey(item),
   };
   const resume = buildResumeRequest(item, root);
   return {
