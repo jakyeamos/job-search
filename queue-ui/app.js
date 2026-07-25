@@ -3,6 +3,11 @@ const elements = {
   connectionStatus: document.querySelector('#connectionStatus'),
   clearQueueButton: document.querySelector('#clearQueueButton'),
   fieldSelect: document.querySelector('#fieldSelect'),
+  filteredArchived: document.querySelector('#filteredArchived'),
+  filteredCount: document.querySelector('#filteredCount'),
+  filteredExcluded: document.querySelector('#filteredExcluded'),
+  filteredSkipped: document.querySelector('#filteredSkipped'),
+  filteredStale: document.querySelector('#filteredStale'),
   lastRefresh: document.querySelector('#lastRefresh'),
   laneSelect: document.querySelector('#laneSelect'),
   locationSelect: document.querySelector('#locationSelect'),
@@ -208,6 +213,11 @@ function renderSummary() {
   elements.reviewCount.textContent = String(selected.filter((item) => item.status === 'in_review').length);
   elements.allCount.textContent = String(selected.length);
   elements.lastRefresh.textContent = formatDateTime(ui.state?.lastRun?.at);
+  elements.filteredCount.textContent = String(totals.filtered ?? 0);
+  elements.filteredExcluded.textContent = String(totals.excluded ?? 0);
+  elements.filteredSkipped.textContent = String(totals.skipped ?? 0);
+  elements.filteredStale.textContent = String(totals.stale ?? 0);
+  elements.filteredArchived.textContent = String(totals.archived ?? 0);
 }
 
 function renderApplicationRun() {

@@ -4,7 +4,7 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -185,8 +185,10 @@ function countUniqueLiveRoles(items) {
 }
 
 /** @param {Record<string, unknown>} state */
-function queuePayload(state) {
-  const items = Array.isArray(state.items) ? state.items : [];
+export function queuePayload(state) {
+  const { archivedIndex: rawArchivedIndex, ...rest } = state;
+  const archivedIndex = Array.isArray(rawArchivedIndex) ? rawArchivedIndex : [];
+  const items = Array.isArray(rest.items) ? rest.items : [];
   const liveItems = items.filter((item) => ['ready', 'in_review', 'snoozed'].includes(String(item.status || ''))
     && !['stale', 'archivable'].includes(String(item.freshness || '')));
   const selected = items
@@ -195,7 +197,7 @@ function queuePayload(state) {
   const outreachState = loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH));
   const outboxById = new Map((outreachState.outbox || []).map((entry) => [entry.id, entry]));
   return {
-    ...state,
+    ...rest,
     selected,
     questions: questionPayload(items),
     handoffs: publicHandoffSession(),
@@ -247,11 +249,14 @@ function queuePayload(state) {
     },
     outreachOutbox: summarizeOutbox(outreachState),
     totals: {
-      retained: items.length,
+      retained: items.length + archivedIndex.length,
       liveUnique: countUniqueLiveRoles(liveItems),
-      excluded: items.filter((item) => item.status === 'excluded').length,
+      excluded: archivedIndex.filter((stub) => stub.status === 'excluded').length,
       stale: items.filter((item) => item.status === 'stale').length,
-      archived: items.filter((item) => item.status === 'archived').length,
+      skipped: items.filter((item) => item.status === 'skipped').length,
+      archived: archivedIndex.filter((stub) => stub.status === 'archived').length,
+      filtered: archivedIndex.length
+        + items.filter((item) => ['stale', 'skipped'].includes(String(item.status || ''))).length,
       selected: selected.length,
       ready: items.filter((item) => item.status === 'ready').length,
       inReview: items.filter((item) => item.status === 'in_review').length,
@@ -678,4 +683,5 @@ function startServer() {
   });
 }
 
-if (process.argv.includes('--serve') || process.argv.length === 2) startServer();
+const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMainModule && (process.argv.includes('--serve') || process.argv.length === 2)) startServer();
