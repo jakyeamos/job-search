@@ -154,22 +154,24 @@ test('packet counts only nontrivial answer preparation and keeps standard fields
     assert.equal(packet.status, 'needs-user-input');
     assert.deepEqual(packet.questions.map((question) => question.question), ['Why Acme?']);
     assert.deepEqual(packet.simpleFields.map((question) => question.question), ['Are you open to working in person?']);
+    assert.equal(packet.simpleFields[0].answer, 'Yes');
+    assert.equal(packet.simpleFields[0].status, 'confirmed');
     assert.equal(packet.standardFields.length, 4);
     assert.equal(packet.manualItems.length, 1);
     assert.deepEqual(packet.unresolved.map((question) => question.question), ['Why Acme?']);
-    assert.deepEqual(packet.simpleUnresolved.map((question) => question.question), ['Are you open to working in person?']);
+    assert.deepEqual(packet.simpleUnresolved.map((question) => question.question), []);
     assert.deepEqual(packet.answerPrep, {
       questionCount: 1,
       unresolvedCount: 1,
       simpleFieldCount: 1,
-      simpleUnresolvedCount: 1,
+      simpleUnresolvedCount: 0,
       standardFieldCount: 4,
       manualFieldCount: 1,
       artifactFieldCount: 0,
-      requiredUnresolvedCount: 2,
+      requiredUnresolvedCount: 1,
     });
     assert.equal(packet.ledger.canonicalQuestionCount, 2);
-    assert.equal(packet.ledger.unresolvedCount, 2);
+    assert.equal(packet.ledger.unresolvedCount, 1);
     assert.doesNotMatch(packet.markdown, /First Name/);
     assert.match(packet.markdown, /Why Acme\?/);
     assert.match(packet.markdown, /Simple fields to complete in the form/);
@@ -589,6 +591,125 @@ test('corrected application answers resolve experience, identity, and availabili
       'Self-employed / Amazon',
       'Software Development Engineer',
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('packet resolves corrected profile questions, groups referrals, and routes acknowledgements to review', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-profile-corrections-'));
+  try {
+    const ledgerPath = path.join(root, 'question-ledger.json');
+    const profilePath = path.join(root, 'application-profile.json');
+    writeFileSync(ledgerPath, '{"schemaVersion":2,"entries":[]}\n');
+    const evidence = (answer, refs) => ({
+      answer,
+      source: 'career-ops-evidence:test',
+      answer_scope: 'question',
+      answer_status: 'evidence-backed',
+      evidence_backed: true,
+      evidence_refs: refs,
+    });
+    writeFileSync(profilePath, JSON.stringify({
+      identity: { pronouns: 'He/Him', phone: '716-578-8221' },
+      address: { city: 'Buffalo', state: 'NY', country: 'United States' },
+      application_answers: {
+        anthropic_interview: { answer: 'No', source: 'user-confirmed', answer_status: 'confirmed' },
+        glean_relationship: { answer: 'No', source: 'user-confirmed', answer_status: 'confirmed' },
+        hybrid_work: { answer: 'Yes', source: 'user-confirmed', answer_status: 'confirmed' },
+        dutch_proficiency: { answer: 'No', source: 'user-confirmed', answer_status: 'confirmed', evidence_backed: false },
+        located_in_us: evidence('Yes', ['config/application-profile.json']),
+        located_in_north_america: evidence('Yes', ['config/application-profile.json']),
+        located_in_bay_area: evidence('No', ['config/application-profile.json']),
+        restricted_state_residence: evidence('No', ['config/application-profile.json']),
+        sentry_experience: evidence('Yes. I have used Sentry in Tenure.', ['/Users/jakyeamos/projects/tenure/README.md']),
+        llm_evaluation: evidence('Yes. I have worked with LLM evaluation, observability, and guardrails.', ['cv.md', '/Users/jakyeamos/projects/agent-eval-runtime/README.md']),
+        recent_code_commit: { answer: 'Today', source: 'user-confirmed', answer_status: 'confirmed' },
+        programming_languages: evidence('TypeScript, JavaScript, Python, Java, Go, SQL, R, and MATLAB; BidCamp is my most complex application.', ['cv.md', '/Users/jakyeamos/projects/BidCamp/README.md']),
+        main_development_language: evidence('TypeScript', ['cv.md']),
+      },
+    }));
+    const item = {
+      id: 'packet-profile-corrections',
+      company: 'Acme',
+      title: 'Applied AI Engineer',
+      applyUrl: 'https://jobs.example/acme/applied-ai-profile-corrections',
+      canonicalUrl: 'https://jobs.example/acme/applied-ai-profile-corrections',
+      liveness: 'active',
+      firstSeenAt: '2026-07-21T00:00:00.000Z',
+      description: 'Build reliable AI-enabled products with TypeScript, Python, Sentry, LLM evaluation, observability, cloud services, and production operations across customer-facing systems.',
+    };
+    const inspection = {
+      url: item.applyUrl,
+      title: 'Apply — Acme',
+      heading: 'Applied AI Engineer',
+      formCount: 1,
+      formReady: true,
+      controls: [
+        { id: 'anthropic', label: 'Have you ever interviewed at Anthropic before?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'hybrid', label: 'Are you open to working in-person in one of our offices 25% of the time?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'city-office', label: 'Are you willing to work from NYC or San Francisco 2–3 days per week?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'nyc-option-group', label: 'NYC', kind: 'radio', category: 'question', required: true, options: ['Yes | I will relocate to the broader NYC area upon offer acceptance and comfortable being in the NY office at least 3 days/week', 'Yes | Currently located in the broader NYC area and comfortable being in the NY office at least 3 days/week', 'No | I am seeking a remote role'] },
+        { id: 'us-location', label: 'Are you located in the United States?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'north-america', label: 'Are you located in North America?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'bay-area', label: 'Are you located in the San Francisco Bay Area?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'restricted-state', label: 'Do you live in one of the following states?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'glean', label: 'Do you know anyone currently at Glean?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
+        { id: 'sentry', label: 'Have you ever used Sentry before?', kind: 'textarea', category: 'question', required: true },
+        { id: 'llm', label: 'Have you worked with LLM evaluation, observability, or guardrails?', kind: 'textarea', category: 'question', required: true },
+        { id: 'commit', label: 'How long since you last committed non-personal code to a repository?', kind: 'text', category: 'question', required: true },
+        { id: 'languages', label: 'Which programming languages do you know, and what was your most complex application?', kind: 'textarea', category: 'question', required: true },
+        { id: 'main-language', label: 'What is your main development language?', kind: 'text', category: 'question', required: true },
+        { id: 'pronouns', label: 'Pronouns', kind: 'text', category: 'question', required: true },
+        { id: 'phone', label: 'Contact number', kind: 'tel', category: 'question', required: true },
+        { id: 'referral-one', label: 'How did you hear about Glean?', kind: 'combobox', category: 'question', required: true, options: ['Job board', 'Referral', 'Other'] },
+        { id: 'referral-two', label: 'How did you hear about this opportunity? — 3How did you hear about this position? — 3', kind: 'combobox', category: 'question', required: true, options: ['Job board', 'Referral', 'Other'] },
+        { id: 'dutch', label: 'Do you speak Dutch at C1/C2 level or higher?', kind: 'textarea', category: 'question', required: true },
+        { id: 'privacy', label: 'Celonis Privacy Notice confirmation', kind: 'checkbox', category: 'question', required: true },
+        { id: 'policy', label: 'AI Policy for Application', kind: 'checkbox', category: 'question', required: true },
+        { id: 'double-check', label: 'Please double-check all the information provided above.', kind: 'checkbox', category: 'question', required: true },
+        { id: 'london', label: 'Are you available to work full-time onsite at our London office?', kind: 'checkbox', category: 'question', required: true },
+      ],
+      buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+      pages: [],
+      manualSignals: [],
+      blocked: false,
+      blockedReason: '',
+    };
+    const packet = await buildApplicationPacket(item, {
+      inspection,
+      ledgerPath,
+      profilePath,
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+    const fields = [...packet.questions, ...packet.simpleFields];
+    const field = (label) => fields.find((entry) => entry.question === label);
+    assert.equal(packet.status, 'needs-user-input');
+    assert.equal(field('Have you ever interviewed at Anthropic before?').answer, 'No');
+    assert.equal(field('Are you open to working in-person in one of our offices 25% of the time?').answer, 'Yes');
+    assert.equal(field('Are you willing to work from NYC or San Francisco 2–3 days per week?').answer, 'Yes');
+    assert.equal(field('NYC').answer, 'Yes | I will relocate to the broader NYC area upon offer acceptance and comfortable being in the NY office at least 3 days/week');
+    assert.equal(field('Are you located in the United States?').answer, 'Yes');
+    assert.equal(field('Are you located in North America?').answer, 'Yes');
+    assert.equal(field('Are you located in the San Francisco Bay Area?').answer, 'No');
+    assert.equal(field('Do you know anyone currently at Glean?').answer, 'No');
+    assert.equal(field('Have you ever used Sentry before?').status, 'evidence-backed');
+    assert.equal(field('Have you worked with LLM evaluation, observability, or guardrails?').status, 'evidence-backed');
+    assert.equal(field('How long since you last committed non-personal code to a repository?').answer, 'Today');
+    assert.equal(field('Which programming languages do you know, and what was your most complex application?').status, 'evidence-backed');
+    assert.equal(field('What is your main development language?').answer, 'TypeScript');
+    assert.equal(field('Pronouns').answer, 'He/Him');
+    assert.equal(packet.standardFields.find((entry) => entry.label === 'Contact number')?.label, 'Contact number');
+    assert.equal(field('Do you speak Dutch at C1/C2 level or higher?').answer, 'No');
+    assert.equal(field('Do you speak Dutch at C1/C2 level or higher?').status, 'confirmed');
+    assert.equal(packet.simpleUnresolved.filter((entry) => entry.question.startsWith('How did you hear about')).length, 2);
+    assert.equal(packet.manualItems.some((entry) => entry.label === 'Celonis Privacy Notice confirmation'), true);
+    assert.equal(packet.manualItems.some((entry) => entry.label === 'AI Policy for Application'), true);
+    assert.equal(packet.manualItems.some((entry) => entry.label.startsWith('Please double-check')), true);
+    assert.equal(packet.manualItems.some((entry) => entry.label.includes('London office')), true);
+    assert.equal(packet.questions.some((entry) => /Privacy Notice|AI Policy|double-check|London office/i.test(entry.question)), false);
+    assert.equal(packet.ledger.canonicalQuestionCount, 17);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

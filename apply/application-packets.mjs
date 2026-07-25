@@ -162,6 +162,53 @@ function isStartDatePrompt(label) {
   return /\b(?:earliest.*(?:join|start)|(?:date|when).*join|start date|notice period|available to (?:start|join)|when.*(?:start|join))\b/i.test(label);
 }
 
+/** @param {string} label */
+function configuredApplicationAnswerKey(label) {
+  const text = String(label || '');
+  if (/have you ever interviewed at anthropic before/i.test(text)) return 'anthropic_interview';
+  if (/do you know anyone currently at glean/i.test(text)) return 'glean_relationship';
+  if (/\bdutch\b[\s\S]{0,100}\bc1\s*\/\s*c2\b|\bc1\s*\/\s*c2\b[\s\S]{0,100}\bdutch\b/i.test(text)) return 'dutch_proficiency';
+  const questionCue = /\b(?:are|would|will|can|do)\s+you\b/i.test(text);
+  const workMode = /\b(?:hybrid|in[- ]?person|on[- ]?site|onsite|office)\b/i.test(text);
+  const citySchedule = /\b(?:nyc|new york|san francisco|sf)\b[\s\S]{0,100}(?:\bdays?\s+(?:per|a)\s+week\b|\b\d+\s*%\b)/i.test(text);
+  const cityRelocation = /\b(?:nyc|new york|san francisco|sf|bay area)\b/i.test(text)
+    && /\b(?:relocat|move)\w*\b/i.test(text);
+  if (questionCue && (workMode || citySchedule || cityRelocation)) return 'hybrid_work';
+  if (/\b(?:located|live|based|reside)\b[\s\S]{0,60}\b(?:united states|u\.s\.?|us)\b/i.test(text)) return 'located_in_us';
+  if (/\b(?:located|live|based|reside)\b[\s\S]{0,60}\bnorth america\b/i.test(text)) return 'located_in_north_america';
+  if (/\b(?:located|live|based|reside)\b[\s\S]{0,60}\bsan francisco bay area\b/i.test(text)) return 'located_in_bay_area';
+  if (/\blive in one of the following states\b/i.test(text)) return 'restricted_state_residence';
+  if (/\b(?:used|worked with|experience with)\s+sentry\b|sentry experience/i.test(text)) return 'sentry_experience';
+  if (/(?:\bllm\b[\s\S]{0,100}\b(?:evaluation|observability|guardrails?)\b|\b(?:evaluation|observability|guardrails?)\b[\s\S]{0,100}\bllm\b)/i.test(text)) return 'llm_evaluation';
+  if (/\bhow\s+long\b[\s\S]{0,220}\bcommit(?:ted|ting)?\b[\s\S]{0,120}\b(?:repository|repo)\b/i.test(text)) return 'recent_code_commit';
+  if (/\bwhich programming languages\b|\bprogramming languages do you know\b/i.test(text)) return 'programming_languages';
+  if (/\bwhat is your main development language\b/i.test(text)) return 'main_development_language';
+  return '';
+}
+
+/** @param {string} label @param {string[]} options */
+function isHybridOptionGroup(label, options) {
+  const normalizedLabel = String(label || '').trim();
+  if (!/^(?:nyc|sf|san francisco|new york city|bay area)$/i.test(normalizedLabel)) return false;
+  return options.some((option) => /\b(?:relocat|office|remote|hybrid|days?\s+(?:per|a)\s+week)\b/i.test(String(option || '')));
+}
+
+/** @param {string} answer @param {string[]} options */
+function compatibleConfiguredOption(answer, options) {
+  const normalizedAnswer = String(answer || '').trim().toLowerCase();
+  if (!normalizedAnswer || !options.length) return String(answer || '').trim();
+  const exact = options.find((option) => String(option).trim().toLowerCase() === normalizedAnswer);
+  if (exact) return exact;
+  if (/^yes$/i.test(normalizedAnswer)) {
+    return options.find((option) => /^yes\b/i.test(String(option)) && /\brelocat\w*\b/i.test(String(option)))
+      || options.find((option) => /^yes\b/i.test(String(option)) && /\b(?:office|hybrid|days?\s+(?:per|a)\s+week)\b/i.test(String(option)))
+      || options.find((option) => /^yes\b/i.test(String(option)))
+      || String(answer).trim();
+  }
+  if (/^no$/i.test(normalizedAnswer)) return options.find((option) => /^no\b/i.test(String(option))) || String(answer).trim();
+  return String(answer).trim();
+}
+
 /** @param {Record<string, unknown>} profile @param {string} label */
 function profileAnswer(profile, label) {
   const text = label.toLowerCase();
@@ -175,7 +222,8 @@ function profileAnswer(profile, label) {
     [/^last name\b|surname/, identity.last_name, 'profile:identity.last_name'],
     [/full name|legal name|your name/, identity.full_name, 'profile:identity.full_name'],
     [/email/, identity.email, 'profile:identity.email'],
-    [/phone|mobile/, identity.phone, 'profile:identity.phone'],
+    [/contact\s+number|phone|mobile|telephone/, identity.phone, 'profile:identity.phone'],
+    [/pronouns?/, identity.pronouns, 'profile:identity.pronouns'],
     [/linkedin/, links.linkedin, 'profile:links.linkedin'],
     [/github/, links.github, 'profile:links.github'],
     [/portfolio|personal site|website/, links.website, 'profile:links.website'],
@@ -231,9 +279,9 @@ function profileQuestionAnswer(profile, label) {
   return null;
 }
 
-/** @param {Record<string, unknown>} profile @param {string} label */
-function profileApplicationAnswer(profile, label) {
-  const answerKey = isAiUsageQuestion(label)
+/** @param {Record<string, unknown>} profile @param {string} label @param {string[]} [options] */
+function profileApplicationAnswer(profile, label, options = []) {
+  const answerKey = configuredApplicationAnswerKey(label) || (isAiUsageQuestion(label)
     ? 'ai_usage'
     : isAgenticSystemsQuestion(label)
       ? 'agentic_systems'
@@ -247,30 +295,33 @@ function profileApplicationAnswer(profile, label) {
               ? 'production_system'
               : isPythonProductionQuestion(label)
                 ? 'python_production'
-                : isRecentEmployerPrompt(label)
+              : isRecentEmployerPrompt(label)
                   ? 'most_recent_employer'
                   : isRecentTitlePrompt(label)
                     ? 'most_recent_job_title'
                     : isStartDatePrompt(label)
-                      ? 'availability'
-                      : '';
-  if (!answerKey) return null;
+                    ? 'availability'
+                      : '');
+  const resolvedAnswerKey = answerKey || (isHybridOptionGroup(label, options) ? 'hybrid_work' : '');
+  if (!resolvedAnswerKey) return null;
   const configuredAnswers = profile.application_answers && typeof profile.application_answers === 'object'
     ? /** @type {Record<string, unknown>} */ (profile.application_answers)
     : {};
-  const configured = configuredAnswers[answerKey] && typeof configuredAnswers[answerKey] === 'object'
-    ? /** @type {Record<string, unknown>} */ (configuredAnswers[answerKey])
+  const configured = configuredAnswers[resolvedAnswerKey] && typeof configuredAnswers[resolvedAnswerKey] === 'object'
+    ? /** @type {Record<string, unknown>} */ (configuredAnswers[resolvedAnswerKey])
     : null;
-  const answer = String(configured?.answer || '').trim();
+  const answer = compatibleConfiguredOption(String(configured?.answer || '').trim(), options);
   if (!answer) return null;
+  const configuredEvidenceBacked = configured?.evidenceBacked ?? configured?.evidence_backed;
+  const configuredAnswerStatus = configured?.answerStatus ?? configured?.answer_status;
   return {
     answer,
-    source: String(configured?.source || `profile:application_answers.${answerKey}`),
-    evidenceBacked: configured?.evidenceBacked !== false && configured?.evidence_backed !== false,
+    source: String(configured?.source || `profile:application_answers.${resolvedAnswerKey}`),
+    evidenceBacked: configuredEvidenceBacked !== false,
     answerScope: String(configured?.answerScope || configured?.answer_scope || 'question'),
-    answerStatus: configured?.answerStatus ? String(configured.answerStatus) : null,
+    answerStatus: configuredAnswerStatus ? String(configuredAnswerStatus) : null,
     evidenceRefs: [
-      String(configured?.source || `profile:application_answers.${answerKey}`),
+      String(configured?.source || `profile:application_answers.${resolvedAnswerKey}`),
       ...(Array.isArray(configured?.evidenceRefs)
         ? configured.evidenceRefs.map(String)
         : Array.isArray(configured?.evidence_refs) ? configured.evidence_refs.map(String) : []),
@@ -294,7 +345,7 @@ function isStandardControl(control) {
   if (control.category === 'standard') return true;
   const label = String(control.label || '');
   const normalizedLabel = label.trim().replace(/[\s*:]+$/g, '').trim();
-  return /first name|last name|full name|legal name|preferred name|email|phone|mobile|linkedin|github|portfolio|personal site|website/i.test(label)
+  return /first name|last name|full name|legal name|preferred name|email|phone|mobile|telephone|contact number|linkedin|github|portfolio|personal site|website/i.test(label)
     || /^(?:your\s+)?name$/i.test(label.trim())
     || /^(?:country|country\/region|country of residence)$/i.test(normalizedLabel);
 }
@@ -308,7 +359,7 @@ function shouldRecord(control) {
 function isNarrativeControl(control) {
   if (!['text', 'textarea'].includes(String(control.kind || control.type || '').toLowerCase())) return false;
   const label = String(control.label || '');
-  const nonNarrativeLabel = /\b(?:first|last|full|legal|preferred)\s+name\b|\b(?:email|phone|mobile|linkedin|github|portfolio|website|country|location|address|city|state|zip|postal|salary|compensation|authorization|sponsor(?:ship)?|visa|consent|gender|race|veteran|disabil\w*|captcha|mfa|verification|attest\w*|background|criminal|conviction|earliest|start date|availability|deadline|timeline|relocat\w*|in[- ]person|on[- ]site|onsite|remote|work from)\b/i;
+  const nonNarrativeLabel = /\b(?:first|last|full|legal|preferred)\s+name\b|\b(?:email|phone|mobile|telephone|contact number|pronouns?|linkedin|github|portfolio|website|country|location|address|city|state|zip|postal|salary|compensation|authorization|sponsor(?:ship)?|visa|consent|gender|race|veteran|disabil\w*|captcha|mfa|verification|attest\w*|background|criminal|conviction|earliest|start date|availability|deadline|timeline|relocat\w*|in[- ]person|on[- ]site|onsite|remote|work from)\b/i;
   return control.category === 'question'
     && !nonNarrativeLabel.test(label);
 }
@@ -425,7 +476,7 @@ function answerForControl(control, item, profile, ledger, options = {}) {
     };
   }
 
-  const applicationAnswer = profileApplicationAnswer(profile, label);
+  const applicationAnswer = profileApplicationAnswer(profile, label, Array.isArray(control.options) ? control.options.map(String) : []);
   if (applicationAnswer) {
     return {
       ...applicationAnswer,

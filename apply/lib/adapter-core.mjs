@@ -339,12 +339,31 @@ function toRegex(pattern) {
   }
 }
 
+function isHybridWorkQuestion(questionText) {
+  const text = String(questionText || '');
+  const questionCue = /\b(?:are|would|will|can|do)\s+you\b/i.test(text);
+  const workMode = /\b(?:hybrid|in[- ]?person|on[- ]?site|onsite|office)\b/i.test(text);
+  const citySchedule = /\b(?:nyc|new york|san francisco|sf)\b[\s\S]{0,100}(?:\bdays?\s+(?:per|a)\s+week\b|\b\d+\s*%\b)/i.test(text);
+  const cityRelocation = /\b(?:nyc|new york|san francisco|sf|bay area)\b/i.test(text)
+    && /\b(?:relocat|move)\w*\b/i.test(text);
+  return questionCue && (workMode || citySchedule || cityRelocation);
+}
+
 // Recurring custom questions every ATS tends to ask. Values come ONLY from the profile.
 export function commonQuestions(profile) {
   const wa = profile.work_authorization || {};
   const authorized = wa.authorized_us ? 'Yes' : 'No';
   const needsSponsorship = wa.requires_sponsorship ? 'Yes' : 'No';
-  return [
+  const applicationAnswers = profile.application_answers && typeof profile.application_answers === 'object'
+    ? profile.application_answers
+    : {};
+  const configured = (key) => {
+    const value = applicationAnswers[key];
+    if (!value || typeof value !== 'object') return null;
+    const answer = String(value.answer || '').trim();
+    return answer || null;
+  };
+  const rules = [
     // Authorization is checked BEFORE sponsorship so "authorized to work ... without
     // sponsorship?" resolves to the authorization answer, not the sponsorship one.
     { re: /legally authorized|authorized to work|eligible to work|work authorization|right to work/i, value: authorized },
@@ -352,7 +371,22 @@ export function commonQuestions(profile) {
     { re: /(previously|ever).*(employed|worked).*(here|for (us|this)|at (this )?compan)|former employee|prior employment/i, value: 'No' },
     { re: /at least 18|18 years of age|are you 18/i, value: 'Yes' },
     { re: /currently.*(employed|work).*(here|for (us|this compan))/i, value: 'No' },
+    { re: /have you ever interviewed at anthropic before/i, value: configured('anthropic_interview') },
+    { re: /do you know anyone currently at glean/i, value: configured('glean_relationship') },
+    { re: /\bdutch\b[\s\S]{0,100}\bc1\s*\/\s*c2\b|\bc1\s*\/\s*c2\b[\s\S]{0,100}\bdutch\b/i, value: configured('dutch_proficiency') },
+    { match: isHybridWorkQuestion, value: configured('hybrid_work') },
+    { re: /located (?:in|within) (?:the )?(?:united states|u\.s\.?|us)\b/i, value: configured('located_in_us') },
+    { re: /located in north america\b/i, value: configured('located_in_north_america') },
+    { re: /\b(?:located|live|based|reside)\b[\s\S]{0,60}\bsan francisco bay area\b/i, value: configured('located_in_bay_area') },
+    { re: /live in one of the following states\b/i, value: configured('restricted_state_residence') },
+    { re: /\b(?:used|worked with|experience with)\s+sentry\b|sentry experience/i, value: configured('sentry_experience') },
+    { re: /llm evaluation|observability|guardrails/i, value: configured('llm_evaluation') },
+    { re: /\bhow\s+long\b[\s\S]{0,220}\bcommit(?:ted|ting)?\b[\s\S]{0,120}\b(?:repository|repo)\b/i, value: configured('recent_code_commit') },
+    { re: /which programming languages[\s\S]*most complex application|programming languages do you know/i, value: configured('programming_languages') },
+    { re: /what is your main development language/i, value: configured('main_development_language') },
+    { re: /^pronouns?$/i, value: profile.identity?.pronouns || null },
   ];
+  return rules.filter((rule) => rule.value !== null && rule.value !== undefined && rule.value !== '');
 }
 
 // Resolve a question's answer from answers file (highest priority) then commonQuestions.
@@ -360,7 +394,7 @@ export function answerFor(questionText, tables) {
   for (const table of tables) {
     for (const entry of table) {
       if (typeof entry.match === 'function' && entry.match(questionText)) return entry.value;
-      if (entry.re.test(questionText)) return entry.value;
+      if (entry.re && entry.re.test(questionText)) return entry.value;
     }
   }
   return null;
@@ -471,7 +505,7 @@ export async function selectNative(page, selector, value, label, tools) {
 
 export const EEO_LABEL_RE = /gender|race|ethnic|hispanic|latino|veteran|disabilit|self[-\s]?identif|voluntary self/i;
 export const MARKETING_RE = /marketing|newsletter|updates|promotional|subscribe|keep me (posted|informed)|receive (emails|communications)/i;
-export const LEGAL_LABEL_RE = /attest|certif|background|criminal|conviction|terms (?:and|of)|agree.*(?:accurate|truth|conditions|terms)/i;
+export const LEGAL_LABEL_RE = /attest|certif|background|criminal|conviction|terms (?:and|of)|agree.*(?:accurate|truth|conditions|terms)|privacy\s+(?:notice|policy)|ai\s+policy|double[- ]check|accuracy is crucial|information provided above|full[- ]time\s+(?:on[- ]?site|in[- ]person)[\s\S]*\b(?:london|germany|france|spain|netherlands|belgium|italy)\b/i;
 
 // ---------------------------------------------------------------------------
 // Required-field detection (page.evaluate). Group-aware; skips reCAPTCHA.

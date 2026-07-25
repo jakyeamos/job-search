@@ -99,7 +99,7 @@ export async function inspectApplicationPage(page, options = {}) {
     const manualReason = (label) => {
       if (/gender|race|ethnic|hispanic|latino|veteran|disabilit|self[-\s]?identif|voluntary self/i.test(label)) return 'voluntary self-identification — complete manually';
       if (/captcha|recaptcha|hcaptcha|one[- ]time password|multi[- ]factor|verification code/i.test(label)) return 'CAPTCHA or identity verification — complete manually';
-      if (/attest|certif|background|criminal|conviction|terms (?:and|of)|agree.*(?:accurate|truth|conditions|terms)/i.test(label)) return 'legal or attestation field — review manually';
+      if (/attest|certif|background|criminal|conviction|terms (?:and|of)|agree.*(?:accurate|truth|conditions|terms)|privacy\s+(?:notice|policy)|ai\s+policy|double[- ]check|accuracy is crucial|information provided above|full[- ]time\s+(?:on[- ]?site|in[- ]person)[\s\S]*\b(?:london|germany|france|spain|netherlands|belgium|italy)\b/i.test(label)) return 'legal or attestation field — review manually';
       if (/marketing|newsletter|updates|promotional|subscribe|receive (?:emails|communications)/i.test(label)) return 'marketing consent — leave unchecked unless you choose otherwise';
       return '';
     };
