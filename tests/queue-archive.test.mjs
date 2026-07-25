@@ -139,3 +139,75 @@ test('an archive round-trips through write and read', () => {
   assert.equal(archive.records[0].id, 'excluded');
   assert.equal(archive.updatedAt, '2026-07-25T00:00:00.000Z');
 });
+
+import { buildQueue } from '../queue-lib.mjs';
+
+/** @param {Record<string, unknown>} overrides */
+function candidate(overrides) {
+  return {
+    id: 'c1',
+    company: 'Acme',
+    title: 'Backend Engineer',
+    applyUrl: 'https://example.com/jobs/1',
+    canonicalUrl: 'https://example.com/jobs/1',
+    status: 'ready',
+    source: 'greenhouse',
+    fitScore: 4.5,
+    freshness: 'fresh',
+    ...overrides,
+  };
+}
+
+test('buildQueue carries the archived index through a refresh', () => {
+  const index = [archiveStub(item({ id: 'gone', status: 'excluded' }), '2026-07-01T00:00:00.000Z')];
+  const result = buildQueue([candidate({})], { items: [], archivedIndex: index }, { now: '2026-07-25T00:00:00.000Z' });
+  assert.deepEqual(result.archivedIndex.map((stub) => stub.id), ['gone']);
+});
+
+test('buildQueue returns an empty index when there was none', () => {
+  const result = buildQueue([candidate({})], {}, { now: '2026-07-25T00:00:00.000Z' });
+  assert.deepEqual(result.archivedIndex, []);
+});
+
+test('an archived id that is not observed now is dropped from the merge', () => {
+  const index = [archiveStub(item({ id: 'c1', status: 'excluded' }), '2026-07-01T00:00:00.000Z')];
+  const result = buildQueue(
+    [candidate({ id: 'c1', observedAt: null, lastSeenAt: null, liveness: 'uncertain' })],
+    { items: [], archivedIndex: index },
+    { now: '2026-07-25T00:00:00.000Z' },
+  );
+  assert.deepEqual(result.items.map((entry) => entry.id), []);
+  assert.deepEqual(result.archivedIndex.map((stub) => stub.id), ['c1']);
+});
+
+test('an archived id observed again reactivates with its original firstSeenAt', () => {
+  const index = [archiveStub(
+    item({ id: 'c1', status: 'excluded', firstSeenAt: '2026-07-04T00:00:00.000Z' }),
+    '2026-07-10T00:00:00.000Z',
+  )];
+  const result = buildQueue(
+    [candidate({ id: 'c1', observedAt: '2026-07-25T00:00:00.000Z' })],
+    { items: [], archivedIndex: index },
+    { now: '2026-07-25T00:00:00.000Z' },
+  );
+  assert.deepEqual(result.items.map((entry) => entry.id), ['c1']);
+  assert.equal(result.items[0].firstSeenAt, '2026-07-04T00:00:00.000Z');
+  assert.equal(result.items[0].reactivatedAt, '2026-07-25T00:00:00.000Z');
+  assert.deepEqual(result.archivedIndex, []);
+});
+
+test('a reactivated row keeps the freshly scored status, not the archived one', () => {
+  const index = [archiveStub(item({ id: 'c1', status: 'excluded' }), '2026-07-10T00:00:00.000Z')];
+  const result = buildQueue(
+    [candidate({ id: 'c1', status: 'ready', observedAt: '2026-07-25T00:00:00.000Z' })],
+    { items: [], archivedIndex: index },
+    { now: '2026-07-25T00:00:00.000Z' },
+  );
+  assert.equal(result.items[0].status, 'ready');
+});
+
+test('unseen retention still works for rows that are not archived', () => {
+  const previous = { items: [{ ...item({ id: 'kept', status: 'in_review' }), selectedForToday: false }], archivedIndex: [] };
+  const result = buildQueue([candidate({ id: 'c1' })], previous, { now: '2026-07-25T00:00:00.000Z', retainUnseen: true });
+  assert.deepEqual(result.items.map((entry) => entry.id).sort(), ['c1', 'kept']);
+});

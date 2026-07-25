@@ -581,12 +581,21 @@ export function buildQueue(candidates, previous = {}, options = {}) {
   const limit = Math.max(1, Math.min(50, Number(options.limit || DEFAULT_QUEUE_LIMIT)));
   const now = options.now || new Date().toISOString();
   const previousItems = new Map(Array.isArray(previous.items) ? previous.items.map((item) => [item.id, item]) : []);
+  const archivedIndex = new Map(
+    (Array.isArray(previous.archivedIndex) ? previous.archivedIndex : [])
+      .filter((stub) => stub?.id)
+      .map((stub) => [stub.id, stub]),
+  );
   const merged = new Map();
   for (const candidate of candidates) {
     if (!candidate?.id) continue;
     const old = previousItems.get(candidate.id);
     const observedAt = isoTimestamp(candidate.observedAt) || isoTimestamp(candidate.lastSeenAt);
     const observedNow = observedAt !== null || (candidate.liveness === 'active' && isoTimestamp(candidate.livenessCheckedAt) !== null);
+    // An archived id with no fresh observation stays archived: it must not be
+    // resurrected into the live file by a stale candidate list.
+    const archivedStub = archivedIndex.get(candidate.id);
+    if (archivedStub && !observedNow) continue;
     const snoozeExpired = old?.status === 'snoozed'
       && (!old.snoozeUntil || old.snoozeUntil <= now);
     let preservedStatus = candidate.status;
@@ -629,6 +638,11 @@ export function buildQueue(candidates, previous = {}, options = {}) {
     }
     if (observedNow && observedAt) mergedItem.lastSeenAt = observedAt;
     if (observedNow && candidate.liveness === 'active') mergedItem.lastConfirmedActiveAt = observedAt || isoTimestamp(candidate.livenessCheckedAt) || old?.lastConfirmedActiveAt || null;
+    if (archivedStub) {
+      if (archivedStub.firstSeenAt) mergedItem.firstSeenAt = archivedStub.firstSeenAt;
+      mergedItem.reactivatedAt = now;
+      archivedIndex.delete(candidate.id);
+    }
     merged.set(candidate.id, mergedItem);
   }
   for (const old of previousItems.values()) {
@@ -652,6 +666,7 @@ export function buildQueue(candidates, previous = {}, options = {}) {
     account: { gmail: 'jakyejobs@gmail.com' },
     generatedAt: now,
     lastRun: previous.lastRun || null,
+    archivedIndex: [...archivedIndex.values()],
     items,
   };
 }
