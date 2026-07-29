@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { archiveStub } from '../queue-archive.mjs';
-import { queuePayload } from '../queue-ui.mjs';
+import { questionPayload, queuePayload } from '../queue-ui.mjs';
 
 /** @param {Record<string, unknown>} overrides */
 function item(overrides) {
@@ -53,4 +53,29 @@ test('a queue with no archived index reports zero filtered', () => {
   const payload = queuePayload({ items: [item({ id: 'a', status: 'ready' })] });
   assert.equal(payload.totals.filtered, 0);
   assert.equal(payload.totals.retained, 1);
+});
+
+test('privacy acknowledgements remain in handoff review but stay out of the answer queue', () => {
+  const questions = questionPayload([
+    item({
+      id: 'privacy-review',
+      applicationState: 'blocked_by_question',
+      applicationResult: {
+        needsReview: [
+          {
+            label: "Legal: I understand the information I submit will be used in accordance with Sentry's Applicant Privacy Policy.",
+            reason: 'legal attestation or background question — answer manually',
+          },
+          {
+            label: 'Why do you want to join Sentry?',
+            reason: 'required field needs an answer',
+          },
+        ],
+      },
+    }),
+  ], { entries: [] });
+
+  assert.deepEqual(questions.map((question) => question.question), [
+    'Why do you want to join Sentry?',
+  ]);
 });

@@ -12,7 +12,14 @@ import { recordApplication, saveQueue } from './queue.mjs';
 import { DEFAULT_CONTACT_DISCOVERY_LIMIT, normalizeUrl, readQueueState, topUpSelection } from './queue-lib.mjs';
 import { readBoard, setRowNotes, setRowStatus } from './tracker-board.mjs';
 import { OUTREACH_STATE_PATH, loadOutreachState, recordSubmissionSignal, summarizeOutbox } from './outreach-lib.mjs';
-import { loadLedger, answerQuestion, findQuestionMatch, isSensitiveQuestion, questionId } from './apply/question-ledger.mjs';
+import {
+  loadLedger,
+  answerQuestion,
+  findQuestionMatch,
+  isNonQuestionPrompt,
+  isSensitiveQuestion,
+  questionId,
+} from './apply/question-ledger.mjs';
 import { selectProjectAccomplishment } from './project-accomplishment-ledger.mjs';
 import { loadClearState, DEFAULT_CLEAR_STATE_PATH } from './apply/application-run-state.mjs';
 import { runClearQueue } from './application-queue.mjs';
@@ -88,8 +95,7 @@ function loadState() {
   return readQueueState(QUEUE_JSON);
 }
 
-function questionPayload(items) {
-  const ledger = loadLedger();
+export function questionPayload(items, ledger = loadLedger()) {
   const grouped = new Map();
   items
     .filter((item) => item.applicationState === 'blocked_by_question')
@@ -97,7 +103,7 @@ function questionPayload(items) {
       const reviews = Array.isArray(item.applicationResult?.needsReview) ? item.applicationResult.needsReview : [];
       return reviews.map((review) => {
         const question = String(review.label || '').replace(/^EEO:\s*/i, '').trim();
-        if (!question) return null;
+        if (!question || isNonQuestionPrompt(question)) return null;
         const sensitivity = isSensitiveQuestion(question) ? 'high' : 'normal';
         const entry = ledger.entries.find((candidate) => candidate.id === questionId(question))
           || findQuestionMatch(question, ledger, {
