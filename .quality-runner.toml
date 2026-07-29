@@ -12,7 +12,8 @@ surfaces = [
   "tests/question-queue.test.mjs",
 ]
 command = "node --test tests/question-queue.test.mjs"
-enforcement = "required"
+enforcement = "advisory"
+candidate_id = "shared-workflow-classification-single-source"
 ecosystem = "javascript"
 mutating_risk = "safe"
 freshness_days = 30

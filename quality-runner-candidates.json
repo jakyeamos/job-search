@@ -1,0 +1,107 @@
+{
+  "schema": "quality-runner-candidate-registry-v0.1",
+  "repository": "career-ops",
+  "regressions": [
+    {
+      "id": "handoff-only-review-entered-answer-queue",
+      "summary": "A privacy acknowledgement retained for human handoff was also projected as a reusable answer question.",
+      "regression_test": "tests/question-queue.test.mjs",
+      "command": "node --test tests/question-queue.test.mjs",
+      "confirmed_at": "2026-07-29T16:29:23Z",
+      "provenance": {
+        "fix_commit": "296187e1062975dc889230953dc0b9852fed7fc2",
+        "proof_isolation_commit": "63f5cc869de6852025cac93fd9b3d0255d5d42e2"
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "id": "shared-workflow-classification-single-source",
+      "originating_regressions": [
+        "handoff-only-review-entered-answer-queue"
+      ],
+      "failure_pattern": "A shared workflow record feeds multiple projections whose semantic classification is reconstructed independently by consumers.",
+      "cause": "The review record preserves a human-only item without carrying a canonical projection classification, so the answer-queue consumer must infer whether it is reusable from the prompt text.",
+      "producer_surfaces": [
+        "apply/lib/adapter-core.mjs",
+        "application-queue.mjs"
+      ],
+      "consumer_surfaces": [
+        "queue-ui.mjs",
+        "apply/question-queue.mjs",
+        "apply/question-ledger.mjs"
+      ],
+      "detection_signal": {
+        "kind": "repository-owned-regression",
+        "description": "Exercise the same review record through the handoff-only and answerable projections, asserting that only the answerable question reaches the reusable queue.",
+        "command": "node --test tests/question-queue.test.mjs"
+      },
+      "likely_false_positives": [
+        "A projection intentionally owns a distinct semantic classification documented at its producer-consumer boundary.",
+        "A record is display-only and never feeds a reusable or automated downstream consumer."
+      ],
+      "remediation": "Persist the semantic classification on the shared workflow record and require each projection to consume that canonical field; until then, keep the repository-owned conservative classifier and regression proof.",
+      "owner": "application-review-classifier",
+      "provenance": [
+        {
+          "reference": "296187e1062975dc889230953dc0b9852fed7fc2",
+          "kind": "originating-fix"
+        },
+        {
+          "reference": "63f5cc869de6852025cac93fd9b3d0255d5d42e2",
+          "kind": "isolated-regression-proof"
+        },
+        {
+          "reference": "7f4ce10a2099a39d0f67c2c05510567a942b4432",
+          "kind": "initial-invariant-registration"
+        }
+      ],
+      "status": "quality-runner-advisory",
+      "fixtures": {
+        "positive": [
+          "tests/fixtures/question-queue/handoff-only-review.json"
+        ],
+        "negative": [
+          "tests/fixtures/question-queue/answerable-question.json"
+        ]
+      },
+      "observations": [],
+      "transitions": [
+        {
+          "from": null,
+          "to": "repository-regression",
+          "at": "2026-07-29T16:29:23Z",
+          "actor": "application-review-classifier",
+          "reason": "The confirmed defect received an isolated repository regression proof.",
+          "evidence": [
+            "296187e1062975dc889230953dc0b9852fed7fc2",
+            "tests/question-queue.test.mjs"
+          ]
+        },
+        {
+          "from": "repository-regression",
+          "to": "reusable-candidate",
+          "at": "2026-07-29T17:45:00Z",
+          "actor": "quality-owner",
+          "reason": "The defect instantiates a broader producer-consumer classification boundary that may repeat across repositories.",
+          "evidence": [
+            "quality-runner-candidates.json",
+            "tests/fixtures/question-queue/handoff-only-review.json",
+            "tests/fixtures/question-queue/answerable-question.json"
+          ]
+        },
+        {
+          "from": "reusable-candidate",
+          "to": "quality-runner-advisory",
+          "at": "2026-07-29T17:46:00Z",
+          "actor": "quality-owner",
+          "reason": "The originating repository is protected, but independent fleet precision and cost evidence do not yet support required enforcement.",
+          "evidence": [
+            ".quality-runner.toml",
+            "tests/question-queue.test.mjs"
+          ]
+        }
+      ]
+    }
+  ]
+}

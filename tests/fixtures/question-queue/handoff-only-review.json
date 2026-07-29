@@ -1,0 +1,17 @@
+[
+  {
+    "id": "privacy-review",
+    "company": "Sentry",
+    "title": "Software Engineer, Ingest",
+    "applyUrl": "https://example.com/jobs/1",
+    "applicationState": "blocked_by_question",
+    "applicationResult": {
+      "needsReview": [
+        {
+          "label": "Legal: I understand the information I submit will be used in accordance with Sentry's Applicant Privacy Policy.",
+          "reason": "legal attestation or background question - answer manually"
+        }
+      ]
+    }
+  }
+]

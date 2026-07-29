@@ -1,0 +1,17 @@
+[
+  {
+    "id": "answerable-review",
+    "company": "Sentry",
+    "title": "Software Engineer, Ingest",
+    "applyUrl": "https://example.com/jobs/1",
+    "applicationState": "blocked_by_question",
+    "applicationResult": {
+      "needsReview": [
+        {
+          "label": "Why do you want to join Sentry?",
+          "reason": "required field needs an answer"
+        }
+      ]
+    }
+  }
+]
