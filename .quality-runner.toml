@@ -1,0 +1,17 @@
+[quality_runner]
+default_profile = "default"
+
+[[quality_runner.invariants]]
+id = "human-only-review-not-reusable"
+description = "Handoff-only prompts never enter the reusable answer queue."
+owner = "application-review-classifier"
+surfaces = [
+  "queue-ui.mjs",
+  "apply/question-ledger.mjs",
+  "tests/queue-ui-payload.test.mjs",
+]
+command = "node --test tests/queue-ui-payload.test.mjs"
+enforcement = "required"
+ecosystem = "javascript"
+mutating_risk = "safe"
+freshness_days = 30
