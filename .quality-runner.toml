@@ -7,10 +7,11 @@ description = "Handoff-only prompts never enter the reusable answer queue."
 owner = "application-review-classifier"
 surfaces = [
   "queue-ui.mjs",
+  "apply/question-queue.mjs",
   "apply/question-ledger.mjs",
-  "tests/queue-ui-payload.test.mjs",
+  "tests/question-queue.test.mjs",
 ]
-command = "node --test tests/queue-ui-payload.test.mjs"
+command = "node --test tests/question-queue.test.mjs"
 enforcement = "required"
 ecosystem = "javascript"
 mutating_risk = "safe"
