@@ -8,8 +8,11 @@ import { spawnSync } from 'node:child_process';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const UI_URL = 'http://127.0.0.1:47831/';
 const STATE_PATH = path.join(ROOT, 'data', 'queue-ui-launch-state.json');
-const BROWSER_APPS = ['Google Chrome Beta', 'Google Chrome'];
+const BROWSER_APP = 'Google Chrome';
+export const QUEUE_UI_LAUNCH_AGENT = 'com.jakyeamos.career-ops.queue-ui';
 export const SCHEDULED_HEALTH_LIMIT = 100;
+export const SCHEDULED_APPLICATION_LIMIT = 6;
+export const SCHEDULED_HUMAN_TIMEOUT_SECONDS = 8 * 60 * 60;
 
 function localDateKey(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -97,8 +100,8 @@ export function refreshExistingQueueTab(
   isBrowserRunning = browserProcessIsRunning,
 ) {
   let inspectionUnavailable = false;
-  for (const applicationName of BROWSER_APPS) {
-    if (!isBrowserRunning(applicationName)) continue;
+  const applicationName = BROWSER_APP;
+  if (isBrowserRunning(applicationName)) {
     const result = runScript(applicationName, buildChromeRefreshScript(applicationName));
     if (result === 'refreshed') return { status: 'refreshed', applicationName };
     if (result === 'unavailable') inspectionUnavailable = true;
@@ -121,6 +124,48 @@ export function buildScheduledHealthArgs(limit = SCHEDULED_HEALTH_LIMIT) {
     '--apply',
     '--browser',
   ];
+}
+
+export function buildChromeOpenArgs(queueUrl = UI_URL) {
+  return ['-a', BROWSER_APP, queueUrl];
+}
+
+export function buildScheduledApplicationFillRequest() {
+  return {
+    limit: SCHEDULED_APPLICATION_LIMIT,
+    humanTimeoutSeconds: SCHEDULED_HUMAN_TIMEOUT_SECONDS,
+  };
+}
+
+export function shouldStartScheduledApplicationFill(alreadyStartedToday) {
+  return alreadyStartedToday !== true;
+}
+
+export function buildQueueUiReloadArgs(uid = process.getuid()) {
+  return ['kickstart', '-k', `gui/${uid}/${QUEUE_UI_LAUNCH_AGENT}`];
+}
+
+function reloadQueueUiService() {
+  const result = spawnSync('/bin/launchctl', buildQueueUiReloadArgs(), { stdio: 'inherit' });
+  if (result.status !== 0) {
+    return { status: 'failed', reason: `queue UI service reload exited with status ${result.status ?? 'unknown'}` };
+  }
+  return { status: 'reloaded' };
+}
+
+async function startScheduledApplicationFill(alreadyStartedToday, request = buildScheduledApplicationFillRequest()) {
+  if (!shouldStartScheduledApplicationFill(alreadyStartedToday)) return { status: 'already-started' };
+  try {
+    const response = await fetch(`${UI_URL}api/applications/clear`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) return { status: 'failed', reason: `queue UI returned HTTP ${response.status}` };
+    return { status: 'started' };
+  } catch (error) {
+    return { status: 'failed', reason: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function main() {
@@ -147,7 +192,14 @@ async function main() {
     console.error(`Queue health recheck exited with status ${health.status ?? 'unknown'}; keeping the refreshed queue available.`);
   }
 
+  const applicationFillDue = shouldStartScheduledApplicationFill(state.lastApplicationFillDate === date);
+  const serviceReload = applicationFillDue ? reloadQueueUiService() : { status: 'not-needed' };
+  if (serviceReload.status === 'failed') {
+    console.error(`Daily application fill was not started: ${serviceReload.reason}.`);
+  }
+
   const ready = await waitForUi();
+  if (!ready) console.warn(`Queue UI was not ready; daily application fill was not started: ${UI_URL}`);
   const tab = refreshExistingQueueTab();
   const action = decideLaunchAction({
     tabStatus: tab.status,
@@ -155,7 +207,7 @@ async function main() {
   });
 
   if (action === 'open') {
-    const opened = spawnSync('/usr/bin/open', [UI_URL], { stdio: 'inherit' });
+    const opened = spawnSync('/usr/bin/open', buildChromeOpenArgs(), { stdio: 'inherit' });
     if (opened.status !== 0) throw new Error(`could not open ${UI_URL}`);
     console.log(`Queue UI opened for ${date}: ${UI_URL}`);
   } else if (action === 'refresh') {
@@ -166,6 +218,15 @@ async function main() {
     console.log(`Queue UI already opened for ${date}; refreshed data without opening another tab.`);
   }
 
+  const applicationFill = ready && serviceReload.status !== 'failed'
+    ? await startScheduledApplicationFill(state.lastApplicationFillDate === date)
+    : { status: 'failed', reason: serviceReload.reason || 'queue UI was not ready' };
+  if (applicationFill.status === 'started') {
+    console.log(`Daily application fill started for ${date}: up to ${SCHEDULED_APPLICATION_LIMIT} roles, human review window ${SCHEDULED_HUMAN_TIMEOUT_SECONDS / 3600} hours.`);
+  } else if (applicationFill.status === 'failed') {
+    console.error(`Daily application fill was not started: ${applicationFill.reason}`);
+  }
+
   writeState({
     ...state,
     lastOpenedDate: action === 'open' ? date : state.lastOpenedDate,
@@ -173,7 +234,13 @@ async function main() {
     lastRefreshedDate: date,
     refreshedAt: new Date().toISOString(),
     lastAction: action,
-    browserApplication: tab.applicationName || state.browserApplication || '',
+    lastApplicationFillDate: applicationFill.status === 'started' ? date : state.lastApplicationFillDate,
+    applicationFillStartedAt: applicationFill.status === 'started' ? new Date().toISOString() : state.applicationFillStartedAt,
+    applicationFillStatus: applicationFill.status,
+    applicationFillReason: applicationFill.reason || '',
+    queueUiReloadStatus: serviceReload.status,
+    queueUiReloadReason: serviceReload.reason || '',
+    browserApplication: tab.applicationName || (action === 'open' ? BROWSER_APP : state.browserApplication || ''),
     serverReady: ready,
   });
 }

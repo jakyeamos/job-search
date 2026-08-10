@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,22 +9,64 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { recordApplication, saveQueue } from './queue.mjs';
-import { DEFAULT_CONTACT_DISCOVERY_LIMIT, normalizeUrl, readQueueState, topUpSelection } from './queue-lib.mjs';
+import { normalizeUrl, readQueueState, topUpSelection } from './queue-lib.mjs';
 import { readBoard, setRowNotes, setRowStatus } from './tracker-board.mjs';
-import { OUTREACH_STATE_PATH, loadOutreachState, recordSubmissionSignal, summarizeOutbox } from './outreach-lib.mjs';
-import { loadLedger, answerQuestion, findQuestionMatch, isSensitiveQuestion, questionId } from './apply/question-ledger.mjs';
-import { selectProjectAccomplishment } from './project-accomplishment-ledger.mjs';
+import {
+  OUTREACH_STATE_PATH,
+  loadOutreachState,
+  isProviderGeneratedContactEmail,
+  recordSubmissionSignal,
+  summarizeOutbox,
+} from './outreach-lib.mjs';
+import {
+  X_OUTREACH_OUTBOX_PATH,
+  loadXOutreachOutbox,
+  markXOutreachDraftSentAndArchived,
+  validateXOutreachOutbox,
+} from './x-outreach-outbox.mjs';
+import { validateOutreachDraftReceipt } from './outreach-draft-quality.mjs';
+import {
+  loadLedger,
+  answerQuestion,
+  findQuestionMatch,
+  findReusableAnswer,
+  isCompanyMotivationQuestion,
+  isSensitiveQuestion,
+  questionId,
+} from './apply/question-ledger.mjs';
+import {
+  classifyQuestionVisibility,
+  hasVisibleQuestionReviews,
+} from './apply/question-visibility.mjs';
 import { loadClearState, DEFAULT_CLEAR_STATE_PATH } from './apply/application-run-state.mjs';
 import { runClearQueue } from './application-queue.mjs';
 import { loadHandoffSession, runHandoffBatch } from './application-handoff.mjs';
-import { buildApplicationPacket } from './apply/application-packets.mjs';
+import { answerForControl, buildApplicationPacket } from './apply/application-packets.mjs';
+import { artifactPathsForItem } from './apply/application-artifacts.mjs';
+import { loadCivicDiscoveryReport } from './civic-discovery.mjs';
+import {
+  DEFAULT_CIVIC_STATE_PATH,
+  applyCivicState,
+  dismissCivicRecord,
+  loadCivicState,
+  restoreCivicRecord,
+} from './civic-state.mjs';
+import {
+  choiceAllowsMultiple,
+  inferChoiceFieldKind,
+  normalizeChoiceFollowUpLabel,
+  normalizeChoiceOptions,
+  splitChoiceFollowUpLabel,
+} from './apply/lib/choice-shape.mjs';
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI_ROOT = path.join(ROOT, 'queue-ui');
 const QUEUE_JSON = path.join(ROOT, 'data', 'job-queue.json');
+const APPLICATION_PROFILE_PATH = path.join(ROOT, 'config', 'application-profile.json');
 const PORT = 47831;
 const HOST = '127.0.0.1';
+const SERVER_STARTED_AT = new Date().toISOString();
 const MAX_BODY_BYTES = 64 * 1024;
 let clearPromise = null;
 let handoffPromise = null;
@@ -35,6 +77,14 @@ const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
 };
+
+export function queueUiHealthPayload(startedAt = SERVER_STARTED_AT) {
+  return {
+    ok: true,
+    service: 'career-ops-queue-ui',
+    startedAt,
+  };
+}
 
 /** @param {import('node:http').ServerResponse} response @param {number} status @param {unknown} payload */
 function sendJson(response, status, payload) {
@@ -88,39 +138,147 @@ function loadState() {
   return readQueueState(QUEUE_JSON);
 }
 
-function questionPayload(items) {
-  const ledger = loadLedger();
+export function isCheckboxQuestion(kind, options = [], explicitMultiple = undefined) {
+  return choiceAllowsMultiple(kind, options, explicitMultiple);
+}
+
+export function hasQuestionReviews(item) {
+  return hasVisibleQuestionReviews(item);
+}
+
+let cachedApplicationProfile = null;
+
+function loadApplicationProfileForQueue() {
+  if (cachedApplicationProfile) return cachedApplicationProfile;
+  try {
+    const parsed = JSON.parse(readFileSync(APPLICATION_PROFILE_PATH, 'utf8'));
+    cachedApplicationProfile = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    cachedApplicationProfile = {};
+  }
+  return cachedApplicationProfile;
+}
+
+/** @param {string} question @param {Record<string, unknown>} item @param {Record<string, unknown>} review @param {{ entries: Array<Record<string, unknown>> }} ledger @param {Record<string, unknown>} profile */
+function corpusAnswerForQuestion(question, item, review, ledger, profile) {
+  const artifact = artifactPathsForItem(item);
+  const answerItem = item.coverLetterText || !existsSync(artifact.coverLetterText)
+    ? item
+    : {
+      ...item,
+      coverLetterText: artifact.coverLetterText,
+      applicationArtifactManifest: item.applicationArtifactManifest || artifact.manifest,
+    };
+  const resolved = answerForControl({
+    label: question,
+    kind: review.kind || review.fieldKind || review.type || 'text',
+    type: review.type || review.kind || review.fieldKind || 'text',
+    category: 'question',
+    required: review.required === true,
+    multiple: review.multiple === true,
+    options: normalizeChoiceOptions(review.options),
+  }, answerItem, profile, ledger);
+  if (!resolved?.answer || String(resolved.answer).trim() === '') return null;
+  if (resolved.sensitive === true || isSensitiveQuestion(question)) return null;
+  return resolved;
+}
+
+export function questionPayload(items, ledger = loadLedger(), profile = loadApplicationProfileForQueue()) {
   const grouped = new Map();
   items
-    .filter((item) => item.applicationState === 'blocked_by_question')
+    .filter(hasQuestionReviews)
     .flatMap((item) => {
       const reviews = Array.isArray(item.applicationResult?.needsReview) ? item.applicationResult.needsReview : [];
-      return reviews.map((review) => {
-        const question = String(review.label || '').replace(/^EEO:\s*/i, '').trim();
-        if (!question) return null;
+      const suppressed = new Set();
+      const followUps = new Map();
+      for (let index = 0; index < reviews.length; index++) {
+        const reviewLabel = String(reviews[index]?.label || '').trim();
+        if (!classifyQuestionVisibility(reviewLabel).answerable) continue;
+        const rawQuestion = reviewLabel.replace(/^EEO:\s*/i, '').trim();
+        const split = splitChoiceFollowUpLabel(rawQuestion);
+        if (!split) continue;
+        const primaryIndex = reviews.findIndex((candidate, candidateIndex) => {
+          if (candidateIndex === index) return false;
+          const candidateQuestion = String(candidate?.label || '').replace(/^EEO:\s*/i, '').trim();
+          return candidateQuestion.toLowerCase() === split.question.toLowerCase()
+            && normalizeChoiceOptions(candidate?.options).length > 0
+            && !choiceAllowsMultiple(candidate?.kind || candidate?.fieldKind, candidate?.options, candidate?.multiple);
+        });
+        if (primaryIndex < 0) continue;
+        const primaryReview = reviews[primaryIndex];
+        const primaryReusable = findReusableAnswer(split.question, ledger, {
+          company: item.company,
+          role: item.title,
+          url: item.applyUrl || item.canonicalUrl,
+          fieldKind: primaryReview.kind || primaryReview.fieldKind || '',
+          options: normalizeChoiceOptions(primaryReview.options),
+          sensitivity: isSensitiveQuestion(split.question) ? 'high' : 'normal',
+        });
+        const primaryCorpusAnswer = corpusAnswerForQuestion(split.question, item, primaryReview, ledger, profile);
+        if (primaryReusable || primaryCorpusAnswer) {
+          const primaryAnswer = primaryReusable?.answer || primaryCorpusAnswer?.answer;
+          if (/^no\b/i.test(String(primaryAnswer || ''))) suppressed.add(index);
+          continue;
+        }
+        suppressed.add(index);
+        followUps.set(primaryIndex, {
+          id: questionId(rawQuestion),
+          question: split.followUp,
+          trigger: split.trigger,
+          required: reviews[index]?.required === true,
+          queueId: item.id,
+          queueIds: [item.id],
+        });
+      }
+      return reviews.map((review, index) => {
+        if (suppressed.has(index)) return null;
+        const reviewLabel = String(review.label || '').trim();
+        if (!classifyQuestionVisibility(reviewLabel).answerable) return null;
+        const question = normalizeChoiceFollowUpLabel(
+          reviewLabel.replace(/^EEO:\s*/i, ''),
+        );
+        if (!classifyQuestionVisibility(question).answerable) return null;
         const sensitivity = isSensitiveQuestion(question) ? 'high' : 'normal';
+        const reviewOptions = normalizeChoiceOptions(review.options);
         const entry = ledger.entries.find((candidate) => candidate.id === questionId(question))
           || findQuestionMatch(question, ledger, {
             fieldKind: review.kind || review.fieldKind || '',
-            options: Array.isArray(review.options) ? review.options : [],
+            options: reviewOptions,
             sensitivity,
           })?.entry;
-        const canonicalId = entry?.id || questionId(question);
-        const accomplishment = selectProjectAccomplishment({
-          question,
+        const reusable = findReusableAnswer(question, ledger, {
           company: item.company,
-          title: item.title,
-          description: item.description,
-          lane: item.lane,
+          role: item.title,
+          url: item.applyUrl || item.canonicalUrl,
+          fieldKind: review.kind || review.fieldKind || '',
+          options: reviewOptions,
+          sensitivity,
         });
-        const options = Array.isArray(review.options) && review.options.length ? review.options : (entry?.options || []);
+        if (reusable) return null;
+        if (corpusAnswerForQuestion(question, item, review, ledger, profile)) return null;
+        const canonicalId = entry?.id || questionId(question);
+        const options = reviewOptions.length ? reviewOptions : normalizeChoiceOptions(entry?.options);
+        const kind = inferChoiceFieldKind(
+          review.kind || review.fieldKind || entry?.fieldKind || '',
+          question,
+          options,
+        );
+        const multiple = isCheckboxQuestion(kind, options, review.multiple);
         const occurrence = { queueId: item.id, company: item.company, role: item.title, url: item.applyUrl || item.canonicalUrl };
         const existing = grouped.get(canonicalId);
         if (existing) {
           existing.queueIds = [...new Set([...existing.queueIds, item.id])];
           existing.occurrences.push(occurrence);
           existing.options = [...new Set([...existing.options, ...options])];
-          if (!existing.suggestedAnswer && accomplishment?.answer) existing.suggestedAnswer = accomplishment.answer;
+          if (!existing.kind && kind) existing.kind = kind;
+          existing.multiple = existing.multiple || multiple;
+          const currentFollowUp = followUps.get(index);
+          if (currentFollowUp && existing.followUp?.id === currentFollowUp.id) {
+            existing.followUp.queueIds = [...new Set([
+              ...(existing.followUp.queueIds || []),
+              ...(currentFollowUp.queueIds || []),
+            ])];
+          }
           return null;
         }
         const payload = {
@@ -132,13 +290,20 @@ function questionPayload(items) {
           company: item.company,
           role: item.title,
           url: item.applyUrl || item.canonicalUrl,
-          question: entry?.question || question,
+          question: normalizeChoiceFollowUpLabel(entry?.question || question),
           reason: review.reason || entry?.blockerReason || 'required field needs an answer',
           options: [...new Set(options)],
+          kind,
+          multiple,
           sensitivity: entry?.sensitivity || 'normal',
-          suggestedAnswer: accomplishment?.answer || '',
-          answer: entry?.answer || '',
-          scope: ['question', 'company', 'role'].includes(String(entry?.scope || '')) ? entry.scope : 'question',
+          scope: isCompanyMotivationQuestion(question)
+            ? 'posting'
+            : ['question', 'company', 'role', 'posting'].includes(String(entry?.scope || '')) ? entry.scope : 'question',
+          context: /^country(?:\/region)?\*?$/i.test(question)
+            && /job-boards\.greenhouse\.io/i.test(String(item.applyUrl || item.canonicalUrl || ''))
+            ? 'Phone-number country code — not nationality or country of origin.'
+            : null,
+          followUp: followUps.get(index) || null,
         };
         grouped.set(canonicalId, payload);
         return null;
@@ -147,15 +312,23 @@ function questionPayload(items) {
   return [...grouped.values()].map((question) => ({ ...question, occurrenceCount: question.occurrences.length }));
 }
 
-function publicHandoffSession() {
-  const session = loadHandoffSession();
+export function handoffSessionPayload(session = loadHandoffSession()) {
   return {
-    schemaVersion: session.schemaVersion,
-    status: session.status,
+    schemaVersion: session.schemaVersion || 1,
+    status: session.status || 'idle',
+    error: session.error || null,
     startedAt: session.startedAt || null,
     completedAt: session.completedAt || null,
     updatedAt: session.updatedAt || null,
-    pages: (session.pages || []).map((page) => ({
+    preparation: (Array.isArray(session.preparation) ? session.preparation : []).map((entry) => ({
+      id: entry.id,
+      company: entry.company,
+      title: entry.title,
+      state: entry.state || null,
+      ok: entry.ok === true,
+      reason: entry.reason || null,
+    })),
+    pages: (Array.isArray(session.pages) ? session.pages : []).map((page) => ({
       id: page.id,
       company: page.company,
       title: page.title,
@@ -164,6 +337,10 @@ function publicHandoffSession() {
       finishedAt: page.finishedAt || null,
     })),
   };
+}
+
+function publicHandoffSession() {
+  return handoffSessionPayload();
 }
 
 function publicApplicationRun() {
@@ -184,25 +361,133 @@ function countUniqueLiveRoles(items) {
   return urls.size + recordsWithoutUrl;
 }
 
+/**
+ * Return only the X outbox fields needed by the local review UI. Invalid or
+ * missing outbox state degrades visibly instead of breaking the whole queue.
+ * @param {string} [filePath]
+ */
+export function publicXOutreachOutbox(filePath = X_OUTREACH_OUTBOX_PATH) {
+  try {
+    const state = loadXOutreachOutbox(filePath);
+    const validation = validateXOutreachOutbox(state);
+    if (!validation.ok) {
+      return {
+        status: 'invalid',
+        updatedAt: state.updatedAt || null,
+        drafts: [],
+        archivedCount: 0,
+        warnings: validation.warnings,
+        error: 'The local X outbox failed validation. Run the outbox verifier before using these messages.',
+      };
+    }
+    const visibleDrafts = state.drafts.filter((draft) => draft.status !== 'archived');
+    return {
+      status: 'ready',
+      updatedAt: state.updatedAt || null,
+      warnings: validation.warnings,
+      error: '',
+      archivedCount: state.drafts.length - visibleDrafts.length,
+      drafts: visibleDrafts.map((draft) => ({
+        id: draft.id,
+        company: draft.company,
+        role: draft.role,
+        contact: {
+          name: draft.contact.name,
+          handle: draft.contact.handle,
+          profileUrl: draft.contact.profileUrl,
+        },
+        body: draft.body,
+        qualityPassed: true,
+        status: draft.status,
+        deliveryStatus: draft.deliveryStatus,
+        savedLocally: draft.savedLocally === true,
+        nativeDraftStatus: draft.nativeDraftStatus,
+        humanSendRequired: draft.humanSendRequired === true,
+        pendingRevision: draft.pendingRevision && typeof draft.pendingRevision === 'object'
+          ? {
+            body: draft.pendingRevision.body,
+            qualityPassed: true,
+            generatedAt: draft.pendingRevision.generatedAt || null,
+          }
+          : null,
+        updatedAt: draft.updatedAt || null,
+      })),
+    };
+  } catch {
+    return {
+      status: 'unavailable',
+      updatedAt: null,
+      drafts: [],
+      archivedCount: 0,
+      warnings: [],
+      error: 'The local X outbox is unavailable. Run the outbox verifier before using these messages.',
+    };
+  }
+}
+
+export function publicCivicDiscovery({ civicStatePath = DEFAULT_CIVIC_STATE_PATH } = {}) {
+  try {
+    const report = loadCivicDiscoveryReport();
+    return {
+      status: 'ready',
+      ...applyCivicState(report, loadCivicState(civicStatePath)),
+    };
+  } catch (error) {
+    return {
+      status: 'unavailable',
+      schemaVersion: 1,
+      generatedAt: null,
+      rules: {
+        applicationTracker: false,
+        autoContact: false,
+        autoSubmit: false,
+        verifyBeforeAction: true,
+      },
+      counts: {
+        currentRoles: 0,
+        outreachTargets: 0,
+        missionFirstTargets: 0,
+        otherOutreachTargets: 0,
+        staleLeads: 0,
+        dismissed: 0,
+        total: 0,
+      },
+      currentRoles: [],
+      outreachTargets: [],
+      missionFirstTargets: [],
+      otherOutreachTargets: [],
+      staleLeads: [],
+      dismissed: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 /** @param {Record<string, unknown>} state */
-export function queuePayload(state) {
+export function queuePayload(
+  state,
+  outreachState = loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH)),
+  civic = publicCivicDiscovery(),
+) {
   const { archivedIndex: rawArchivedIndex, ...rest } = state;
   const archivedIndex = Array.isArray(rawArchivedIndex) ? rawArchivedIndex : [];
   const items = Array.isArray(rest.items) ? rest.items : [];
+  const questions = questionPayload(items);
   const liveItems = items.filter((item) => ['ready', 'in_review', 'snoozed'].includes(String(item.status || ''))
     && !['stale', 'archivable'].includes(String(item.freshness || '')));
   const selected = items
     .filter((item) => item.selectedForToday)
     .sort((a, b) => Number(a.queueRank || 999) - Number(b.queueRank || 999));
-  const outreachState = loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH));
   const outboxById = new Map((outreachState.outbox || []).map((entry) => [entry.id, entry]));
+  const visibleOutreachRecords = (Array.isArray(outreachState.records) ? outreachState.records : [])
+    .filter((record) => record?.submission?.confirmed === true);
   return {
     ...rest,
     selected,
-    questions: questionPayload(items),
+    questions,
     handoffs: publicHandoffSession(),
     applicationRun: publicApplicationRun(),
-    outreach: outreachState.records.map((record) => ({
+    outreach: visibleOutreachRecords.map((record) => ({
       key: record.key,
       company: record.company,
       title: record.title,
@@ -218,27 +503,76 @@ export function queuePayload(state) {
         nextAttemptAt: record.discovery.nextAttemptAt || record.discovery.cacheExpiresAt || null,
       } : null,
       searchQuery: record.searchQuery || '',
-      contacts: (record.contacts || []).map((contact) => ({
-        name: contact.name,
-        title: contact.title,
-        type: contact.type,
-        email: contact.email,
-        emailEligible: contact.emailEligible === true,
-        emailVerified: contact.emailVerified === true,
-        emailVerificationType: contact.emailVerificationType || null,
-        emailVerificationState: contact.emailVerificationState || null,
-        guessed: contact.guessed === true,
-        initialStatus: contact.initial?.status || 'none',
-        initialDeliveryStatus: contact.initial?.deliveryStatus || null,
-        initialOutboxStatus: outboxById.get(contact.initial?.outboxId)?.status || null,
-        initialLastError: outboxById.get(contact.initial?.outboxId)?.lastError || null,
-        followUpStatus: contact.followUp?.status || 'none',
-        followUpDeliveryStatus: contact.followUp?.deliveryStatus || null,
-        followUpOutboxStatus: outboxById.get(contact.followUp?.outboxId)?.status || null,
-        followUpLastError: outboxById.get(contact.followUp?.outboxId)?.lastError || null,
-        followUpDueAt: contact.followUp?.dueAt || null,
-        linkedinDraft: contact.linkedinDraft || '',
-      })),
+      contacts: (record.contacts || []).map((contact) => {
+        const socialEligible = record.submission?.confirmed === true
+          && !['paused', 'suppressed'].includes(String(record.status || ''));
+        const providerEmail = isProviderGeneratedContactEmail(contact.email);
+        const email = providerEmail ? null : contact.email || null;
+        const initial = contact.initial || {};
+        const initialOutbox = outboxById.get(initial.outboxId);
+        const initialQuality = validateOutreachDraftReceipt({
+          channel: 'email',
+          subject: String(initial.subject || ''),
+          body: String(initial.body || ''),
+          receipt: initial.draftQuality,
+        });
+        const linkedinQuality = validateOutreachDraftReceipt({
+          channel: 'linkedin',
+          body: String(contact.linkedinDraft || ''),
+          receipt: contact.linkedinDraftQuality,
+        });
+        const xQuality = validateOutreachDraftReceipt({
+          channel: 'x',
+          body: String(contact.xDraft || ''),
+          receipt: contact.xDraftQuality,
+        });
+        return {
+          name: contact.name,
+          title: contact.title,
+          type: contact.type,
+          email,
+          emailEligible: !providerEmail && contact.emailEligible === true,
+          emailVerified: !providerEmail && contact.emailVerified === true,
+          primaryOutreachChannel: contact.primaryOutreachChannel
+            || (contact.emailVerified === true ? 'email' : contact.xProfileUrl ? 'x' : contact.emailEligible === true ? 'email' : contact.profileUrl ? 'linkedin' : null),
+          channelPriority: Number(contact.channelPriority)
+            || (contact.emailVerified === true ? 4 : contact.xProfileUrl ? 3 : contact.emailEligible === true ? 2 : contact.profileUrl ? 1 : 0),
+          emailVerificationType: providerEmail ? null : contact.emailVerificationType || null,
+          emailVerificationState: providerEmail ? 'blocked-provider-address' : contact.emailVerificationState || null,
+          guessed: contact.guessed === true,
+          initialStatus: initial.status || 'none',
+          initialDeliveryStatus: initial.deliveryStatus || null,
+          initialOutboxStatus: initialOutbox?.status || null,
+          initialOutboxId: initial.outboxId || null,
+          initialEmailNotification: email && initial.subject && initialQuality.ok && !String(initial.status || '').startsWith('blocked_')
+            ? {
+              status: initial.deliveryStatus === 'gmail_draft_created' || initial.status === 'draft_created'
+                ? 'gmail_draft_created'
+                : 'gmail_draft_pending',
+              recipient: email,
+              subject: initial.subject,
+              gmailDraftId: initial.gmailDraftId || initialOutbox?.gmailDraftId || null,
+            }
+            : null,
+          initialLastError: initial.validationError || initialOutbox?.lastError
+            || (initial.subject && !initialQuality.ok ? `Draft hidden until Humanizer/quality passes: ${initialQuality.reasons.join('; ')}` : null),
+          followUpStatus: contact.followUp?.status || 'none',
+          followUpDeliveryStatus: contact.followUp?.deliveryStatus || null,
+          followUpOutboxStatus: outboxById.get(contact.followUp?.outboxId)?.status || null,
+          followUpLastError: outboxById.get(contact.followUp?.outboxId)?.lastError || null,
+          followUpDueAt: contact.followUp?.dueAt || null,
+          linkedinDraft: socialEligible && linkedinQuality.ok ? contact.linkedinDraft : '',
+          linkedinDraftQualityPassed: socialEligible && linkedinQuality.ok,
+          linkedinDraftError: contact.linkedinDraftError
+            || (contact.linkedinDraft && !linkedinQuality.ok ? linkedinQuality.reasons.join('; ') : null),
+          xProfileUrl: contact.xProfileUrl || '',
+          xHandle: contact.xHandle || '',
+          xDraft: socialEligible && xQuality.ok ? contact.xDraft : '',
+          xDraftQualityPassed: socialEligible && xQuality.ok,
+          xDraftError: contact.xDraftError
+            || (contact.xDraft && !xQuality.ok ? xQuality.reasons.join('; ') : null),
+        };
+      }),
     })),
     outreachRun: outreachState.lastProcess || null,
     outreachSettings: {
@@ -248,6 +582,8 @@ export function queuePayload(state) {
       enabledAt: outreachState.settings?.enabledAt || null,
     },
     outreachOutbox: summarizeOutbox(outreachState),
+    xOutreachOutbox: publicXOutreachOutbox(),
+    civic,
     totals: {
       retained: items.length + archivedIndex.length,
       liveUnique: countUniqueLiveRoles(liveItems),
@@ -261,8 +597,8 @@ export function queuePayload(state) {
       ready: items.filter((item) => item.status === 'ready').length,
       inReview: items.filter((item) => item.status === 'in_review').length,
       applied: items.filter((item) => item.status === 'applied').length,
-      questions: items.filter((item) => item.applicationState === 'blocked_by_question').length,
-      handoffs: items.filter((item) => ['submission_unknown', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_human'].includes(String(item.applicationState || ''))).length,
+      questions: new Set(questions.flatMap((question) => question.queueIds || [])).size,
+      handoffs: items.filter((item) => ['blocked_by_question', 'submission_unknown', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_human'].includes(String(item.applicationState || ''))).length,
     },
   };
 }
@@ -321,14 +657,32 @@ function applyQueueAction(payload) {
   return { state: queuePayload(refilled), item, action };
 }
 
+/** @param {Record<string, unknown>} payload @param {{ civicStatePath?: string }} options */
+export function applyCivicAction(payload, { civicStatePath = DEFAULT_CIVIC_STATE_PATH } = {}) {
+  const action = stringValue(payload, 'action');
+  const key = stringValue(payload, 'key');
+  if (!['dismiss', 'restore'].includes(action)) throw new Error(`unsupported civic action: ${action || '(empty)'}`);
+  if (!key) throw new Error('civic record key is required');
+  const report = loadCivicDiscoveryReport();
+  const result = action === 'dismiss'
+    ? dismissCivicRecord(report, civicStatePath, key, stringValue(payload, 'reason'))
+    : restoreCivicRecord(report, civicStatePath, key);
+  const civic = publicCivicDiscovery({ civicStatePath });
+  return {
+    ok: true,
+    action,
+    key,
+    changed: result.changed,
+    civic,
+  };
+}
+
 async function refreshQueue() {
   const result = await execFileAsync(process.execPath, [
     path.join(ROOT, 'queue.mjs'),
     'refresh',
     '--limit',
     '10',
-    '--discovery-limit',
-    String(DEFAULT_CONTACT_DISCOVERY_LIMIT),
   ], {
     cwd: ROOT,
     timeout: 1_800_000,
@@ -340,9 +694,9 @@ async function refreshQueue() {
   };
 }
 
-function startClearQueue(dryRun = false) {
+function startClearQueue(dryRun = false, humanTimeoutSeconds = 600) {
   if (clearPromise) return publicApplicationRun();
-  clearPromise = runClearQueue({ limit: 6, dryRun })
+  clearPromise = runClearQueue({ limit: 6, dryRun, humanTimeoutSeconds })
     .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
     .finally(() => { clearPromise = null; });
   return publicApplicationRun();
@@ -423,10 +777,11 @@ function startHandoffs() {
   if (handoffPromise) return publicHandoffSession();
   const state = loadState();
   const ids = (state.items || [])
-    .filter((item) => ['submission_unknown', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_human'].includes(String(item.applicationState || '')))
+    .filter((item) => item.selectedForToday === true
+      || ['prepared_for_review', 'blocked_by_question', 'submission_unknown', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_human'].includes(String(item.applicationState || '')))
     .map((item) => item.id);
   if (!ids.length) return publicHandoffSession();
-  handoffPromise = runHandoffBatch(ids, { timeoutSeconds: 600 })
+  handoffPromise = runHandoffBatch(ids, { timeoutSeconds: 600, includeSelected: true })
     .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
     .finally(() => { handoffPromise = null; });
   return publicHandoffSession();
@@ -471,25 +826,40 @@ async function saveQueueQuestionAnswer(payload) {
   if (items.some((item) => !item)) throw new Error('queue item not found; refresh the page and try again');
   for (const item of items) {
     const reviews = Array.isArray(item.applicationResult?.needsReview) ? item.applicationResult.needsReview : [];
+    let humanOnlyMatch = false;
     const belongsToItem = reviews.some((review) => {
-      const question = String(review.label || '').replace(/^EEO:\s*/i, '').trim();
+      const reviewLabel = String(review.label || '').trim();
+      const question = normalizeChoiceFollowUpLabel(
+        reviewLabel.replace(/^EEO:\s*/i, ''),
+      );
+      if (!classifyQuestionVisibility(reviewLabel).answerable) {
+        if (questionId(question) === id) humanOnlyMatch = true;
+        return false;
+      }
       return questionId(question) === id || findQuestionMatch(question, ledger, {
         fieldKind: review.kind || review.fieldKind || '',
         options: review.options || [],
         sensitivity: isSensitiveQuestion(question) ? 'high' : 'normal',
       })?.entry.id === id;
     });
+    if (humanOnlyMatch) throw new Error('this question must be completed in the browser handoff');
     if (!belongsToItem) throw new Error('question is not recorded as a blocker for every application in this group');
   }
   const item = items[0];
   const entry = answerQuestion(path.join(ROOT, 'data', 'application-question-ledger.json'), id, answer, {
-    scope: ['question', 'company', 'role'].includes(scope) ? scope : 'question',
+    scope: ['question', 'company', 'role', 'posting'].includes(scope) ? scope : 'question',
     company: item.company,
     role: item.title,
     url: item.applyUrl || item.canonicalUrl,
     queueId: item.id,
   });
-  return { ok: true, entry, queueIds, humanSubmissionRequired: true };
+  return {
+    ok: true,
+    entry,
+    queueIds,
+    state: queuePayload(state),
+    humanSubmissionRequired: true,
+  };
 }
 
 async function processOutreach() {
@@ -513,6 +883,7 @@ async function processOutreach() {
   const state = loadOutreachState(path.join(ROOT, OUTREACH_STATE_PATH));
   return {
     ok: execution.ok && state.lastProcess?.ok !== false,
+    state: queuePayload(readQueueState(QUEUE_JSON)),
     outreach: state.records,
     summary: state.lastProcess || null,
     settings: {
@@ -525,6 +896,25 @@ async function processOutreach() {
   };
 }
 
+/** @param {Record<string, unknown>} payload */
+function markXOutreachDraftSent(payload) {
+  const id = stringValue(payload, 'id');
+  if (!id) throw new Error('id is required');
+  const result = markXOutreachDraftSentAndArchived(id);
+  return {
+    ok: true,
+    changed: result.changed,
+    draft: {
+      id: result.draft.id,
+      status: result.draft.status,
+      deliveryStatus: result.draft.deliveryStatus,
+      humanConfirmedSentAt: result.draft.humanConfirmedSentAt,
+      archivedAt: result.draft.archivedAt,
+    },
+    state: queuePayload(loadState()),
+  };
+}
+
 /** @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */
 async function handleRequest(request, response) {
   const requestUrl = new URL(request.url || '/', `http://${HOST}:${PORT}`);
@@ -532,7 +922,7 @@ async function handleRequest(request, response) {
   response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/health') {
-    sendJson(response, 200, { ok: true, service: 'career-ops-queue-ui' });
+    sendJson(response, 200, queueUiHealthPayload());
     return;
   }
   if (request.method === 'GET' && requestUrl.pathname === '/api/queue') {
@@ -579,6 +969,15 @@ async function handleRequest(request, response) {
     }
     return;
   }
+  if (request.method === 'POST' && requestUrl.pathname === '/api/civic/action') {
+    try {
+      const payload = await readJsonBody(request);
+      sendJson(response, 200, applyCivicAction(payload));
+    } catch (error) {
+      sendError(response, 400, error instanceof Error ? error.message : String(error));
+    }
+    return;
+  }
   if (request.method === 'POST' && requestUrl.pathname === '/api/refresh') {
     try {
       sendJson(response, 200, await refreshQueue());
@@ -590,7 +989,9 @@ async function handleRequest(request, response) {
   if (request.method === 'POST' && requestUrl.pathname === '/api/applications/clear') {
     try {
       const payload = await readJsonBody(request);
-      sendJson(response, 202, { ok: true, run: startClearQueue(payload.dryRun === true) });
+      const requestedTimeout = Number(payload.humanTimeoutSeconds || 600);
+      const humanTimeoutSeconds = Math.max(30, Math.min(12 * 60 * 60, Number.isFinite(requestedTimeout) ? requestedTimeout : 600));
+      sendJson(response, 202, { ok: true, run: startClearQueue(payload.dryRun === true, humanTimeoutSeconds) });
     } catch (error) {
       sendError(response, 409, error instanceof Error ? error.message : String(error));
     }
@@ -622,7 +1023,13 @@ async function handleRequest(request, response) {
     try {
       const payload = await readJsonBody(request);
       const result = await saveQueueQuestionAnswer(payload);
-      sendJson(response, 200, { ok: result.ok, entry: result.entry, queueIds: result.queueIds, humanSubmissionRequired: result.humanSubmissionRequired });
+      sendJson(response, 200, {
+        ok: result.ok,
+        entry: result.entry,
+        queueIds: result.queueIds,
+        state: result.state,
+        humanSubmissionRequired: result.humanSubmissionRequired,
+      });
     } catch (error) {
       sendError(response, 400, error instanceof Error ? error.message : String(error));
     }
@@ -645,6 +1052,15 @@ async function handleRequest(request, response) {
       sendJson(response, 200, await processOutreach());
     } catch (error) {
       sendError(response, 502, error instanceof Error ? error.message : String(error));
+    }
+    return;
+  }
+  if (request.method === 'POST' && requestUrl.pathname === '/api/x-outreach/mark-sent') {
+    try {
+      const payload = await readJsonBody(request);
+      sendJson(response, 200, markXOutreachDraftSent(payload));
+    } catch (error) {
+      sendError(response, 400, error instanceof Error ? error.message : String(error));
     }
     return;
   }

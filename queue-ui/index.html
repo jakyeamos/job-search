@@ -4,25 +4,34 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#eef3f0">
-    <title>Daily queue · career-ops</title>
-    <link rel="stylesheet" href="/styles.css">
-    <script type="module" src="/app.js"></script>
+    <title>Career operations workspace · career-ops</title>
+    <link rel="stylesheet" href="/styles.css?v=20260809-civic-dismissal">
+    <script type="module" src="/app.js?v=20260809-civic-dismissal"></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="wordmark" href="/" aria-label="Career operations daily queue">
-          <span>career-ops</span><span class="wordmark-slash">/</span><span class="wordmark-current">daily queue</span>
+        <a class="wordmark" href="/" aria-label="Career operations workspace">
+          <span>career-ops</span><span class="wordmark-slash">/</span><span class="wordmark-current" id="wordmarkCurrent">daily queue</span>
         </a>
+        <nav class="surface-tabs" aria-label="Career operations views" role="tablist">
+          <button class="surface-tab is-active" id="queueTab" type="button" role="tab" aria-selected="true" aria-controls="queueView" data-view-tab="queue" tabindex="0">Daily queue <span class="surface-tab-count" id="queueTabCount" aria-hidden="true">—</span></button>
+          <button class="surface-tab" id="regionalTab" type="button" role="tab" aria-selected="false" aria-controls="regionalView" data-view-tab="regional" tabindex="-1">Regional <span class="surface-tab-count" id="regionalTabCount" aria-hidden="true">—</span></button>
+          <button class="surface-tab" id="questionsTab" type="button" role="tab" aria-selected="false" aria-controls="questionsView" data-view-tab="questions" tabindex="-1">Questions <span class="surface-tab-count" id="questionsTabCount" aria-hidden="true">—</span></button>
+          <button class="surface-tab" id="handoffsTab" type="button" role="tab" aria-selected="false" aria-controls="handoffsView" data-view-tab="handoffs" tabindex="-1">Handoffs <span class="surface-tab-count" id="handoffsTabCount" aria-hidden="true">—</span></button>
+          <button class="surface-tab" id="outreachTab" type="button" role="tab" aria-selected="false" aria-controls="outreachView" data-view-tab="outreach" tabindex="-1">Outreach <span class="surface-tab-count" id="outreachTabCount" aria-hidden="true">—</span></button>
+          <button class="surface-tab" id="civicTab" type="button" role="tab" aria-selected="false" aria-controls="civicView" data-view-tab="civic" tabindex="-1">Civic <span class="surface-tab-count" id="civicTabCount" aria-hidden="true">—</span></button>
+        </nav>
         <div class="topbar-actions">
           <span class="connection-status" id="connectionStatus"><span class="status-dot" aria-hidden="true"></span>Local queue</span>
           <a class="button button-quiet" href="/board.html">Application board</a>
           <button class="button button-quiet" id="refreshButton" type="button">Refresh sources</button>
-          <button class="button button-primary" id="clearQueueButton" type="button">Prepare today’s packets</button>
+          <button class="button button-primary" id="clearQueueButton" type="button" data-context-view="queue">Fill today’s applications</button>
         </div>
       </header>
 
       <main>
+        <div id="queueView" class="view-panel" data-view-panel="queue" role="tabpanel" aria-labelledby="queueTab">
         <section class="intro" aria-labelledby="pageTitle">
           <div class="intro-copy">
             <p class="kicker">Morning review</p>
@@ -60,9 +69,9 @@
         <section class="queue-section application-control-section" aria-labelledby="applicationRunHeading">
           <div class="section-heading">
             <div>
-              <p class="kicker">Human submission workflow</p>
-              <h2 id="applicationRunHeading">Prepare the best six.</h2>
-              <p id="applicationRunSubheading">Career Ops inspects each form, reuses verified answers, and leaves the final submission to you.</p>
+              <p class="kicker">Maximum safe progress</p>
+              <h2 id="applicationRunHeading">Fill the best six.</h2>
+              <p id="applicationRunSubheading">Career Ops generates tailored materials and fills supported forms to the final review point. You handle CAPTCHA, unknown facts, legal fields, and Submit.</p>
             </div>
             <span class="account-label" id="applicationRunStatus">Idle</span>
           </div>
@@ -107,6 +116,7 @@
             </label>
           </div>
           <p class="toolbar-note">Fields are inferred from company names when a source does not provide one. Location remains source-provided.</p>
+          <p class="toolbar-note source-health" id="sourceHealth" role="status">Source health will appear after refresh.</p>
         </section>
 
         <section class="queue-section" aria-labelledby="queueHeading">
@@ -120,44 +130,240 @@
           <div class="queue-list" id="queueList" aria-live="polite" aria-busy="true"></div>
         </section>
 
-        <section class="queue-section question-section" aria-labelledby="questionHeading">
-          <div class="section-heading">
-            <div>
-              <p class="kicker">You unblock the uncertain parts</p>
-              <h2 id="questionHeading">Questions waiting for you</h2>
-              <p id="questionSubheading">Answers are saved against canonical questions and reused in matching packets. Final submission stays human-only.</p>
-            </div>
-          </div>
-          <div class="question-list" id="questionList" aria-live="polite"></div>
-        </section>
-
-        <section class="queue-section handoff-section" aria-labelledby="handoffHeading">
-          <div class="section-heading">
-            <div>
-              <p class="kicker">Human handoff</p>
-              <h2 id="handoffHeading">Browser applications</h2>
-              <p id="handoffSubheading">CAPTCHA, anti-spam, MFA, and manual-submit steps open as tabs in one dedicated Chrome window.</p>
-            </div>
-            <button class="button button-quiet" id="openHandoffsButton" type="button">Open handoffs</button>
-          </div>
-          <div class="handoff-list" id="handoffList" aria-live="polite"></div>
-        </section>
-
-        <section class="outreach-section" aria-labelledby="outreachHeading">
-          <div class="section-heading">
-            <div>
-              <p class="kicker">After you apply</p>
-              <h2 id="outreachHeading">Outreach follow-through</h2>
-              <p id="outreachSubheading">Your application signals and contact drafts will appear here.</p>
-            </div>
-            <span class="account-label">email sends require confirmed submission + explicit enablement</span>
-          </div>
-          <div class="outreach-list" id="outreachList" aria-live="polite"></div>
-        </section>
-
         <section class="quiet-note" aria-label="Queue boundary">
           <span class="quiet-note-mark" aria-hidden="true">↳</span>
-          <p><strong>You stay in control.</strong> Opening a role never marks it applied. Automatic clearing records an application only after confirmation evidence; questions and human handoffs stay visible here.</p>
+          <p><strong>You stay in control.</strong> Opening a role never marks it applied. Automatic clearing records an application only after confirmation evidence; questions, handoffs, and outreach have their own review tabs.</p>
+        </section>
+        </div>
+
+        <section id="regionalView" class="view-panel workspace-view regional-view" data-view-panel="regional" role="tabpanel" aria-labelledby="regionalTab" hidden>
+          <section class="workspace-intro" aria-labelledby="regionalTitle">
+            <p class="kicker">Regional / additive discovery</p>
+            <h1 id="regionalTitle">Buffalo and Cleveland, side by side.</h1>
+            <p class="intro-lede">National US-remote roles stay in the Daily queue. This view isolates the Buffalo / Western New York and Cleveland / Northeast Ohio lanes so location can change ranking without filtering either lane out.</p>
+            <div class="summary-strip regional-summary-strip" aria-label="Regional queue summary">
+              <div class="summary-item summary-item-primary">
+                <span class="summary-value" id="regionalBuffaloCount">—</span>
+                <span class="summary-label">Buffalo / WNY roles</span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-value" id="regionalClevelandCount">—</span>
+                <span class="summary-label">Cleveland / NE Ohio roles</span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-value" id="regionalRemoteCount">—</span>
+                <span class="summary-label">national US-remote roles still in queue</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="queue-section regional-lane" aria-labelledby="regionalBuffaloHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="regionalBuffaloHeading">Buffalo / Western New York</h2>
+                <p id="regionalBuffaloSubheading">Loading roles with a Buffalo-region location preference…</p>
+              </div>
+              <span class="account-label">location preference: +0.50</span>
+            </div>
+            <div class="regional-list" id="regionalBuffaloList" aria-live="polite"></div>
+          </section>
+
+          <section class="queue-section regional-lane" aria-labelledby="regionalClevelandHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="regionalClevelandHeading">Cleveland / Northeast Ohio</h2>
+                <p id="regionalClevelandSubheading">Loading roles with a Cleveland-region location preference…</p>
+              </div>
+              <span class="account-label">location preference: +0.35</span>
+            </div>
+            <div class="regional-list" id="regionalClevelandList" aria-live="polite"></div>
+          </section>
+
+          <section class="quiet-note regional-boundary" aria-label="Regional discovery boundary">
+            <span class="quiet-note-mark" aria-hidden="true">↳</span>
+            <p><strong>Additive by design.</strong> Regional roles enter the normal application queue when a live posting is found. National remote roles remain eligible; the score explains why a regional role rises or another US location falls.</p>
+          </section>
+        </section>
+
+        <section id="questionsView" class="view-panel workspace-view" data-view-panel="questions" role="tabpanel" aria-labelledby="questionsTab" hidden>
+          <section class="workspace-intro" aria-labelledby="questionsTitle">
+            <p class="kicker">Reusable answer ledger</p>
+            <h1 id="questionsTitle">Clear the unknowns.</h1>
+            <p class="intro-lede">Answer a question once, keep the answer grounded, and let Career Ops reuse it when the same prompt appears again.</p>
+          </section>
+
+          <section class="queue-section question-section" aria-labelledby="questionHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="questionHeading">Questions waiting for you</h2>
+                <p id="questionSubheading">Unknown required questions appear here instead of being guessed.</p>
+              </div>
+            </div>
+            <div class="question-list" id="questionList" aria-live="polite"></div>
+          </section>
+
+          <section class="quiet-note" aria-label="Questions boundary">
+            <span class="quiet-note-mark" aria-hidden="true">↳</span>
+            <p><strong>Answers stay reusable and reviewable.</strong> Saving an answer updates the local ledger; it does not submit an application or bypass human-only fields.</p>
+          </section>
+        </section>
+
+        <section id="handoffsView" class="view-panel workspace-view" data-view-panel="handoffs" role="tabpanel" aria-labelledby="handoffsTab" hidden>
+          <section class="workspace-intro" aria-labelledby="handoffsTitle">
+            <p class="kicker">Human handoff</p>
+            <h1 id="handoffsTitle">Finish in the browser.</h1>
+            <p class="intro-lede">Known profile facts and confirmed answers are filled into a dedicated Chrome window. Unresolved questions, legal fields, CAPTCHA, and final submission stay with you.</p>
+          </section>
+
+          <section class="queue-section handoff-section" aria-labelledby="handoffHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="handoffHeading">Browser applications</h2>
+                <p id="handoffSubheading">Open the prepared tabs, review what remains, and decide what to submit.</p>
+              </div>
+              <button class="button button-quiet" id="openHandoffsButton" type="button">Open handoffs</button>
+            </div>
+            <div class="handoff-list" id="handoffList" aria-live="polite"></div>
+          </section>
+
+          <section class="quiet-note" aria-label="Handoff boundary">
+            <span class="quiet-note-mark" aria-hidden="true">↳</span>
+            <p><strong>The browser is the handoff.</strong> Career Ops can prepare fields and artifacts, but you review unresolved content and click Submit yourself.</p>
+          </section>
+        </section>
+
+        <section id="outreachView" class="view-panel workspace-view" data-view-panel="outreach" role="tabpanel" aria-labelledby="outreachTab" hidden>
+          <section class="workspace-intro" aria-labelledby="outreachTitle">
+            <p class="kicker">After you apply</p>
+            <h1 id="outreachTitle">Follow through thoughtfully.</h1>
+            <p class="intro-lede">Review confirmed application signals, saved drafts, and discovered contacts without mixing outreach into the daily role queue.</p>
+          </section>
+
+          <section class="outreach-section" aria-labelledby="outreachHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="outreachHeading">Outreach follow-through</h2>
+                <p id="outreachSubheading">Your application signals and contact drafts will appear here.</p>
+              </div>
+              <span class="account-label">email sends require confirmed submission + reviewed batch authorization</span>
+            </div>
+            <section class="x-outbox" aria-labelledby="xOutboxHeading">
+              <div class="x-outbox-heading">
+                <div>
+                  <h3 id="xOutboxHeading">Saved X messages</h3>
+                  <p id="xOutboxSummary">Loading durable local copies…</p>
+                </div>
+                <span class="tag">Local outbox</span>
+              </div>
+              <div class="x-outbox-list" id="xOutboxList" aria-live="polite" aria-busy="true"></div>
+            </section>
+            <div class="outreach-list" id="outreachList" aria-live="polite"></div>
+          </section>
+
+          <section class="quiet-note" aria-label="Outreach boundary">
+            <span class="quiet-note-mark" aria-hidden="true">↳</span>
+            <p><strong>Drafts are not deliveries.</strong> Email stays in Gmail for review, and social copy remains local until you choose to send it.</p>
+          </section>
+        </section>
+
+        <section id="civicView" class="view-panel civic-view" data-view-panel="civic" role="tabpanel" aria-labelledby="civicTab" hidden>
+          <section class="intro civic-intro" aria-labelledby="civicTitle">
+            <div class="intro-copy">
+              <p class="kicker">Civic mission / additive discovery</p>
+              <h1 id="civicTitle">Find the civic work you actually care about.</h1>
+              <p class="intro-lede">A separate lane for mission-first Cleveland organizations, live civic roles, other places worth approaching, and leads that need a refresh. The Cleveland mission lane is selected for issue and organizational fit; technical ability is shown only as a secondary bridge. Nothing here is silently added to your application tracker.</p>
+            </div>
+            <div class="summary-strip civic-summary-strip" aria-label="Civic discovery summary">
+              <div class="summary-item summary-item-primary">
+                <span class="summary-value" id="civicCurrentCount">—</span>
+                <span class="summary-label">current roles</span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-value" id="civicMissionCount">—</span>
+                <span class="summary-label">mission-first Cleveland</span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-value" id="civicOutreachCount">—</span>
+                <span class="summary-label">outreach targets</span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-value" id="civicStaleCount">—</span>
+                <span class="summary-label">stale leads</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="queue-section civic-lane" aria-labelledby="civicCurrentHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="civicCurrentHeading">Current roles</h2>
+                <p id="civicCurrentSubheading">Loading live civic roles…</p>
+              </div>
+              <span class="account-label">human review before applying</span>
+            </div>
+            <div class="civic-list" id="civicCurrentList" aria-live="polite" aria-busy="true"></div>
+          </section>
+
+          <section class="queue-section civic-lane" aria-labelledby="civicMissionHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="civicMissionHeading">Mission-first Cleveland</h2>
+                <p id="civicMissionSubheading">Loading Cleveland organizations selected for issue and mission fit…</p>
+              </div>
+              <span class="account-label">human review before contacting</span>
+            </div>
+            <div class="civic-list" id="civicMissionList" aria-live="polite" aria-busy="true"></div>
+          </section>
+
+          <section class="queue-section civic-lane" aria-labelledby="civicOutreachHeading">
+            <div class="section-heading">
+              <div>
+                <h2 id="civicOutreachHeading">Other outreach targets</h2>
+                <p id="civicOutreachSubheading">Loading other organizations and initiatives worth approaching…</p>
+              </div>
+              <span class="account-label">human review before contacting</span>
+            </div>
+            <div class="civic-list" id="civicOutreachList" aria-live="polite" aria-busy="true"></div>
+          </section>
+
+          <details class="queue-section civic-lane civic-stale-disclosure" aria-labelledby="civicStaleHeading">
+            <summary class="civic-stale-summary">
+              <div class="section-heading">
+                <div>
+                  <h2 id="civicStaleHeading">Stale leads</h2>
+                  <p id="civicStaleSubheading">Loading leads that need a source refresh…</p>
+                </div>
+                <span class="tag tag-status-review">refresh before acting</span>
+              </div>
+              <span class="tag tag-status-review civic-stale-toggle-label">
+                <span class="civic-stale-toggle-closed">show stale leads</span>
+                <span class="civic-stale-toggle-open">hide stale leads</span>
+              </span>
+            </summary>
+            <div class="civic-list" id="civicStaleList" aria-live="polite" aria-busy="true"></div>
+          </details>
+
+          <details class="queue-section civic-lane civic-dismissed-disclosure" aria-labelledby="civicDismissedHeading">
+            <summary class="civic-stale-summary">
+              <div class="section-heading">
+                <div>
+                  <h2 id="civicDismissedHeading">Dismissed</h2>
+                  <p id="civicDismissedSubheading">Loading dismissed Civic leads…</p>
+                </div>
+                <span class="tag tag-status-review">retained, not active</span>
+              </div>
+              <span class="tag tag-status-review civic-dismissed-toggle-label">
+                <span class="civic-dismissed-toggle-closed">show dismissed</span>
+                <span class="civic-dismissed-toggle-open">hide dismissed</span>
+              </span>
+            </summary>
+            <div class="civic-list" id="civicDismissedList" aria-live="polite" aria-busy="true"></div>
+          </details>
+
+          <section class="quiet-note civic-boundary" aria-label="Civic discovery boundary">
+            <span class="quiet-note-mark" aria-hidden="true">↳</span>
+            <p><strong>Additive by design.</strong> This tab is a discovery board, not an application filter. Opening a source link does not create an application, contact, or submission; review each lead and take the external action yourself. Dismiss only hides a lead from the active view; source evidence remains available under Dismissed.</p>
+          </section>
         </section>
       </main>
     </div>
