@@ -239,6 +239,24 @@ export function parseRoleAtCompany(subject) {
 }
 
 /**
+ * Seed one alert candidate without letting a multi-link digest mislabel every
+ * URL with the subject's first role and company.
+ * @param {string} subject
+ * @param {string[]} urls
+ * @param {string} url
+ * @returns {{ title: string, company: string }}
+ */
+export function seedAlertFields(subject, urls, url) {
+  const parsed = parseRoleAtCompany(subject);
+  const multiUrlAlert = Array.isArray(urls) && urls.length > 1;
+  const seed = multiUrlAlert ? null : parsed;
+  return {
+    title: seed?.role || (multiUrlAlert ? 'Job lead (email)' : subject) || 'Job lead (email)',
+    company: companyFromUrl(url) || (multiUrlAlert ? '' : seed?.company) || '',
+  };
+}
+
+/**
  * Recursively decode a Gmail message payload's base64url body parts to text.
  * @param {any} payload
  * @returns {string}

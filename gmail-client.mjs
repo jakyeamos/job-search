@@ -80,7 +80,11 @@ function normalizeEmail(value) {
  *  deleteFilter: (id: string) => Promise<void>,
  *  listMessages: (query: string, options?: { limit?: number }) => Promise<Array<{ id: string, threadId?: string }>>,
  *  getMessage: (id: string, format?: string) => Promise<Record<string, unknown>>,
+ *  listDrafts: (options?: { limit?: number }) => Promise<Array<{ id: string, message?: { id?: string, threadId?: string } }>>,
+ *  getDraft: (id: string, format?: string) => Promise<Record<string, unknown>>,
+ *  updateDraft: (id: string, message: { to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }) => Promise<Record<string, unknown>>,
  *  modifyMessage: (id: string, addLabelIds?: string[], removeLabelIds?: string[]) => Promise<Record<string, unknown>>,
+ *  createDraft: (message: { to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }) => Promise<Record<string, unknown>>,
  *  sendMessage: (message: { to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }) => Promise<Record<string, unknown>>
  * }>}
  */
@@ -197,6 +201,32 @@ export async function createGmailClient(options = {}) {
     return request(`${API_ROOT}/messages/${encodeURIComponent(id)}?${params.toString()}`);
   }
 
+  async function listDrafts({ limit = 200 } = {}) {
+    const drafts = [];
+    let pageToken = '';
+    while (drafts.length < limit) {
+      const params = new URLSearchParams({
+        maxResults: String(Math.min(100, limit - drafts.length)),
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const payload = await request(`${API_ROOT}/drafts?${params.toString()}`);
+      if (Array.isArray(payload.drafts)) {
+        for (const draft of payload.drafts) {
+          if (draft && typeof draft.id === 'string') drafts.push(draft);
+          if (drafts.length >= limit) break;
+        }
+      }
+      pageToken = typeof payload.nextPageToken === 'string' ? payload.nextPageToken : '';
+      if (!pageToken || !Array.isArray(payload.drafts) || payload.drafts.length === 0) break;
+    }
+    return drafts;
+  }
+
+  async function getDraft(id, format = 'metadata') {
+    const params = new URLSearchParams({ format });
+    return request(`${API_ROOT}/drafts/${encodeURIComponent(id)}?${params.toString()}`);
+  }
+
   async function modifyMessage(id, addLabelIds = [], removeLabelIds = []) {
     return request(`${API_ROOT}/messages/${encodeURIComponent(id)}/modify`, {
       method: 'POST',
@@ -211,7 +241,7 @@ export async function createGmailClient(options = {}) {
   }
 
   /** @param {{ to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }} message */
-  async function sendMessage(message) {
+  async function encodeMessage(message) {
     const account = await verifyAccount();
     const to = safeHeader(message.to, 'recipient');
     const subject = safeHeader(message.subject, 'subject');
@@ -231,9 +261,40 @@ export async function createGmailClient(options = {}) {
       '',
       body,
     ].join('\r\n');
-    const encoded = Buffer.from(raw, 'utf8').toString('base64url');
-    const payload = { raw: encoded };
-    if (message.threadId) payload.threadId = safeHeader(message.threadId, 'thread ID');
+    return {
+      raw: Buffer.from(raw, 'utf8').toString('base64url'),
+      threadId: message.threadId ? safeHeader(message.threadId, 'thread ID') : null,
+    };
+  }
+
+  /** @param {{ to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }} message */
+  async function createDraft(message) {
+    const encoded = await encodeMessage(message);
+    const draftMessage = { raw: encoded.raw };
+    if (encoded.threadId) draftMessage.threadId = encoded.threadId;
+    return request(`${API_ROOT}/drafts`, {
+      method: 'POST',
+      body: { message: draftMessage },
+    });
+  }
+
+  /** @param {string} id @param {{ to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }} message */
+  async function updateDraft(id, message) {
+    const draftId = safeHeader(id, 'draft ID');
+    const encoded = await encodeMessage(message);
+    const draftMessage = { raw: encoded.raw };
+    if (encoded.threadId) draftMessage.threadId = encoded.threadId;
+    return request(`${API_ROOT}/drafts/${encodeURIComponent(draftId)}`, {
+      method: 'PUT',
+      body: { id: draftId, message: draftMessage },
+    });
+  }
+
+  /** @param {{ to: string, subject: string, body: string, threadId?: string, headers?: Record<string, string> }} message */
+  async function sendMessage(message) {
+    const encoded = await encodeMessage(message);
+    const payload = { raw: encoded.raw };
+    if (encoded.threadId) payload.threadId = encoded.threadId;
     return request(`${API_ROOT}/messages/send`, { method: 'POST', body: payload });
   }
 
@@ -247,7 +308,11 @@ export async function createGmailClient(options = {}) {
     deleteFilter,
     listMessages,
     getMessage,
+    listDrafts,
+    getDraft,
+    updateDraft,
     modifyMessage,
+    createDraft,
     sendMessage,
   };
 }

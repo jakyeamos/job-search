@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseRoleAtCompany } from '../plugins/gmail/_helpers.mjs';
+import { parseRoleAtCompany, seedAlertFields } from '../plugins/gmail/_helpers.mjs';
 
 test('a single-job subject yields role and company', () => {
   const parsed = parseRoleAtCompany('Backend Engineer at Acme Corp');
@@ -29,6 +29,27 @@ test('digest subjects are flagged across the phrasings alert senders use', () =>
   assert.equal(parseRoleAtCompany('Backend Engineer at Acme & 12 more jobs').digest, true);
   assert.equal(parseRoleAtCompany('Backend Engineer at Acme: 9 new jobs').digest, true);
   assert.equal(parseRoleAtCompany('Backend Engineer at Acme Corp').digest, false);
+});
+
+test('every multi-link alert avoids stamping its subject onto every URL', () => {
+  const fields = seedAlertFields(
+    'Frontend Developer at AgileGrid Solutions',
+    [
+      'https://www.linkedin.com/comm/jobs/view/4448749091/',
+      'https://www.linkedin.com/comm/jobs/view/4432578999/',
+    ],
+    'https://www.linkedin.com/comm/jobs/view/4432578999/',
+  );
+  assert.deepEqual(fields, { title: 'Job lead (email)', company: '' });
+});
+
+test('single-link alerts retain their subject seed', () => {
+  const fields = seedAlertFields(
+    'Backend Engineer at Acme Corp',
+    ['https://jobs.lever.co/acme/123'],
+    'https://jobs.lever.co/acme/123',
+  );
+  assert.deepEqual(fields, { title: 'Backend Engineer', company: 'acme' });
 });
 
 test('call-to-action tails and trailing punctuation are dropped from the company', () => {

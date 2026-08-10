@@ -7,11 +7,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { createGmailClient, TARGET_GMAIL_ACCOUNT } from '../../gmail-client.mjs';
 import { assertTargetAccount, classifyAlert } from '../../gmail.mjs';
 import {
-  companyFromUrl,
   extractJobUrls,
   getMessageBody,
   isAuthenticEmail,
-  parseRoleAtCompany,
+  seedAlertFields,
 } from './_helpers.mjs';
 
 const STATE_PATH = 'data/gmail-state.json';
@@ -101,20 +100,16 @@ const plugin = {
         processedIds.add(id);
         continue;
       }
-      const parsed = parseRoleAtCompany(subject);
-      // A digest subject names only its first job. Which URL that is cannot be known
-      // from here, so stamping it on all of them mislabels every one but at most one.
-      // Leave them unlabelled instead — the queue fetches the real posting at ingest.
-      const seed = parsed?.digest && urls.length > 1 ? null : parsed;
       for (const url of urls) {
         if (seenUrls.has(url)) continue;
         seenUrls.add(url);
+        const fields = seedAlertFields(subject, urls, url);
         jobs.push({
-          title: seed?.role || (parsed?.digest ? 'Job lead (email)' : subject) || 'Job lead (email)',
+          title: fields.title,
           url,
           canonicalUrl: url,
           sourceUrl: url,
-          company: companyFromUrl(url) || seed?.company || '',
+          company: fields.company,
           location: '',
           source: `gmail:${classification.source}`,
           sourceLabel: classification.label,
