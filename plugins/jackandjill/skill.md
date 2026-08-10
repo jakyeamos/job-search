@@ -46,6 +46,10 @@ pnpm exec node apply/application-packets.mjs --queue-id <queue-id>
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --dry-run
 ```
 
-Never submit an application, send recruiter messages, change the Jack account,
-store credentials, or bypass login, CAPTCHA, MFA, rate limits, or a bridge
-failure.
+Never submit an application, send recruiter messages, store credentials, or
+bypass login, CAPTCHA, MFA, rate limits, or a bridge failure. The one explicit
+account-side exception is the threshold-gated archive workflow documented in
+`docs/SCRIPTS.md`: Computer Use may archive only cards emitted as
+`pendingArchive` by `jackandjill-archive.mjs`, and must record the outcome in
+the append-only ledger afterward. Applied, in-process, offer, ambiguous, or
+otherwise blocked cards must not be archived.

@@ -120,7 +120,7 @@ async function main() {
         code_challenge: challenge,
         code_challenge_method: 'S256',
       }).toString();
-      console.log(`Open this URL in Chrome Beta while signed into ${TARGET_ACCOUNT}:`);
+      console.log(`Open this URL in Chrome while signed into ${TARGET_ACCOUNT}:`);
       console.log(authUrl.toString());
       console.log('Waiting for Google authorization...');
     });

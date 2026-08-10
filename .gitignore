@@ -16,6 +16,14 @@ data/queue-ui-launch-state.json
 data/gmail-state.json
 data/gmail-organizer-state.json
 data/jackandjill-recommendations.json
+data/handshake-recommendations.json
+data/handshake-sync-status.json
+data/handshake-inbox.json
+data/handshake-inbox-sync-status.json
+data/application-ingest-state.json
+data/application-import-review.json
+data/jackandjill-board.json
+data/jackandjill-archive-ledger.jsonl
 data/jackandjill-coaching/
 data/application-answer-drafts/
 data/outreach-state.json
@@ -26,10 +34,12 @@ data/application-runs.json
 data/application-clear-state.json
 data/application-clear.lock
 data/application-handoff-session.json
+data/civic-state.json
 data/application-handoff.lock
 data/.queue-health.lock
 data/.job-queue.lock
 data/cache/
+plugins.local/
 data/pdf-index.tsv
 reports/*.md
 !reports/.gitkeep
@@ -42,6 +52,8 @@ batch/batch-state.tsv
 batch/batch-input.tsv
 batch/tracker-additions/*.tsv
 !batch/tracker-additions/.gitkeep
+batch/fast-pass/*
+!batch/fast-pass/.gitkeep
 jds/*
 !jds/.gitkeep
 

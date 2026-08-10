@@ -218,7 +218,7 @@ step "Close the Google Cloud credentials tab before continuing."
 stage "Authorize exactly jakyejobs@gmail.com" 5
 say "Generate a refresh token with Gmail message, filter-management, and send scopes for the target account only."
 step "The Desktop OAuth client will use a temporary local callback and PKCE; OAuth Playground is not used."
-step "Run node scripts/gmail-oauth.mjs and open its authorization URL in Chrome Beta while signed into jakyejobs@gmail.com."
+step "Run node scripts/gmail-oauth.mjs and open its authorization URL in Chrome while signed into jakyejobs@gmail.com."
 node scripts/gmail-oauth.mjs
 step "Close the authorization tab before continuing."
 

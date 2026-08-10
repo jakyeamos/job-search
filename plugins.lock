@@ -4,10 +4,10 @@
     "gmail": {
       "source": "bundled",
       "version": "1.0.0",
-      "integrity": "sha256-7d3d714868436dd05fedda4ed845e5c1923d46a1a5bb11681a71c8c75e274b3e",
+      "integrity": "sha256-9f0dda967ef2e102cf549f27c639c0daa738a51d7b607209cf48cf5c01f9fe85",
       "files": {
-        "_helpers.mjs": "sha256-0ea65273c5234e8f333b4b4d1a65d119f73003f14c6efc800a028b9ca0d8ead9",
-        "index.mjs": "sha256-1083a7cb2582cbe8ced231934b29268bca0f9a1852ebc86e0b93e0163699114f",
+        "_helpers.mjs": "sha256-5e30d92ec15ff1a442d974e61c37168ecf38983c11f0af7da221fdc895b9cabb",
+        "index.mjs": "sha256-9cc0f810894f477fec0ccfd69a4a4e12f36c81392a3eddfe4383cae2feb10079",
         "manifest.json": "sha256-71651ecc13bb3f8e7a224e289ef224fc5bf0d524782092312cc506761b3d32c5",
         "skill.md": "sha256-ed9cbcfda5686f208c1e19f14f3c54880da5603bee9faf70eab3da36dc2d58c4"
       },
@@ -31,11 +31,30 @@
     "jackandjill": {
       "source": "bundled",
       "version": "1.0.0",
-      "integrity": "sha256-06e9c65a82d4b16245f99da5dc06b0dc4d277d9e6ccb4c32095033f4b4c13d5d",
+      "integrity": "sha256-b321c5ea41d5ce426256947c1e8c1a1eda909422c3a5db9f4013a5e25102650f",
       "files": {
         "index.mjs": "sha256-29b9f75d62f28e528f33208033f9bb7de0027b29e2dc17bf25166c90e80b3355",
         "manifest.json": "sha256-e986667845a58b3fd0faefaa9f25c36d241a742a958da114791c4bcc7f50af88",
-        "skill.md": "sha256-c7134157ea9e7fdfe16c180071334daa6ea071aa4e6fd74a20750ff7b432b35a"
+        "skill.md": "sha256-74e0d53961f4f81ef4e692ffc6702c32b6baf79c97061083f5c10fb0e1fd6139"
+      },
+      "consent": {
+        "hooks": [
+          "ingest"
+        ],
+        "requiredEnv": [],
+        "allowedHosts": [],
+        "skill": true,
+        "allowsLocalhost": false
+      }
+    },
+    "handshake": {
+      "source": "local",
+      "version": "1.1.0",
+      "integrity": "sha256-ffd9c5cced700bb8e5a205bf2ca41aa3db0a7862a5f1b7d3a91e36aa3688fceb",
+      "files": {
+        "index.mjs": "sha256-893b1b11c2212a7b0fbddf15c8a042c3af133b9a0d3da3784b042530c9605b03",
+        "manifest.json": "sha256-6ea2fb78e8dcf8ac022625c79ace6093067adc7ba1e30965d7e2d8dc3dcc7698",
+        "skill.md": "sha256-2e0ac1a5d220d9a421b2cac83cb3a26e444df0b91a1fed5285c28b9dd024e3b5"
       },
       "consent": {
         "hooks": [

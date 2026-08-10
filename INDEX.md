@@ -58,6 +58,11 @@ read on demand. Goal: right file, first try, minimal tokens.
 | Normalize statuses / dedup | `node normalize-statuses.mjs` · `node dedup-tracker.mjs` |
 | Generate CV PDF | `node generate-pdf.mjs` |
 | Scan portals | `node scan.mjs` · `node scan-ats-full.mjs` |
+| Civic discovery lane | `node civic-discovery.mjs` · `node civic-discovery.mjs --json` |
+| Dismiss a sent X message | `node x-outreach-outbox.mjs mark-sent <draft-id>` |
+| Prepare/run a fast 30-role Codex chunk | `node pipeline-fast-runner.mjs --prepare-only` · `node pipeline-fast-runner.mjs` |
+| Cache a repeated browser fallback | `node pipeline-liveness-cache.mjs status|record|clear|list` |
+| Inspect/sync authenticated Handshake tabs and inbox | `node handshake.mjs doctor` · `node handshake.mjs sync --write` · `node handshake.mjs inbox --write` |
 | Auto-fill an application | `node apply/fill-{greenhouse,ashby,lever}.mjs <url> --resume <pdf>` |
 | Check / apply / rollback updates | `node update-system.mjs check\|apply\|rollback` |
 | Diagnostics | `node doctor.mjs` |

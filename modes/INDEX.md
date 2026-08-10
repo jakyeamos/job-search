@@ -10,6 +10,7 @@ Modes are System Layer except `_profile.md` (User Layer personalization). See
 | [oferta.md](oferta.md) | "evaluate this offer" | Full A–G offer evaluation + scored report |
 | [ofertas.md](ofertas.md) | "compare these offers" | Multi-job ranking/comparison |
 | [triage.md](triage.md) | "quick score these" | Fast first-pass scoring (cheap filter) |
+| [discovery-card.md](discovery-card.md) | clearing a large pending queue | Compact PASS/MARGINAL decision record; defers full A-G evaluation |
 | [contacto.md](contacto.md) | wants LinkedIn outreach | Find contacts + draft outreach messages |
 | [deep.md](deep.md) | "research this company" | Deep company/market research prompt |
 | [pdf.md](pdf.md) | "make my CV/PDF" | ATS-optimized tailored CV generation |

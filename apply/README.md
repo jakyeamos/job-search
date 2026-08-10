@@ -134,7 +134,7 @@ pnpm exec node apply/application-packets.mjs --queue-id <queue-id>
 # Inspect without ledger, packet, artifact, resume, or draft writes.
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --dry-run
 
-# Direct application URL; Chrome Beta is the default browser channel.
+# Direct application URL; Chrome is the default browser channel.
 pnpm exec node apply/application-packets.mjs <application-url> \
   --company "Example" --title "Backend Engineer" \
   --job-description "..." --headed --max-pages 8 --answers path/to/answers.json
@@ -160,6 +160,12 @@ Each role has one stable current packet under
 directory under `output/application-artifacts/`. A history snapshot is created
 only when the JD hash, form shape, canonical answer references, or resume
 decision changes. Existing legacy hash directories are left untouched.
+
+When a resume PDF is rendered, Career Ops keeps the audited canonical artifact
+in the role directory and also delivers a normalized copy to the configured
+candidate CV folder (currently `~/Desktop/CVs`) as
+`Jakye-Amos-CV-{Company}.pdf`. Cover letters remain in the role artifact
+directory.
 
 #### Question ledger and answer drafts
 
@@ -247,9 +253,11 @@ clicks a final Apply/Submit/Send control. It may click a posting-page Apply
 control and safe local continuation controls to reveal the form. Review the
 emitted JSON report and staged ledger before any manual answer promotion.
 
-The older `application-queue.mjs run|clear` surfaces remain separately
-policy-gated legacy adapter paths. They are not part of this human-controlled
-packet workflow and must not be used to bypass the manual submission boundary.
+The `application-queue.mjs clear` command is the bounded bulk-fill surface:
+it selects supported high-fit roles, fills them in one visible Chrome handoff,
+and waits for human review and submission. The `run` command is fill-only when
+used directly. Neither path clicks the final Apply/Submit/Send control or
+bypasses the manual submission boundary.
 
 ## Usage
 
@@ -276,16 +284,20 @@ node application-queue.mjs handoff --queue-id <id> --timeout 600
 
 `clear` refreshes the queue, selects at most six active high-fit supported-ATS
 recommendations with one role per company by default and role-family
-de-duplication, and processes them headlessly. Required
-questions appear in the daily queue UI as `blocked_by_question`; CAPTCHA, MFA,
-anti-spam, uncertain-submit, and ambiguous-control states use the single-window
-human-handoff flow. No outreach is sent unless confirmation evidence records a
+de-duplication, then fills the supported forms in one visible Chrome handoff.
+Required questions appear in the daily queue UI as `blocked_by_question`;
+CAPTCHA, MFA, anti-spam, uncertain-submit, and ambiguous-control states remain
+human-controlled. No outreach is sent unless confirmation evidence records a
 successful submission.
 
+The installed 8:00 AM Eastern scheduler starts this same bounded `clear` flow
+once per day with an eight-hour human review window. Prepared tabs remain in the
+dedicated Chrome handoff until you review them or the window expires.
+
 Fill-only runs launch **headed** and stay open after filling so you can review the
-⚠ flagged items and submit. Authorized queue runs use headless execution by default,
-close only after a result is recorded, and stop on unresolved fields, CAPTCHA/MFA, or
-missing confirmation. After an authorized click, the adapter records bounded,
+⚠ flagged items and submit. The daily `clear` flow uses the visible handoff path;
+the direct `run` worker uses headless fill-only execution by default, never clicks
+Submit, and records `prepared_for_review`. After a human click, the adapter records bounded,
 sanitized post-submit evidence: confirmation markers, URL/title, accessible
 dialogs and live regions, frame summaries, form state, a redacted text preview,
 and document/fetch/XHR response status. It never stores response bodies or URL
@@ -311,7 +323,7 @@ without retrying. The default observation window is ten minutes; override it wit
 | `--cover-text "..."` | Long-form text for Lever's "Additional information" textarea |
 | `--answers <file.json>` | Per-posting custom answers (see below) |
 | `--profile <path>` | Alternate profile file (default `config/application-profile.json`) |
-| `--browser <channel>` | System browser channel, default `chrome-beta`, with fallback to Chrome then bundled Chromium |
+| `--browser <channel>` | System browser channel, default `chrome`, with fallback to bundled Chromium |
 | `--submit` | Request the final submit click; still requires the local policy and all safety gates |
 | `--ledger <path>` | Question-ledger file used for explicit recurring answers |
 | `--human-handoff` | Fill in a visible browser and watch for a human CAPTCHA/Submit action; never clicks Submit |

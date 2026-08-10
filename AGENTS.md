@@ -250,6 +250,8 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 
 **Exception for batch workers (`Codex -p`):** Playwright is not available in headless pipe mode. Use WebFetch as fallback and mark the report header with `**Verification:** unconfirmed (batch mode)`. The user can verify manually later.
 
+**Fallback when browser access or Firecrawl is unavailable:** Firecrawl is an optional research accelerator, not a processing prerequisite. If the active Codex worker cannot open a job-board domain because of browser safety/access restrictions, or Firecrawl credits are unavailable, continue with Codex-native WebFetch and then WebSearch when they return usable job-description content. Mark every resulting report with `**Verification:** unconfirmed (batch fallback: browser/Firecrawl unavailable)` and treat the result as provisional. Do not claim that the posting is live from fallback content alone, do not use another paid processor to replace Firecrawl, and do not bypass the domain restriction with URL variants, proxies, or redirects. Before any human application decision, manually verify the official posting.
+
 ---
 
 ## Research & Lessons Learned -- MANDATORY
@@ -264,11 +266,15 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 
 This is separate from and in addition to updating `modes/_profile.md` / `config/profile.yml` for personalization -- research docs capture *findings and lessons*, the profile files capture *who the user is*.
 
-**Job board search:** use the `firecrawl-search` skill (Firecrawl CLI) for job board queries, especially when WebSearch throughput/rate limits are a concern. Prefer it over spawning many parallel research agents for the same goal.
+**Job board search:** use the `firecrawl-search` skill (Firecrawl CLI) for job board queries when it is available. If Firecrawl is unavailable, exhausted, or blocked, use Codex-native WebFetch/WebSearch with the unconfirmed-verification rule above; do not block the entire queue or introduce another paid processor solely to replace it.
 
 ---
 
 ## Stack and Conventions
+
+### Required Tool Setup
+
+When a required CLI or runtime is missing or is not on `PATH`, treat that as a setup task and fix it in the same turn whenever the tool and installation source are clear. First locate an existing installation and make it available to the current command/session; otherwise install it with the repository's documented package manager or the tool's official package source, then verify it with a version or diagnostic command before continuing. Do not stop at "not installed" or "not on PATH" after these recovery paths have been exhausted. Ask for direction only when the fix requires privileged or machine-wide changes, credentials or paid services, a destructive operation, or an ambiguous/untrusted package source.
 
 - Node.js (mjs modules), Playwright (PDF + scraping), YAML (config), HTML/CSS (template), Markdown (data), Canva MCP (optional visual CV)
 - Scripts in `.mjs`, configuration in YAML

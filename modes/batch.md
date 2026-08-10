@@ -1,6 +1,8 @@
 # Mode: batch — Mass Processing of Jobs
 
-Two usage modes: **conductor --chrome** (navigates portals in real time) or **standalone** (script for URLs already collected).
+Three usage modes: **conductor --chrome** (navigates portals in real time),
+**standalone Claude worker**, or the **persistent Codex fast queue** for a large
+`data/pipeline.md` backlog.
 
 ## Architecture
 
@@ -11,10 +13,10 @@ Conductor (headed browser mode)
   │  Reads DOM directly — the user sees everything in real time
   │
   ├─ Job 1: reads JD from DOM + URL
-  │    └─► headless worker → report .md + PDF + tracker-line
+  │    └─► headless worker → report .md + tracker-line
   │
   ├─ Job 2: click next, read JD + URL
-  │    └─► headless worker → report .md + PDF + tracker-line
+  │    └─► headless worker → report .md + tracker-line
   │
   └─ End: merge tracker-additions → applications.md + summary
 ```
@@ -27,7 +29,7 @@ Each worker is a headless child process with a clean 200K token context. The con
 batch/
   batch-input.tsv               # URLs (from conductor or manual)
   batch-state.tsv               # Progress (auto-generated, gitignored)
-  batch-runner.sh               # Standalone orchestrator script
+  batch-runner.sh               # Standalone orchestrator script (PDF-free discovery default)
   batch-prompt.md               # Prompt template for workers
   logs/                         # One log per job (gitignored)
   tracker-additions/            # Tracker lines (gitignored)
@@ -96,6 +98,7 @@ Options:
 - `--start-from N` — start from ID N
 - `--limit N` — max number of jobs to process in this run
 - `--parallel N` — N workers in parallel
+- Resume artifact generation is disabled for discovery by default; generate tailored HTML/PDF on demand for shortlisted roles.
 - `--max-retries N` — attempts per job (default: 2)
 - `--rate-limit-sleep N` — seconds to wait before retrying a transient rate-limited worker (default: 300; use 0 to pause the batch immediately)
 
@@ -114,6 +117,23 @@ Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`
 
 `paused_rate_limit` means a worker hit a Claude session/usage limit. The runner stops scheduling new offers, preserves the retry count, and resumes only when explicitly called with `--resume-paused`.
 
+## Mode C: Persistent Codex fast queue
+
+```bash
+node pipeline-fast-runner.mjs --prepare-only
+node pipeline-fast-runner.mjs
+```
+
+The preprocessor groups Greenhouse, Lever, and Ashby URLs by organization,
+fetches each public board once, and applies high-confidence deterministic
+blockers before Codex starts. The default run sends one 30-role manifest to one
+lean `codex exec` session. PASS/MARGINAL roles receive compact discovery cards;
+full A-G reports and resume artifacts remain on-demand.
+
+The lean worker uses `--ignore-user-config`, which preserves Codex
+authentication and repository rules while avoiding unrelated desktop plugins
+and MCP startup. Pass `--normal-config` only when a batch needs those tools.
+
 ## Resumability
 
 - If it crashes → re-run → reads `batch-state.tsv` → skip completed jobs
@@ -124,11 +144,13 @@ Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`
 
 Each worker receives `batch-prompt.md` as a system prompt. It is self-contained. Use your CLI's headless command — see the **Headless / Batch Mode** table in `AGENTS.md`.
 
-The worker produces:
-1. `.md` report in `reports/`
-2. PDF in `output/`
-3. Tracker line in `batch/tracker-additions/{id}.tsv`
-4. Result JSON via stdout
+The worker produces by default:
+1. `.md` report in `reports/` (PASS roles only)
+2. Tracker line in `batch/tracker-additions/{id}.tsv`
+3. Result JSON via stdout
+
+With an explicit PDF opt-in for a selected role, the worker may additionally create
+the tailored HTML source and PDF required by the PDF workflow.
 
 ## Error handling
 
@@ -140,4 +162,4 @@ The worker produces:
 | Worker crashes | Conductor marks `failed`, continues. Retry with `--retry-failed` |
 | Claude session/usage limit | Runner marks the current offer `paused_rate_limit`, stops scheduling new offers, preserves retries. Resume with `--resume-paused` after reset. |
 | Conductor crashes | Re-run → reads state → skip completed jobs |
-| PDF fails | .md report is saved. PDF remains pending |
+| PDF fails | The `.md` report is saved. Resume artifacts remain pending and can be generated on demand |

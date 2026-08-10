@@ -52,7 +52,7 @@ never promotes answers or crosses the manual submission boundary.
 ## Browser-first intake and artifact retrieval
 
 The authenticated application path is browser-first. The packet uses the
-authorized Chrome Beta session through the browser bridge and does not prefer a
+authorized Chrome session through the browser bridge and does not prefer a
 browser-free client for form traversal. The existing artifact generator may use
 its bounded description fallback for queue data, but that is separate from the
 authenticated form and never performs application writes.
@@ -70,10 +70,12 @@ commands rather than deriving an API client for its authenticated flows.
 - Do not expose private repositories, credentials, customer data, or raw form
   data in logs or generated content.
 - Unsupported or ambiguous forms remain blocked for manual handling.
-- The old `application-queue.mjs run|clear` commands are legacy, separately
-  policy-gated adapter surfaces. They are not part of the human-controlled
-  packet workflow and must not be used to cross the manual submission boundary.
-- The legacy worker generates contract-managed resume and cover-letter artifacts from
+- The `application-queue.mjs clear` command is the bounded bulk-fill surface:
+  it selects supported high-fit roles, fills them in one visible Chrome handoff,
+  and waits for human review and submission. The `run` command is fill-only
+  when invoked directly. Neither path clicks the final Apply/Submit/Send
+  control or crosses the manual submission boundary.
+- The queue worker generates contract-managed resume and cover-letter artifacts from
   canonical evidence and the queue posting. Existing resume/PDF renderers
   remain available, and their approved output can still be registered with
   `node resume.mjs register ...`.

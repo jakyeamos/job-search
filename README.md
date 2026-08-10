@@ -111,7 +111,13 @@ Built by someone who used it to evaluate 740+ job offers, generate 100+ tailored
 | **Dashboard TUI**        | Terminal UI to browse, filter, and sort your pipeline                                                                                    |
 | **Human-in-the-Loop**    | AI evaluates and recommends, applications remain under your control, and optional post-application email requires explicit enablement               |
 | **Pipeline Integrity**   | Automated merge, dedup, status normalization, health checks                                                                              |
-| **Beyond the CV**        | Company research ([`deep`](modes/deep.md)) surfaces AI strategy, recent moves, engineering culture, and the angle your profile should take. Contact discovery ([`contacto`](modes/contacto.md)) identifies the hiring manager, recruiter, or team peer worth reaching out to and drafts a ≤300-character LinkedIn message tuned to each contact type. Optional outreach can send verified professional email or an explicitly enabled convention hypothesis after a confirmed application. |
+| **Beyond the CV**        | Company research ([`deep`](modes/deep.md)) surfaces AI strategy, recent moves, engineering culture, and the angle your profile should take. Contact discovery ([`contacto`](modes/contacto.md)) identifies the hiring manager, recruiter, or team peer worth reaching out to and drafts a ≤300-character LinkedIn message tuned to each contact type. Optional outreach creates verified professional email drafts in Gmail after a confirmed application; it never sends them automatically. |
+
+Career writing uses a sibling Research Domain Writing (RDW) checkout when
+available (or an installed `rdw` CLI). Generated outreach must
+carry an evidence-bound `rdw-artifact-receipt/v1` receipt before it can enter the
+Gmail-draft path. Receipts are bound to the exact content and only approve an
+artifact for human review; they do not authorize sending, submission, or publication.
 
 ### Public proof and social review
 
@@ -159,11 +165,11 @@ claude   # or gemini / codex / qwen / opencode / agy / grok — open your AI CLI
 
 ```bash
 git clone https://github.com/santifer/career-ops.git
-cd career-ops && npm install
+cd career-ops && pnpm install
 npx playwright install chromium   # only needed for PDF generation
 
 # 2. Check setup
-npm run doctor                     # Validates all prerequisites
+pnpm run doctor                     # Validates all prerequisites
 
 # 3. Configure
 cp config/profile.example.yml config/profile.yml  # Edit with your details
@@ -280,12 +286,12 @@ cp .env.example .env
 # Edit .env, set GEMINI_API_KEY=your_key_here
 
 # 2. Install dependencies
-npm install
+pnpm install
 
 # 3. Evaluate a job description
 node gemini-eval.mjs "We are looking for a Senior AI Engineer..."
 node gemini-eval.mjs --file ./jds/my-job.txt
-npm run gemini:eval -- "JD text here"
+pnpm run gemini:eval -- "JD text here"
 ```
 
 > **Free tier:** Both options work without billing. Native CLI uses Google OAuth; the API script uses `gemini-2.5-flash` (15 RPM, 1M tokens/day free).
@@ -355,7 +361,7 @@ The scanner comes with **45+ companies** ready to scan and **19 search queries**
 
 **Job boards searched:** 21 provider modules cover ATS APIs, board-wide feeds, XML/RSS feeds, markdown feeds, and local parsers. See [Supported job boards](docs/SUPPORTED_JOB_BOARDS.md) for the full table.
 
-By default `node scan.mjs` (a.k.a. `npm run scan`) trusts what each ATS feed returns. Some companies leave stale postings in their public API even after the role is closed, so those expired entries can leak into `pipeline.md`. Pass `--verify` to launch Playwright after the API pass and drop expired postings before they hit the pipeline:
+By default `node scan.mjs` (a.k.a. `pnpm run scan`) trusts what each ATS feed returns. Some companies leave stale postings in their public API even after the role is closed, so those expired entries can leak into `pipeline.md`. Pass `--verify` to launch Playwright after the API pass and drop expired postings before they hit the pipeline:
 
 ```bash
 node scan.mjs --verify          # zero-token discovery + Playwright liveness check
@@ -368,8 +374,8 @@ The verification is sequential and only runs against new offers (after dedup), s
 The built-in terminal dashboard lets you browse your pipeline visually:
 
 ```bash
-npm run serve:dashboard   # launch the TUI
-npm run build:dashboard   # optional: build the standalone binary
+pnpm run serve:dashboard   # launch the TUI
+pnpm run build:dashboard   # optional: build the standalone binary
 ```
 
 Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.

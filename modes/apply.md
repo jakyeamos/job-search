@@ -118,6 +118,7 @@ For each question, generate the response following:
 5. **career-ops proof point**: Include in "Additional info" if there is a field for it
 6. **Recruiter-side risk map**: Use `modes/heuristics/recruiter-side.md` to identify what doubt the question is trying to resolve (motivation, stack fit, logistics, comp, work-auth, availability, seniority) and answer that doubt directly.
 7. **Disclosure discipline**: Answer logistics questions truthfully when asked, but do not volunteer sensitive or HR-only details in unrelated motivation/fit answers.
+8. **Company-motivation research**: For prompts such as “Why do you want to join us?” or “What about the company/role caught your attention?”, research the current official company site, recent official product/company updates, and the specific role before drafting. Intersect those findings with documented goals and proof points from `config/profile.yml`, `cv.md`, and the project ledger. Store the sources with the answer and scope the answer to that posting; never reuse a company-motivation answer globally. If there is no specific, truthful intersection, surface the smallest candidate question needed instead of producing generic enthusiasm.
 
 **Output format:**
 

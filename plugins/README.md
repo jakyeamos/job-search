@@ -69,7 +69,7 @@ node plugins.mjs run notion export [--dry-run]   # export
 ### Jack & Jill (authenticated, read-only)
 
 Jack & Jill is an opt-in recommendation and coaching source. Its private
-OpenCLI adapter uses the authorized Chrome Beta session through the browser
+OpenCLI adapter uses the authorized Chrome session through the browser
 bridge; it does not store credentials, inspect cookies, or submit applications:
 
 ```bash
@@ -86,6 +86,31 @@ cache, canonicalizes Jack UUID URLs (including Gmail tracking wrappers), keeps
 `sourceMessageId` provenance, and leaves incomplete records as
 `source-alert` items. Coaching output remains a local review artifact and is
 never an application submission.
+
+### Handshake (authenticated, read-only)
+
+Handshake uses the user’s already-open authenticated Chrome tabs through the
+OpenCLI browser bridge. It reads visible feed/detail content and the visible
+inbox list (plus the thread already open in that tab), keeps recommendations and
+inbox evidence in separate ignored caches, and never reads cookies or storage,
+navigates between inbox conversations, or submits an application:
+
+```bash
+node handshake.mjs doctor
+node handshake.mjs sync --write
+node handshake.mjs inbox --write
+node plugins.mjs run handshake --dry-run
+```
+
+The default bridge session is `career-ops-handshake`. A detail page needs a
+visible title, company, substantive description, and Apply control before it
+becomes an active queue candidate; feed-only or incomplete records remain
+`source-alert`. Inbox records remain a separate human-review surface and never
+enter the job pipeline. Inbox sync reports unread count, participant/thread
+evidence, and linked job URLs while explicitly disabling reply, mark-read, and
+archive actions. If the bridge is unavailable, the last cache is preserved and
+the queue reports Handshake as unavailable/cache-only rather than treating the
+source as healthy.
 
 ### The `ctx` object
 

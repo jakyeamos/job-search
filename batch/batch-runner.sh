@@ -35,7 +35,7 @@ RESUME_PAUSED=false
 START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
-SKIP_PDF=false
+SKIP_PDF=true
 MODEL=""  # empty = let claude -p use the Claude Max default
 RATE_LIMIT_SLEEP=300
 BATCH_PAUSED=false
@@ -64,7 +64,8 @@ Options:
   --limit N            Max number of offers to process in this run
   --max-retries N      Max retry attempts per offer (default: 2)
   --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
-  --skip-pdf           Skip PDF generation entirely (write ❌ in tracker PDF column)
+  --skip-pdf           Skip PDF generation entirely (default; write ❌ in tracker PDF column)
+  --with-pdf           Opt in to PDF generation for this run
   --rate-limit-sleep N Seconds to wait before retrying a rate-limited worker
                        (default: 300)
   --model NAME         Claude model passed to `claude -p --model` (default:
@@ -108,6 +109,7 @@ while [[ $# -gt 0 ]]; do
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
     --skip-pdf) SKIP_PDF=true; shift ;;
+    --with-pdf) SKIP_PDF=false; shift ;;
     --rate-limit-sleep)
       [[ $# -ge 2 ]] || { echo "ERROR: --rate-limit-sleep requires an argument"; exit 1; }
       RATE_LIMIT_SLEEP="$2"
@@ -426,10 +428,10 @@ process_offer() {
   # Build the prompt with placeholders replaced
   local prompt
   if [[ "$SKIP_PDF" == "true" ]]; then
-    prompt="Procesa esta oferta de empleo. Ejecuta el pipeline: evaluación A-F + report .md + tracker line. NO generes PDF; en el tracker escribe ❌ en la columna PDF y en el JSON final establece \"pdf\": null."
-    echo "    ⏭️  --skip-pdf set — skipping PDF generation for #$id ($url)"
+    prompt="Procesa esta oferta de empleo en modo discovery. Ejecuta el pipeline: evaluación A-F + report .md + tracker line. NO generes PDF NI HTML/resume artifacts; en el tracker escribe ❌ en la columna PDF y en el JSON final establece \"pdf\": null. Si el report template menciona a PDF o HTML, marca ambos como no generados y no escribas archivos de resume."
+    echo "    ⏭️  discovery mode — skipping HTML/PDF resume artifacts for #$id ($url)"
   else
-    prompt="Procesa esta oferta de empleo. Ejecuta el pipeline completo: evaluación A-F + report .md + PDF + tracker line."
+    prompt="Procesa esta oferta de empleo with explicit resume-artifact opt-in. Ejecuta el pipeline completo: evaluación A-F + report .md + tailored HTML + PDF + tracker line."
   fi
   prompt="$prompt URL: $url"
   prompt="$prompt JD file: $jd_file"
@@ -766,6 +768,11 @@ main() {
     echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
   fi
   echo "Input: $total_input offers"
+  if [[ "$SKIP_PDF" == "true" ]]; then
+    echo "PDFs: disabled for discovery (use --with-pdf for an explicit opt-in)"
+  else
+    echo "PDFs: enabled by explicit --with-pdf"
+  fi
   echo ""
 
   # Build list of offers to process
@@ -929,4 +936,3 @@ main() {
 }
 
 main "$@"
-
