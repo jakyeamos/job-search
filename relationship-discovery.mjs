@@ -1,6 +1,14 @@
 // @ts-check
 
-import { extractPublicContacts, searchPublicWeb } from './contact-discovery.mjs';
+import {
+  classifyPublicSearchFailure,
+  extractPublicContacts,
+  searchPublicWeb,
+} from './contact-discovery.mjs';
+import {
+  isProviderGeneratedContactDomain,
+  isProviderGeneratedContactEmail,
+} from './outreach-lib.mjs';
 import { normalizeText, normalizeUrl } from './queue-lib.mjs';
 
 const MAX_GMAIL_QUERIES = 6;
@@ -96,7 +104,8 @@ function companyDomains(item, profile) {
   for (const url of urls) {
     try {
       const parsed = new URL(url);
-      if (parsed.hostname) domains.add(rootHost(parsed.hostname));
+      const domain = rootHost(parsed.hostname);
+      if (domain && !isProviderGeneratedContactDomain(domain)) domains.add(domain);
     } catch { /* non-URL company metadata is ignored */ }
   }
   const company = lower(item.company);
@@ -135,11 +144,6 @@ export function buildRelationshipDiscoveryPlan(item, profile = {}) {
   if (company) gmailQueries.push(`in:anywhere "${company}" newer_than:1825d`);
   for (const domain of domains) {
     gmailQueries.push(`in:anywhere {from:(${domain}) to:(${domain}) cc:(${domain})} newer_than:1825d`);
-  }
-  for (const source of sources) {
-    for (const domain of source.domains) {
-      gmailQueries.push(`in:anywhere {from:(${domain}) to:(${domain}) cc:(${domain})} newer_than:1825d`);
-    }
   }
 
   for (const source of sources) {
@@ -225,13 +229,12 @@ function relationshipForEmail(email, item, profile) {
       relevance: 'high',
     };
   }
-  const source = configuredRelationshipSources(profile).find((candidate) => matchesDomain(email, new Set(candidate.domains)));
-  if (!source) return null;
-  return {
-    type: `existing_${slug(source.name)}_relationship`,
-    label: `Existing ${source.name} connection`,
-    relevance: 'medium',
-  };
+  // A relationship-source address proves that the candidate knows the person;
+  // it does not prove that the person works for the application employer. Warm
+  // network searches may still locate alumni or former colleagues through
+  // public current-employer evidence, but Gmail correspondence alone must not
+  // turn a professor or former coworker into a contact for every company.
+  return null;
 }
 
 /** @param {Array<Record<string, unknown>>} messages @param {Record<string, unknown>} item @param {Record<string, unknown>} profile */
@@ -247,7 +250,10 @@ export function extractGmailRelationshipContacts(messages, item, profile = {}) {
     const subject = messageHeader(message, 'subject');
     const addresses = [...parseAddressHeader(from), ...parseAddressHeader(to), ...parseAddressHeader(cc)];
     for (const address of addresses) {
-      if (address.email === candidateEmail || !isProfessionalEmail(address.email) || isIgnoredMailbox(address.email)) continue;
+      if (address.email === candidateEmail
+        || !isProfessionalEmail(address.email)
+        || isIgnoredMailbox(address.email)
+        || isProviderGeneratedContactEmail(address.email)) continue;
       const relationship = relationshipForEmail(address.email, item, profile);
       if (!relationship) continue;
       const generic = /^(?:careers?|jobs?|recruit(?:ing|ment)|talent|hiring|people|hr|humanresources|employment)$/i.test(address.email.split('@')[0] || '');
@@ -300,7 +306,18 @@ export function extractWarmWebContacts(results, item, source) {
   return contacts;
 }
 
-/** @param {Record<string, unknown>} item @param {Record<string, unknown>} profile @param {{ dryRun?: boolean, gmailClient?: RelationshipGmailClient | null, searchFn?: typeof searchPublicWeb, env?: Record<string, string | undefined>, fetchFn?: (input: string, init?: RequestInit) => Promise<Response> }} [options] */
+/**
+ * @param {Record<string, unknown>} item
+ * @param {Record<string, unknown>} profile
+ * @param {{
+ *   dryRun?: boolean,
+ *   gmailClient?: RelationshipGmailClient | null,
+ *   searchFn?: typeof searchPublicWeb,
+ *   env?: Record<string, string | undefined>,
+ *   fetchFn?: (input: string, init?: RequestInit) => Promise<Response>,
+ *   sourceState?: { publicSearchUnavailableReason?: string },
+ * }} [options]
+ */
 export async function discoverWarmContactsForApplication(item, profile = {}, options = {}) {
   const plan = buildRelationshipDiscoveryPlan(item, profile);
   if (options.dryRun) {
@@ -318,6 +335,7 @@ export async function discoverWarmContactsForApplication(item, profile = {}, opt
   const contacts = [];
   const sources = [];
   const errors = [];
+  const warnings = [];
   if (options.gmailClient) {
     const messageById = new Map();
     for (const query of plan.gmailQueries) {
@@ -338,12 +356,14 @@ export async function discoverWarmContactsForApplication(item, profile = {}, opt
     }
     contacts.push(...extractGmailRelationshipContacts([...messageById.values()], item, profile));
   } else {
-    errors.push('Gmail relationship search unavailable; using public relationship sources only');
+    warnings.push('Gmail relationship search is unavailable; only public relationship sources can be checked.');
   }
 
   const searchFn = options.searchFn || searchPublicWeb;
   const sourcesByName = new Map(configuredRelationshipSources(profile).map((source) => [source.name, source]));
+  let publicSearchUnavailableReason = stringValue(options.sourceState?.publicSearchUnavailableReason);
   for (const webPlan of plan.webPlans) {
+    if (publicSearchUnavailableReason) break;
     const query = webPlan.query;
     const source = sourcesByName.get(webPlan.sourceName);
     if (!source) continue;
@@ -355,7 +375,14 @@ export async function discoverWarmContactsForApplication(item, profile = {}, opt
       }
       contacts.push(...extractWarmWebContacts(results, item, source));
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(message);
+      const failure = classifyPublicSearchFailure(error);
+      if (failure) {
+        publicSearchUnavailableReason = failure.reason;
+        if (options.sourceState) options.sourceState.publicSearchUnavailableReason = failure.reason;
+        break;
+      }
     }
   }
 
@@ -365,15 +392,21 @@ export async function discoverWarmContactsForApplication(item, profile = {}, opt
     if (key && !deduped.has(key)) deduped.set(key, contact);
   }
   const uniqueContacts = [...deduped.values()];
+  const unavailable = !uniqueContacts.length && publicSearchUnavailableReason && !options.gmailClient;
   return {
-    status: uniqueContacts.length ? 'found' : 'no_contacts',
+    status: uniqueContacts.length ? 'found' : unavailable ? 'unavailable' : 'no_contacts',
     reason: uniqueContacts.length
       ? `found ${uniqueContacts.length} warm-network contact candidate(s)`
-      : 'no warm-network contact path found after Gmail and public network search',
+      : unavailable
+        ? `warm-network discovery is unavailable: ${publicSearchUnavailableReason}`
+        : publicSearchUnavailableReason
+          ? `no Gmail relationship found; public network search is unavailable: ${publicSearchUnavailableReason}`
+          : 'no warm-network contact path found after Gmail and public network search',
     contacts: uniqueContacts,
     gmailQueries: plan.gmailQueries,
     webQueries: plan.webQueries,
     sources: [...new Set(sources)].slice(0, 20),
     errors: [...new Set(errors)],
+    warnings: [...new Set(warnings)],
   };
 }
