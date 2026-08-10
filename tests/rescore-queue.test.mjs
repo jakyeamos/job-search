@@ -51,6 +51,24 @@ test('rescoring preserves identity, history, and discovered contacts', () => {
   assert.deepEqual(rescored.outreach.discovery, original.outreach.discovery);
 });
 
+test('rescoring persists the explainable location contribution', () => {
+  const rescored = rescoreStoredItem(item({ location: 'Buffalo, NY', locationFit: null }), {
+    location_strategy: {
+      preferred_regions: [{
+        id: 'buffalo_western_new_york',
+        label: 'Buffalo / Western New York',
+        terms: ['Buffalo'],
+        score_adjustment: 0.5,
+      }],
+      other_us: { score_adjustment: -0.15 },
+    },
+  });
+
+  assert.equal(rescored.locationFit.id, 'buffalo_western_new_york');
+  assert.equal(rescored.locationFit.scoreAdjustment, 0.5);
+  assert.match(rescored.fitReasons.join(' '), /Buffalo \/ Western New York/);
+});
+
 test('a decision already taken is never reversed by a rule change', () => {
   for (const status of ['applied', 'skipped', 'snoozed', 'archived']) {
     const rescored = rescoreStoredItem(item({ status, fitScore: 3.7 }), {});

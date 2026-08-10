@@ -5,10 +5,12 @@ import {
   canFetchPosting,
   enrichCandidates,
   fetchPosting,
+  fetchPostings,
   htmlToText,
   linkedinJobId,
   parseLinkedinPosting,
   resolveEmbeddedGreenhouse,
+  resolvePostingBatchSource,
 } from '../posting-fetch.mjs';
 
 const LONG_BODY = 'We build payment systems in Python and Go. '.repeat(8);
@@ -83,12 +85,121 @@ test('fetchability is decided by whether a public description source exists', ()
   assert.equal(canFetchPosting(''), false);
 });
 
+test('batch sources group ATS postings by organization instead of job URL', () => {
+  const greenhouseA = resolvePostingBatchSource('https://job-boards.greenhouse.io/acme/jobs/12345');
+  const greenhouseB = resolvePostingBatchSource('https://job-boards.greenhouse.io/acme/jobs/67890');
+  const lever = resolvePostingBatchSource('https://jobs.lever.co/example/abc-123');
+  const ashby = resolvePostingBatchSource('https://jobs.ashbyhq.com/example/job-123');
+
+  assert.equal(greenhouseA.key, greenhouseB.key);
+  assert.match(greenhouseA.apiUrl, /\/boards\/acme\/jobs\?content=true$/);
+  assert.equal(lever.key, 'lever:example');
+  assert.equal(ashby.key, 'ashby:example');
+});
+
+test('batch fetching makes one Ashby board request for multiple postings', async () => {
+  const urls = [
+    'https://jobs.ashbyhq.com/acme/job-1',
+    'https://jobs.ashbyhq.com/acme/job-2',
+  ];
+  const calls = [];
+  const results = await fetchPostings(urls, {
+    gapMs: 0,
+    fetchFn: async (url) => {
+      calls.push(url);
+      return response(200, {
+        json: {
+          jobs: [
+            { id: 'job-1', title: 'Backend Engineer', location: 'Remote US', descriptionHtml: LONG_BODY },
+            { id: 'job-2', title: 'Data Engineer', location: 'New York, NY', descriptionHtml: LONG_BODY },
+          ],
+        },
+      });
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(results.length, 2);
+  assert.equal(results[0].ok, true);
+  assert.equal(results[1].ok, true);
+  assert.equal(results[1].fields.title, 'Data Engineer');
+});
+
+test('batch fetching shares Greenhouse and Lever board payloads', async () => {
+  const urls = [
+    'https://job-boards.greenhouse.io/acme/jobs/12345',
+    'https://job-boards.greenhouse.io/acme/jobs/67890',
+    'https://jobs.lever.co/example/lever-1',
+    'https://jobs.lever.co/example/lever-2',
+  ];
+  const calls = [];
+  const results = await fetchPostings(urls, {
+    gapMs: 0,
+    fetchFn: async (url) => {
+      calls.push(url);
+      if (url.includes('greenhouse')) {
+        return response(200, {
+          json: {
+            jobs: [
+              { id: 12345, title: 'Software Engineer', location: { name: 'Remote US' }, content: LONG_BODY },
+              { id: 67890, title: 'Data Engineer', location: { name: 'Buffalo, NY' }, content: LONG_BODY },
+            ],
+          },
+        });
+      }
+      return response(200, {
+        json: [
+          { id: 'lever-1', text: 'Backend Engineer', categories: { location: 'Remote US' }, descriptionPlain: LONG_BODY },
+          { id: 'lever-2', text: 'AI Engineer', categories: { location: 'New York, NY' }, descriptionPlain: LONG_BODY },
+        ],
+      });
+    },
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(results.filter((result) => result.ok).length, 4);
+});
+
+test('a missing official board endpoint falls back to the per-job endpoint', async () => {
+  const calls = [];
+  const [result] = await fetchPostings([
+    'https://job-boards.greenhouse.io/acme/jobs/12345',
+  ], {
+    gapMs: 0,
+    fetchFn: async (url) => {
+      calls.push(url);
+      if (url.includes('?content=true')) return response(404);
+      return response(200, {
+        json: {
+          id: 12345,
+          title: 'Software Engineer',
+          location: { name: 'Remote US' },
+          content: LONG_BODY,
+        },
+      });
+    },
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.title, 'Software Engineer');
+});
+
 test('an unfetchable host is reported as unsupported without a network call', async () => {
   const result = await fetchPosting('https://www.glassdoor.com/job-listing/abc', {
     fetchFn: async () => { throw new Error('must not be called'); },
   });
   assert.equal(result.ok, false);
   assert.equal(result.outcome, 'unsupported');
+});
+
+test('Handshake records never fall through to public posting fetch', async () => {
+  const result = await fetchPosting('https://app.joinhandshake.com/jobs/11190664', {
+    fetchFn: async () => { throw new Error('must not be called'); },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, 'unsupported');
+  assert.match(result.reason, /authenticated Handshake browser/i);
 });
 
 test('a removed LinkedIn posting is expired, a throttled one is only blocked', async () => {
@@ -102,6 +213,25 @@ test('a removed LinkedIn posting is expired, a throttled one is only blocked', a
   });
   // Throttling says nothing about the posting; it must stay eligible for a retry.
   assert.equal(throttled.outcome, 'blocked');
+});
+
+test('a LinkedIn closure banner wins over a retained description', async () => {
+  const closed = await fetchPosting('https://www.linkedin.com/comm/jobs/view/4430806173', {
+    fetchFn: async () => response(200, {
+      text: `<div>No longer accepting applications</div>${linkedinHtml()}`,
+    }),
+  });
+  assert.equal(closed.ok, false);
+  assert.equal(closed.outcome, 'expired');
+  assert.match(closed.reason, /no longer accepting applications/i);
+});
+
+test('an ambiguous LinkedIn response is not treated as a closed posting', async () => {
+  const ambiguous = await fetchPosting('https://www.linkedin.com/comm/jobs/view/4430806173', {
+    fetchFn: async () => response(200, { text: '<main>Please sign in to continue</main>' }),
+  });
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.outcome, 'empty');
 });
 
 test('enrichment replaces email-subject metadata with the real posting', async () => {
@@ -191,4 +321,24 @@ test('the fetch budget goes to alert candidates before scanned ones', async () =
   });
 
   assert.deepEqual(fetched, ['https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4430806173']);
+});
+
+test('persisted alert candidates are fetched newest-first within the bounded budget', async () => {
+  const alerts = Array.from({ length: 3 }, (unused, index) => ({
+    canonicalUrl: `https://www.linkedin.com/comm/jobs/view/44308062${index}0`,
+    description: '',
+    liveness: 'source-alert',
+  }));
+  const fetched = [];
+
+  await enrichCandidates(alerts, {
+    limit: 2,
+    gapMs: 0,
+    fetchFn: async (url) => { fetched.push(url); return response(200, { text: linkedinHtml() }); },
+  });
+
+  assert.deepEqual(fetched, [
+    'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4430806220',
+    'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4430806210',
+  ]);
 });

@@ -1,16 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { buildQueue, buildQueueItem, renderQueueMarkdown, stableQueueId } from '../queue-lib.mjs';
-import { buildContactDiscoveryArgs, normalizeContactDiscoveryLimit } from '../queue.mjs';
 
 const ROOT = process.cwd();
 
-test('contact discovery has an independent bounded batch limit', () => {
-  assert.equal(normalizeContactDiscoveryLimit(6), 6);
-  assert.equal(normalizeContactDiscoveryLimit(999), 20);
-  assert.deepEqual(buildContactDiscoveryArgs(6), ['discover-queue', '--limit', '6']);
-  assert.deepEqual(buildContactDiscoveryArgs(999, true), ['discover-queue', '--limit', '20', '--dry-run']);
+test('routine queue refresh does not launch broad contact discovery', () => {
+  const source = readFileSync(new URL('../queue.mjs', import.meta.url), 'utf8');
+  const refreshSource = source.slice(
+    source.indexOf('async function refresh('),
+    source.indexOf('async function clearQueue('),
+  );
+  assert.doesNotMatch(refreshSource, /discover-queue|contactDiscovery|discoveryLimit/);
 });
 
 test('queue refresh carries employer domain metadata into contact discovery', () => {
@@ -33,7 +35,7 @@ test('queue refresh preserves imported discovery evidence and renders email cand
     title: 'Backend Engineer',
   });
   const discovery = {
-    pipelineVersion: 10,
+    pipelineVersion: 11,
     status: 'found',
     cacheExpiresAt: '2026-08-01T00:00:00.000Z',
     contacts: [{ name: 'Ada Lovelace', email: 'ada@example.ai' }],

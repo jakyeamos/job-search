@@ -33,7 +33,7 @@ const QUEUE_PATH = path.join(ROOT, 'data', 'job-queue.json');
 const STICKY_STATUSES = new Set(['applied', 'skipped', 'snoozed', 'archived', 'stale']);
 
 /** Fields a rule change is allowed to move. Anything else is identity or history. */
-const JUDGEMENT_FIELDS = ['fitScore', 'fitConfidence', 'status', 'lane', 'blockers', 'fitReasons'];
+const JUDGEMENT_FIELDS = ['fitScore', 'fitConfidence', 'status', 'lane', 'blockers', 'fitReasons', 'locationFit'];
 
 /**
  * Whether a rescore actually changed the verdict. Score and status alone are not

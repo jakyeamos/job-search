@@ -14,10 +14,10 @@ import {
   createGmailClient,
 } from './gmail-client.mjs';
 import { hasGmailCredentials, organizeGmail } from './gmail.mjs';
+import { syncApplicationIngest } from './application-ingest.mjs';
 import { loadDotenvOnce, runHook } from './plugins/_engine.mjs';
 import { OUTREACH_STATE_PATH, recordSubmissionSignal } from './outreach-lib.mjs';
 import {
-  DEFAULT_CONTACT_DISCOVERY_LIMIT,
   DEFAULT_QUEUE_LIMIT,
   applicationKey,
   buildQueue,
@@ -25,6 +25,7 @@ import {
   isGamblingCandidate,
   loadApplications,
   loadProfile,
+  mergePipelineHistory,
   normalizeUrl,
   parsePipeline,
   parseScanHistory,
@@ -38,6 +39,8 @@ import { applyPostingAging } from './queue-aging.mjs';
 import { evictToArchive, readArchive, writeArchive } from './queue-archive.mjs';
 import { checkPublicLiveness } from './liveness-http.mjs';
 import { enrichCandidates } from './posting-fetch.mjs';
+import { readHandshakeSyncStatus } from './handshake-lib.mjs';
+import { readHandshakeInboxStatus } from './handshake-inbox-lib.mjs';
 
 export { checkPublicLiveness } from './liveness-http.mjs';
 
@@ -52,20 +55,6 @@ const UI_SERVER_LABEL = 'com.jakyeamos.career-ops.queue-ui';
 /** @param {string} value */
 function flagValue(value, fallback) {
   return value && !value.startsWith('--') ? value : fallback;
-}
-
-/** @param {number|string|null|undefined} value @returns {number} */
-export function normalizeContactDiscoveryLimit(value = DEFAULT_CONTACT_DISCOVERY_LIMIT) {
-  const parsed = Number(value);
-  const requested = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTACT_DISCOVERY_LIMIT;
-  return Math.min(DEFAULT_CONTACT_DISCOVERY_LIMIT, Math.max(1, requested));
-}
-
-/** @param {number|string|null|undefined} discoveryLimit @param {boolean} [dryRun] @returns {string[]} */
-export function buildContactDiscoveryArgs(discoveryLimit = DEFAULT_CONTACT_DISCOVERY_LIMIT, dryRun = false) {
-  const args = ['discover-queue', '--limit', String(normalizeContactDiscoveryLimit(discoveryLimit))];
-  if (dryRun) args.push('--dry-run');
-  return args;
 }
 
 /** @param {string[]} args @param {string} flag @param {string} fallback */
@@ -175,10 +164,15 @@ async function ingestGmail(options) {
   const errors = [];
   const candidates = [];
   const sourceCounts = {};
-  const sourceErrors = /** @type {Record<string, string[]>} */ ({ gmail: [], jackandjill: [] });
+  const sourceErrors = /** @type {Record<string, string[]>} */ ({ gmail: [], jackandjill: [], handshake: [], applications: [] });
+  let handshakeSyncStatus = null;
+  let handshakeInboxStatus = null;
+  let gmailAccessAvailable = false;
   try {
     const organized = await organizeGmail({ root: ROOT, dryRun: options.dryRun, limit: Math.max(1000, options.limit * 20) });
-    if (!organized.authenticated) {
+    if (organized.authenticated) {
+      gmailAccessAvailable = true;
+    } else {
       const message = 'Gmail organizer skipped: OAuth credentials are not configured';
       errors.push(message);
       sourceErrors.gmail.push(message);
@@ -196,12 +190,16 @@ async function ingestGmail(options) {
       timeoutMs: 120_000,
     });
     for (const result of results) {
-      if (!['gmail', 'jackandjill'].includes(result.id)) continue;
+      if (!['gmail', 'jackandjill', 'handshake'].includes(result.id)) continue;
       if (!result.ok) {
         const message = `${result.id} ingest failed: ${result.error || 'unknown error'}`;
         errors.push(message);
         sourceErrors[result.id].push(message);
         continue;
+      }
+      if (result.id === 'gmail') gmailAccessAvailable = true;
+      if (result.id === 'handshake') {
+        handshakeSyncStatus = readHandshakeSyncStatus(path.join(ROOT, 'data', 'handshake-sync-status.json'));
       }
       if (Array.isArray(result.result)) {
         const observedAt = new Date().toISOString();
@@ -216,6 +214,17 @@ async function ingestGmail(options) {
         }
       }
     }
+    handshakeSyncStatus = handshakeSyncStatus || readHandshakeSyncStatus(path.join(ROOT, 'data', 'handshake-sync-status.json'));
+    handshakeInboxStatus = readHandshakeInboxStatus(path.join(ROOT, 'data', 'handshake-inbox-sync-status.json'));
+    if (handshakeSyncStatus?.ok === false) {
+      const message = `Handshake browser sync unavailable: ${handshakeSyncStatus.error || 'unknown bridge error'} (cached records preserved)`;
+      errors.push(message);
+      sourceErrors.handshake.push(message);
+    } else if (!sourceCounts.handshake && !existsSync(path.join(ROOT, 'data', 'handshake-recommendations.json'))) {
+      const message = 'Handshake ingest has no local cache; run node handshake.mjs sync --write from an authenticated Chrome bridge';
+      errors.push(message);
+      sourceErrors.handshake.push(message);
+    }
     if (!sourceCounts.gmail && !hasGmailCredentials()) {
       const message = 'Gmail queue ingest unavailable until .env OAuth values are configured';
       errors.push(message);
@@ -226,7 +235,27 @@ async function ingestGmail(options) {
     errors.push(message);
     sourceErrors.gmail.push(message);
   }
-  return { candidates, errors, sourceCounts, sourceErrors };
+  let applicationImport;
+  try {
+    applicationImport = await syncApplicationIngest({
+      root: ROOT,
+      dryRun: options.dryRun,
+      skipGmail: !gmailAccessAvailable,
+      limit: Math.max(100, options.limit * 20),
+      logger: (...messages) => console.log(...messages),
+    });
+    sourceCounts.applications = applicationImport.email.signals;
+    sourceCounts.jackandjillBoard = applicationImport.board.cards;
+    for (const message of applicationImport.errors) {
+      errors.push(message);
+      sourceErrors.applications.push(message);
+    }
+  } catch (error) {
+    const message = `application evidence ingest failed: ${error instanceof Error ? error.message : String(error)}`;
+    errors.push(message);
+    sourceErrors.applications.push(message);
+  }
+  return { candidates, errors, sourceCounts, sourceErrors, applicationImport, handshakeSyncStatus, handshakeInboxStatus };
 }
 
 /** @param {Array<Record<string, unknown>>} input */
@@ -243,6 +272,9 @@ export function dedupCandidates(input) {
       }
       if (candidate.sourceUrl == null && current?.sourceUrl != null) {
         merged.sourceUrl = current.sourceUrl;
+      }
+      if (candidate.sourceEvidence == null && current?.sourceEvidence != null) {
+        merged.sourceEvidence = current.sourceEvidence;
       }
       byUrl.set(url, merged);
     }
@@ -312,8 +344,8 @@ function acquireLock(root, scheduled) {
   return () => { try { unlinkSync(LOCK_FILE); } catch { /* no-op */ } };
 }
 
-/** @param {string} root @param {number} limit @param {boolean} dryRun @param {boolean} scheduled @param {boolean} skipPublic @param {boolean} skipOutreach @param {number} discoveryLimit */
-async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach = false, discoveryLimit = DEFAULT_CONTACT_DISCOVERY_LIMIT) {
+/** @param {string} root @param {number} limit @param {boolean} dryRun @param {boolean} scheduled @param {boolean} skipPublic @param {boolean} skipOutreach */
+async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach = false) {
   const release = acquireLock(root, scheduled);
   try {
     await loadDotenvOnce();
@@ -322,17 +354,7 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
     const publicSources = await discoverPublic({ dryRun, limit, skipPublic });
     const pipelineJobs = parsePipeline(readText(path.join(root, 'data', 'pipeline.md')));
     const history = parseScanHistory(readText(path.join(root, 'data', 'scan-history.tsv')));
-    const pipelineCandidates = pipelineJobs.map((job) => {
-      const historyEntry = history.get(job.url);
-      return {
-        ...job,
-        ...(historyEntry || {}),
-        source: historyEntry?.source || job.source,
-        postedAt: historyEntry?.postedAt || null,
-        firstSeenAt: historyEntry?.firstSeenAt || null,
-        observedAt: null,
-      };
-    });
+    const pipelineCandidates = pipelineJobs.map((job) => mergePipelineHistory(job, history.get(job.url)));
     let candidates = dedupCandidates([...pipelineCandidates, ...publicSources.candidates, ...gmail.candidates]);
     const applications = loadApplications(root);
     candidates = candidates.filter((candidate) => !applications.has(applicationKey(candidate)) && candidate.liveness !== 'expired');
@@ -370,6 +392,20 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       sources: {
         gmail: { candidates: gmail.sourceCounts.gmail || 0, errors: gmail.sourceErrors.gmail.length },
         jackandjill: { candidates: gmail.sourceCounts.jackandjill || 0, errors: gmail.sourceErrors.jackandjill.length },
+        applications: { confirmations: gmail.sourceCounts.applications || 0, errors: gmail.sourceErrors.applications.length },
+        jackandjillBoard: { cards: gmail.sourceCounts.jackandjillBoard || 0 },
+        handshake: {
+          candidates: gmail.sourceCounts.handshake || 0,
+          errors: gmail.sourceErrors.handshake.length,
+          status: gmail.handshakeSyncStatus?.ok === true ? 'connected' : gmail.handshakeSyncStatus?.outcome || 'cache-only-or-unavailable',
+          observedAt: gmail.handshakeSyncStatus?.observedAt || null,
+          inbox: {
+            threads: gmail.handshakeInboxStatus?.threadCount || 0,
+            unread: gmail.handshakeInboxStatus?.unreadCount || 0,
+            status: gmail.handshakeInboxStatus?.ok === true ? 'connected' : gmail.handshakeInboxStatus?.outcome || 'not-checked',
+            observedAt: gmail.handshakeInboxStatus?.observedAt || null,
+          },
+        },
         public: { candidates: publicSources.candidates.length, errors: publicSources.errors.length },
       },
       errors: sourceErrors,
@@ -378,22 +414,6 @@ async function refresh(root, limit, dryRun, scheduled, skipPublic, skipOutreach 
       aging,
     };
     if (!dryRun) state = saveQueue(root, state);
-    const discoveryArgs = buildContactDiscoveryArgs(discoveryLimit, dryRun);
-    const contactDiscovery = await runNodeScript('outreach.mjs', discoveryArgs, { timeoutMs: 900_000 });
-    if (!dryRun) {
-      const discoveredState = readQueueState(QUEUE_JSON);
-      // Adopt the persisted state wholesale: the archived index on disk is
-      // newer than the in-memory one after eviction.
-      if (Array.isArray(discoveredState.items)) state = { ...discoveredState, lastRun: state.lastRun };
-    }
-    if (!contactDiscovery.ok) {
-      sourceErrors.push(`queue contact discovery failed: ${contactDiscovery.error}`);
-    }
-    state.lastRun.contactDiscovery = {
-      ok: contactDiscovery.ok,
-      limit: normalizeContactDiscoveryLimit(discoveryLimit),
-      output: `${contactDiscovery.stdout || ''}${contactDiscovery.stderr || ''}`.trim().slice(0, 4000),
-    };
     state.lastRun.errors = sourceErrors;
     if (skipOutreach) {
       state.lastRun.outreach = { ok: true, skipped: true, output: 'outreach deferred until a confirmed application submission' };
@@ -565,6 +585,7 @@ export function rehydrateQueue(root, blocker, dryRun) {
       fitConfidence: evaluation.confidence,
       fitReasons: evaluation.reasons,
       blockers: evaluation.blockers,
+      locationFit: evaluation.locationFit,
       lane: evaluation.lane,
       status: evaluation.status,
       selectedForToday: false,
@@ -651,14 +672,34 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'list';
   const limit = Math.max(1, Math.min(10, Number(readFlag(args, '--limit', String(DEFAULT_QUEUE_LIMIT))) || DEFAULT_QUEUE_LIMIT));
-  const discoveryLimit = normalizeContactDiscoveryLimit(readFlag(args, '--discovery-limit', String(DEFAULT_CONTACT_DISCOVERY_LIMIT)));
   if (command === 'refresh') {
-    await refresh(ROOT, limit, args.includes('--dry-run'), args.includes('--scheduled'), args.includes('--skip-public'), args.includes('--skip-outreach'), discoveryLimit);
+    await refresh(ROOT, limit, args.includes('--dry-run'), args.includes('--scheduled'), args.includes('--skip-public'), args.includes('--skip-outreach'));
     return;
   }
   if (command === 'list' || command === 'today') { listQueue(ROOT); return; }
   if (command === 'clear') { await clearQueue(ROOT); return; }
   if (command === 'verify') { verifyQueue(ROOT); return; }
+  if (command === 'questions-doctor') {
+    const doctor = await import('./question-propagation-doctor.mjs');
+    try {
+      const result = await doctor.runQuestionPropagationDoctor({
+        root: ROOT,
+        since: readFlag(args, '--since', ''),
+        all: args.includes('--all'),
+      });
+      console.log(args.includes('--json')
+        ? JSON.stringify(result, null, 2)
+        : doctor.renderQuestionPropagationReport(result));
+      process.exitCode = result.exitCode;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(args.includes('--json')
+        ? JSON.stringify({ schemaVersion: 1, type: 'question-propagation-doctor', status: 'invalid', exitCode: 2, error: message })
+        : `questions-doctor: ${message}`);
+      process.exitCode = 2;
+    }
+    return;
+  }
   if (command === 'rehydrate') {
     rehydrateQueue(ROOT, readFlag(args, '--blocker', '') || null, args.includes('--dry-run'));
     return;
@@ -671,6 +712,7 @@ async function main() {
       all: args.includes('--all'),
       apply: args.includes('--apply'),
       browser: args.includes('--browser'),
+      linkedinOnly: args.includes('--linkedin'),
     });
     console.log(args.includes('--json') ? JSON.stringify(result, null, 2) : health.renderHealthReport(result));
     return;
@@ -687,7 +729,7 @@ async function main() {
     return;
   }
   if (command === 'install-schedule') { await installSchedule(ROOT, args.includes('--dry-run')); return; }
-  throw new Error(`Unknown queue command "${command}". Use refresh, list, clear, health, status, verify, or install-schedule.`);
+  throw new Error(`Unknown queue command "${command}". Use refresh, list, clear, health, status, verify, questions-doctor, or install-schedule.`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {

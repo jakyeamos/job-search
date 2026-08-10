@@ -8,6 +8,7 @@ import { buildResumeRequest } from './resume-contract.mjs';
 import { freshnessPenalty } from './queue-aging.mjs';
 import { detectExperienceFloor } from './experience-floor.mjs';
 import { normalizeJackJobUrl } from './jackandjill-lib.mjs';
+import { normalizeHandshakeJobUrl } from './handshake-lib.mjs';
 import {
   companyRecommendationKey,
   jobFamilyKey,
@@ -30,6 +31,7 @@ const SOURCE_WEIGHTS = {
   greenhouse: 1.0,
   lever: 1.0,
   ashby: 1.0,
+  handshake: 1.0,
 };
 
 const LANE_RULES = [
@@ -154,6 +156,148 @@ export function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+const DEFAULT_LOCATION_SCORE_ADJUSTMENTS = Object.freeze({
+  remote_us: 0.2,
+  other_us: 0,
+  unknown: 0,
+  international_allowed: 0,
+  outside_scope: -1,
+});
+
+/** @param {unknown} value @param {number} fallback */
+function numericLocationAdjustment(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** @param {string} label @param {number} adjustment */
+function locationFitReason(label, adjustment) {
+  if (adjustment === 0) return `${label} (no score adjustment)`;
+  return `${label} (${adjustment > 0 ? '+' : ''}${adjustment.toFixed(2)})`;
+}
+
+/**
+ * Classify geography as a ranked signal. The profile's explicit strategy is
+ * additive: preferred local regions rise, national US remote stays in scope,
+ * and other US locations can be ranked below those lanes without being
+ * filtered out. With no strategy configured, preserve the legacy compatible
+ * location bump used by the queue unit fixtures.
+ *
+ * @param {string} candidateLocation
+ * @param {Record<string, unknown>} profile
+ * @param {string} [context] title/description context used to recognize an explicit remote designation
+ * @returns {{ id: string, label: string, mode: string, scoreAdjustment: number, reason: string|null }}
+ */
+export function classifyLocationFit(candidateLocation, profile = {}, context = '') {
+  const location = normalizeText(candidateLocation);
+  const locationContext = normalizeText(`${location} ${context}`);
+  const locationIsUnknown = !location || /^(?:location not listed|not listed|unknown|unspecified|n\/?a)$/i.test(location);
+  const strategy = profile?.location_strategy && typeof profile.location_strategy === 'object'
+    ? profile.location_strategy
+    : null;
+  const configured = Boolean(strategy);
+  const preferredRegions = Array.isArray(strategy?.preferred_regions)
+    ? strategy.preferred_regions.filter((region) => region && typeof region === 'object')
+    : [];
+
+  const preferred = preferredRegions.find((region) => {
+    const terms = Array.isArray(region.terms) ? region.terms : [];
+    const lowerLocation = location.toLowerCase();
+    return terms.some((term) => {
+      const normalizedTerm = normalizeText(term).toLowerCase();
+      return normalizedTerm && lowerLocation.includes(normalizedTerm);
+    });
+  });
+  if (preferred) {
+    const adjustment = numericLocationAdjustment(preferred.score_adjustment, 0);
+    const label = normalizeText(preferred.label || preferred.id || 'Preferred regional location');
+    return {
+      id: normalizeText(preferred.id || 'preferred_region').toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      label,
+      mode: 'preferred_region',
+      scoreAdjustment: adjustment,
+      reason: locationFitReason(label, adjustment),
+    };
+  }
+
+  const europe = EUROPE_LOCATION_RE.test(location);
+  const canada = CANADA_LOCATION_RE.test(location);
+  if (europe || canada) {
+    const adjustment = configured
+      ? numericLocationAdjustment(strategy?.international_allowed?.score_adjustment, DEFAULT_LOCATION_SCORE_ADJUSTMENTS.international_allowed)
+      : DEFAULT_LOCATION_SCORE_ADJUSTMENTS.international_allowed;
+    const label = europe ? 'International / Europe lane' : 'International / Canada lane';
+    return {
+      id: 'international_allowed',
+      label,
+      mode: 'international_allowed',
+      scoreAdjustment: adjustment,
+      reason: locationFitReason(label, adjustment),
+    };
+  }
+
+  if (NON_US_LOCATION_RE.test(location)) {
+    const adjustment = configured
+      ? numericLocationAdjustment(strategy?.outside_scope?.score_adjustment, DEFAULT_LOCATION_SCORE_ADJUSTMENTS.outside_scope)
+      : DEFAULT_LOCATION_SCORE_ADJUSTMENTS.outside_scope;
+    return {
+      id: 'outside_scope',
+      label: 'Outside target geography',
+      mode: 'blocked',
+      scoreAdjustment: adjustment,
+      reason: locationFitReason('Outside target geography', adjustment),
+    };
+  }
+
+  const remote = /\b(remote|distributed|work[ -]from[ -]home|work[ -]from[ -]anywhere)\b/i.test(locationContext);
+  if (configured && remote) {
+    const adjustment = numericLocationAdjustment(strategy?.remote_us?.score_adjustment, DEFAULT_LOCATION_SCORE_ADJUSTMENTS.remote_us);
+    const label = normalizeText(strategy?.remote_us?.label || 'National US remote');
+    return {
+      id: 'national_remote_us',
+      label,
+      mode: 'national_remote',
+      scoreAdjustment: adjustment,
+      reason: locationFitReason(label, adjustment),
+    };
+  }
+
+  if (configured && locationIsUnknown) {
+    const adjustment = numericLocationAdjustment(strategy?.unknown?.score_adjustment, DEFAULT_LOCATION_SCORE_ADJUSTMENTS.unknown);
+    const label = normalizeText(strategy?.unknown?.label || 'Location not listed');
+    return {
+      id: 'unknown',
+      label,
+      mode: 'unknown',
+      scoreAdjustment: adjustment,
+      reason: locationFitReason(label, adjustment),
+    };
+  }
+
+  if (configured) {
+    const adjustment = numericLocationAdjustment(strategy?.other_us?.score_adjustment, DEFAULT_LOCATION_SCORE_ADJUSTMENTS.other_us);
+    const label = normalizeText(strategy?.other_us?.label || 'Other US location');
+    return {
+      id: 'other_us',
+      label,
+      mode: 'other_us',
+      scoreAdjustment: adjustment,
+      reason: locationFitReason(label, adjustment),
+    };
+  }
+
+  const legacyCompatible = /\b(remote|united states|us|new york|nyc|chicago|seattle|buffalo|san francisco|austin|boston)\b/i.test(location)
+    || europe
+    || canada;
+  return {
+    id: legacyCompatible ? 'compatible' : 'unscored',
+    label: legacyCompatible ? 'Location appears compatible' : 'Location not used in score',
+    mode: legacyCompatible ? 'compatible' : 'unscored',
+    scoreAdjustment: legacyCompatible ? 0.2 : 0,
+    reason: legacyCompatible ? 'location appears compatible' : null,
+  };
+}
+
 /** @param {unknown} value @returns {string|null} */
 function isoTimestamp(value) {
   const parsed = Date.parse(String(value || ''));
@@ -169,6 +313,8 @@ export function normalizeKey(value) {
 export function normalizeUrl(value) {
   const jackUrl = normalizeJackJobUrl(value);
   if (jackUrl) return jackUrl;
+  const handshakeUrl = normalizeHandshakeJobUrl(value);
+  if (handshakeUrl) return handshakeUrl;
   try {
     const url = new URL(String(value || '').trim());
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';
@@ -256,6 +402,29 @@ export function parseScanHistory(text) {
   return byUrl;
 }
 
+/**
+ * Reattach scan-history metadata to a pipeline job. Gmail alerts are persisted
+ * in the pipeline before the next queue refresh, so preserve their alert
+ * liveness here or they can lose the priority that reserves the enrichment
+ * budget for subject-only candidates.
+ *
+ * @param {Record<string, unknown>} job
+ * @param {Record<string, unknown>|undefined} historyEntry
+ */
+export function mergePipelineHistory(job, historyEntry) {
+  const history = historyEntry && typeof historyEntry === 'object' ? historyEntry : {};
+  const source = normalizeText(String(history.source || job.source || inferSourceFromUrl(String(job.url || ''))));
+  return {
+    ...job,
+    ...history,
+    source,
+    postedAt: history.postedAt || null,
+    firstSeenAt: history.firstSeenAt || null,
+    liveness: source.toLowerCase().startsWith('gmail:') ? 'source-alert' : (job.liveness || 'uncertain'),
+    observedAt: null,
+  };
+}
+
 /** @param {string} root */
 export function loadProfile(root) {
   const file = path.join(root, 'config', 'profile.yml');
@@ -321,9 +490,57 @@ export function isGamblingCandidate(candidate) {
 }
 
 /**
+ * Mission fit is a separate, non-numeric signal. It helps the user notice when
+ * a paid role may connect to the civic mission without changing the A-G job-fit
+ * score or turning a values inference into an application recommendation.
+ *
+ * @param {Record<string, unknown>} candidate
+ * @param {Record<string, unknown>} profile
+ * @returns {{ label: 'aligned'|'adjacent'|'not_assessed'|'not_configured', reason: string, matches: string[] }}
+ */
+export function classifyMissionFit(candidate, profile = {}) {
+  const mission = profile?.civic_mission;
+  if (!mission || mission.enabled !== true) {
+    return { label: 'not_configured', reason: 'No civic mission is configured for this profile.', matches: [] };
+  }
+  const areas = Array.isArray(mission.issue_areas)
+    ? mission.issue_areas.filter((area) => typeof area === 'string').map((area) => normalizeText(area)).filter(Boolean)
+    : [];
+  const text = [candidate.title, candidate.company, candidate.description, candidate.location]
+    .map((value) => normalizeText(value))
+    .join(' ')
+    .toLowerCase();
+  const matches = areas.filter((area) => {
+    const lower = area.toLowerCase();
+    if (text.includes(lower)) return true;
+    const terms = lower.split(/[^a-z0-9]+/).filter((term) => term.length >= 5);
+    return terms.length > 0 && terms.some((term) => text.includes(term));
+  });
+  if (matches.length) {
+    return {
+      label: 'aligned',
+      reason: `Posting language overlaps the civic mission: ${matches.slice(0, 3).join(', ')}.`,
+      matches,
+    };
+  }
+  if (/\b(civic|public interest|government|municipal|community|nonprofit|democracy|election|policy|social impact)\b/i.test(text)) {
+    return {
+      label: 'adjacent',
+      reason: 'Posting has a public-interest or civic signal; verify the organization and actual work separately.',
+      matches: [],
+    };
+  }
+  return {
+    label: 'not_assessed',
+    reason: 'No clear civic-mission signal was found in the posting; this does not imply values misalignment.',
+    matches: [],
+  };
+}
+
+/**
  * @param {{ title?: string, company?: string, location?: string, description?: string, source?: string, liveness?: string, url?: string }} candidate
  * @param {Record<string, unknown>} profile
- * @returns {{ score: number, eligible: boolean, status: 'ready'|'in_review'|'excluded', confidence: 'high'|'medium'|'low', reasons: string[], blockers: string[], lane: string }}
+ * @returns {{ score: number, eligible: boolean, status: 'ready'|'in_review'|'excluded', confidence: 'high'|'medium'|'low', reasons: string[], blockers: string[], lane: string, locationFit: { id: string, label: string, mode: string, scoreAdjustment: number, reason: string|null } }}
  */
 export function scoreCandidate(candidate, profile = {}) {
   const title = normalizeText(candidate.title);
@@ -341,6 +558,7 @@ export function scoreCandidate(candidate, profile = {}) {
   const backendSignal = /\b(backend|back-end|api|platform|service|serverless|distributed)\b/i.test(title);
   const aiDataSignal = /\b(ai|ml|machine learning|llm|genai|data|analytics|sql|pipeline)\b/i.test(text);
   const substanceMatch = targetMatch || backendSignal || aiDataSignal;
+  const locationFit = classifyLocationFit(location, profile, `${title} ${description}`);
 
   const blockers = [];
   if (HARD_TITLE_RE.test(title)) blockers.push('seniority title suggests a role above the target level');
@@ -372,7 +590,7 @@ export function scoreCandidate(candidate, profile = {}) {
   const marketGate = foreignMarketLanguageGate(title, location, spoken);
   if (marketGate) blockers.push(marketGate);
   if (blockers.length > 0) {
-    return { score: 0, eligible: false, status: 'excluded', confidence: 'low', reasons: [], blockers, lane: selectLane(title, description) };
+    return { score: 0, eligible: false, status: 'excluded', confidence: 'low', reasons: [], blockers, lane: selectLane(title, description), locationFit };
   }
 
   const reasons = [];
@@ -380,11 +598,8 @@ export function scoreCandidate(candidate, profile = {}) {
   if (targetMatch) { score += 0.9; reasons.push('title matches a target technical role'); }
   if (backendSignal) { score += 0.35; reasons.push('backend/platform signal'); }
   if (aiDataSignal) { score += 0.35; reasons.push('AI/data signal'); }
-  if (/\b(remote|united states|us|new york|nyc|chicago|seattle|buffalo|san francisco|austin|boston)\b/i.test(location)
-    || EUROPE_LOCATION_RE.test(location)
-    || CANADA_LOCATION_RE.test(location)) {
-    score += 0.2; reasons.push('location appears compatible');
-  }
+  if (locationFit.scoreAdjustment !== 0) score += locationFit.scoreAdjustment;
+  if (locationFit.reason) reasons.push(locationFit.reason);
   if (experienceFloor !== null && experienceFloor >= EXPERIENCE_CONDITIONAL_DQ_FLOOR) {
     score -= EXPERIENCE_HEAVY_PENALTY;
     reasons.push(`posting states a ${experienceFloor}-year experience floor, offset by a matching role substance`);
@@ -417,6 +632,7 @@ export function scoreCandidate(candidate, profile = {}) {
     reasons: reasons.length ? reasons : ['technical role signal is present but evidence is limited'],
     blockers: [],
     lane: selectLane(title, description),
+    locationFit,
   };
 }
 
@@ -438,6 +654,9 @@ export function buildQueueItem(candidate, profile, root) {
     source,
     sourceLabel: candidate.sourceLabel || source,
     sourceMessageId: candidate.sourceMessageId || null,
+    sourceEvidence: candidate.sourceEvidence && typeof candidate.sourceEvidence === 'object'
+      ? candidate.sourceEvidence
+      : null,
     sourceUrl: candidate.sourceUrl || canonicalUrl,
     canonicalUrl,
     applyUrl: candidate.applyUrl || canonicalUrl,
@@ -458,6 +677,10 @@ export function buildQueueItem(candidate, profile, root) {
     fitConfidence: evaluation.confidence,
     fitReasons: evaluation.reasons,
     blockers: evaluation.blockers,
+    locationFit: evaluation.locationFit,
+    missionFit: candidate.missionFit && typeof candidate.missionFit === 'object'
+      ? candidate.missionFit
+      : classifyMissionFit(candidate, profile),
     lane: evaluation.lane,
     outreach: {
       suggested: evaluation.status === 'ready',
@@ -737,6 +960,7 @@ export function renderQueueMarkdown(state) {
       `- Status: ${item.status} | score ${Number(item.fitScore || 0).toFixed(1)}/5 | ${item.fitConfidence} confidence`,
       `- Source: ${markdown(item.sourceLabel || item.source)} | liveness: ${item.liveness}`,
       `- Lane: ${item.lane} | resume: ${item.resumeStatus}`,
+      item.missionFit ? `- Mission fit: ${markdown(item.missionFit.label)} — ${markdown(item.missionFit.reason)}` : '- Mission fit: not assessed',
       `- Apply: ${item.applyUrl || item.canonicalUrl}`,
       `- Why: ${(item.fitReasons || []).map(markdown).join('; ') || 'Fit review needed'}`,
       item.outreach?.suggested ? `- Optional outreach search: ${markdown(item.outreach.searchQuery)}` : '- Outreach: optional',

@@ -5,6 +5,7 @@ import { assertTargetAccount, buildFilterPlan, classifyAlert } from '../gmail.mj
 import { buildLaunchdPlist, buildUiServerPlist, checkPublicLiveness } from '../queue.mjs';
 import {
   buildQueue,
+  mergePipelineHistory,
   parsePipeline,
   scoreCandidate,
   stableQueueId,
@@ -379,4 +380,15 @@ test('pipeline parser preserves URL and source note', () => {
 test('pipeline parser does not treat evaluation scores as locations', () => {
   const [job] = parsePipeline('- [x] https://nuro.ai/careersitem?gh_jid=7351066 | Nuro | Software Engineer, AI Platform - New Grad (Mountain View) | 3.7/5 | Evaluated\n');
   assert.equal(job.location, '');
+});
+
+test('pipeline history restores Gmail alert priority after canonical persistence', () => {
+  const [job] = parsePipeline('- [ ] https://www.linkedin.com/comm/jobs/view/4448749091/ |  | Job lead (email)\n');
+  const candidate = mergePipelineHistory(job, {
+    source: 'gmail:linkedin',
+    postedAt: '2026-08-08',
+    firstSeenAt: '2026-08-08',
+  });
+  assert.equal(candidate.source, 'gmail:linkedin');
+  assert.equal(candidate.liveness, 'source-alert');
 });

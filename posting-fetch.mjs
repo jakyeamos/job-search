@@ -23,6 +23,8 @@
  */
 
 import { resolveAtsApi } from './liveness-api.mjs';
+import { classifyLiveness } from './liveness-core.mjs';
+import { isHandshakeUrl } from './handshake-lib.mjs';
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 const TIMEOUT_MS = 20_000;
@@ -118,6 +120,66 @@ export function canFetchPosting(url) {
   return Boolean(linkedinJobId(url) || resolveAtsApi(url) || resolveEmbeddedGreenhouse(url));
 }
 
+/**
+ * Resolve a posting to the cheapest public batch source for its ATS board.
+ * Greenhouse and Lever expose organization-level listings, while Ashby's
+ * existing endpoint is already board-level. Grouping by this descriptor lets a
+ * 30-role queue chunk fetch one payload per company instead of one request per
+ * role.
+ *
+ * @param {string} rawUrl
+ * @returns {{
+ *   ats: 'greenhouse'|'lever'|'ashby',
+ *   key: string,
+ *   apiUrl: string,
+ *   jobId: string,
+ *   guessedBoard?: boolean,
+ * } | null}
+ */
+export function resolvePostingBatchSource(rawUrl) {
+  const resolved = resolveAtsApi(rawUrl) || resolveEmbeddedGreenhouse(rawUrl);
+  if (!resolved) return null;
+
+  if (resolved.ats === 'greenhouse') {
+    const board = resolved.parts.board;
+    const jobId = resolved.parts.id || resolved.parts.jobId;
+    if (!board || !jobId) return null;
+    return {
+      ats: 'greenhouse',
+      key: `greenhouse:${board}`,
+      apiUrl: `https://boards-api.greenhouse.io/v1/boards/${board}/jobs?content=true`,
+      jobId,
+      guessedBoard: Boolean(resolved.guessedBoard),
+    };
+  }
+
+  if (resolved.ats === 'lever') {
+    const slug = resolved.parts.slug;
+    const jobId = resolved.parts.id;
+    if (!slug || !jobId) return null;
+    return {
+      ats: 'lever',
+      key: `lever:${slug}`,
+      apiUrl: `https://api.lever.co/v0/postings/${slug}?mode=json`,
+      jobId,
+    };
+  }
+
+  if (resolved.ats === 'ashby') {
+    const org = resolved.parts.org;
+    const jobId = resolved.parts.jobId;
+    if (!org || !jobId) return null;
+    return {
+      ats: 'ashby',
+      key: `ashby:${org}`,
+      apiUrl: resolved.apiUrl,
+      jobId,
+    };
+  }
+
+  return null;
+}
+
 /** @param {(url: string, init?: any) => Promise<any>} fetchFn */
 async function timedFetch(fetchFn, url, headers) {
   const controller = new AbortController();
@@ -154,7 +216,19 @@ async function fetchLinkedin(fetchFn, url) {
     return { ok: false, outcome: 'blocked', reason: `guest endpoint ${res.status} — throttled or unavailable` };
   }
   if (!res.ok) return { ok: false, outcome: 'error', reason: `guest endpoint ${res.status}` };
-  const fields = parseLinkedinPosting(await res.text());
+  const html = await res.text();
+  const pageLiveness = classifyLiveness({
+    status: res.status,
+    bodyText: htmlToText(html),
+  });
+  if (pageLiveness.result === 'expired' && pageLiveness.code === 'expired_body') {
+    return {
+      ok: false,
+      outcome: 'expired',
+      reason: `guest endpoint closure banner: ${pageLiveness.reason}`,
+    };
+  }
+  const fields = parseLinkedinPosting(html);
   if (fields.description.length < MIN_DESCRIPTION_CHARS) {
     return { ok: false, outcome: 'empty', reason: `description too short (${fields.description.length} chars)` };
   }
@@ -207,6 +281,163 @@ async function fetchAts(fetchFn, url) {
 }
 
 /**
+ * Convert one job from a board payload into the normal posting-fetch result.
+ * A board listing contains only currently published roles, so an absent
+ * official job id is definitive expiry. Guessed embedded-Greenhouse board
+ * names remain conservative: absence is unsupported, never expired.
+ *
+ * @param {ReturnType<typeof resolvePostingBatchSource>} source
+ * @param {any} json
+ * @returns {FetchOutcome}
+ */
+function parseBoardPosting(source, json) {
+  if (!source) return { ok: false, outcome: 'unsupported', reason: 'no batch source' };
+  const jobs = Array.isArray(json)
+    ? json
+    : Array.isArray(json?.jobs)
+      ? json.jobs
+      : null;
+  if (!jobs) return { ok: false, outcome: 'error', reason: `${source.ats} board returned an unexpected payload` };
+
+  const job = jobs.find((entry) => String(entry?.id || '').toLowerCase() === source.jobId.toLowerCase());
+  if (!job) {
+    if (source.guessedBoard) {
+      return {
+        ok: false,
+        outcome: 'unsupported',
+        reason: `guessed Greenhouse board did not list posting ${source.jobId}`,
+      };
+    }
+    return { ok: false, outcome: 'expired', reason: `${source.ats} board no longer lists posting ${source.jobId}` };
+  }
+
+  let raw = '';
+  let fields = {};
+  if (source.ats === 'greenhouse') {
+    raw = job.content || '';
+    fields = { title: job.title || '', location: job.location?.name || '' };
+  } else if (source.ats === 'lever') {
+    raw = [job.descriptionPlain || job.description || '', ...(job.lists || []).map(
+      (list) => `${list?.text || ''}\n${list?.content || ''}`,
+    )].join('\n');
+    fields = { title: job.text || '', location: job.categories?.location || '' };
+  } else {
+    if (job.isListed === false) {
+      return { ok: false, outcome: 'expired', reason: `ashby board marks posting ${source.jobId} unlisted` };
+    }
+    raw = job.descriptionHtml || job.descriptionPlain || '';
+    fields = { title: job.title || '', location: job.location || '' };
+  }
+
+  const description = htmlToText(raw);
+  if (description.length < MIN_DESCRIPTION_CHARS) {
+    return { ok: false, outcome: 'empty', reason: `description too short (${description.length} chars)` };
+  }
+  return { ok: true, fields: { ...fields, description }, liveness: 'active' };
+}
+
+/**
+ * Fetch many postings with one request per ATS organization wherever possible.
+ * Results preserve input order. LinkedIn and unsupported hosts use the existing
+ * single-posting path, while Greenhouse, Lever, and Ashby share board payloads.
+ *
+ * @param {string[]} urls
+ * @param {{
+ *   fetchFn?: (url: string, init?: any) => Promise<any>,
+ *   concurrency?: number,
+ *   gapMs?: number,
+ * }} [options]
+ * @returns {Promise<FetchOutcome[]>}
+ */
+export async function fetchPostings(urls, options = {}) {
+  const fetchFn = options.fetchFn || fetch;
+  const list = Array.isArray(urls) ? urls : [];
+  /** @type {FetchOutcome[]} */
+  const results = new Array(list.length);
+  /** @type {Map<string, { source: NonNullable<ReturnType<typeof resolvePostingBatchSource>>, entries: Array<{ index: number, url: string }> }>} */
+  const groups = new Map();
+  const singles = [];
+
+  for (const [index, url] of list.entries()) {
+    const source = resolvePostingBatchSource(url);
+    if (source) {
+      const group = groups.get(source.key) || { source, entries: [] };
+      group.entries.push({ index, url });
+      groups.set(source.key, group);
+    } else {
+      singles.push({ index, url });
+    }
+  }
+
+  const work = [
+    ...[...groups.values()].map((group) => ({ kind: 'group', group })),
+    ...singles.map((entry) => ({ kind: 'single', entry })),
+  ];
+
+  await pool(work, options.concurrency ?? 6, options.gapMs ?? 0, async (item) => {
+    if (item.kind === 'single') {
+      results[item.entry.index] = await fetchPosting(item.entry.url, { fetchFn });
+      return;
+    }
+
+    const { source, entries } = item.group;
+    let response;
+    try {
+      response = await timedFetch(fetchFn, source.apiUrl, {
+        'user-agent': 'career-ops-posting-fetch/1.0',
+        accept: 'application/json',
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      for (const entry of entries) results[entry.index] = { ok: false, outcome: 'error', reason };
+      return;
+    }
+
+    if (response.status === 429 || response.status >= 500) {
+      const reason = `${source.ats} board ${response.status} — throttled or unavailable`;
+      for (const entry of entries) results[entry.index] = { ok: false, outcome: 'blocked', reason };
+      return;
+    }
+    if (response.status === 404 || response.status === 410) {
+      if (source.guessedBoard) {
+        const reason = `${source.ats} board ${response.status} for guessed board`;
+        for (const entry of entries) results[entry.index] = { ok: false, outcome: 'unsupported', reason };
+        return;
+      }
+      // A missing organization-level endpoint is not enough to expire every
+      // role at once. Fall back to the established per-job endpoint so provider
+      // drift degrades safely instead of creating a mass false-expiry.
+      for (const entry of entries) {
+        results[entry.index] = await fetchPosting(entry.url, { fetchFn });
+      }
+      return;
+    }
+    if (!response.ok) {
+      const reason = `${source.ats} board ${response.status}`;
+      for (const entry of entries) results[entry.index] = { ok: false, outcome: 'error', reason };
+      return;
+    }
+
+    let json;
+    try {
+      json = await response.json();
+    } catch {
+      for (const entry of entries) {
+        results[entry.index] = { ok: false, outcome: 'error', reason: `unparseable ${source.ats} board payload` };
+      }
+      return;
+    }
+
+    for (const entry of entries) {
+      const entrySource = resolvePostingBatchSource(entry.url);
+      results[entry.index] = parseBoardPosting(entrySource, json);
+    }
+  });
+
+  return results;
+}
+
+/**
  * @param {string} url
  * @param {{ fetchFn?: (url: string, init?: any) => Promise<any> }} [options]
  * @returns {Promise<FetchOutcome>}
@@ -215,6 +446,9 @@ export async function fetchPosting(url, options = {}) {
   const fetchFn = options.fetchFn || fetch;
   if (linkedinJobId(url)) return fetchLinkedin(fetchFn, url);
   if (resolveAtsApi(url) || resolveEmbeddedGreenhouse(url)) return fetchAts(fetchFn, url);
+  if (isHandshakeUrl(url)) {
+    return { ok: false, outcome: 'unsupported', reason: 'authenticated Handshake browser record required; public fetch is disabled' };
+  }
   return { ok: false, outcome: 'unsupported', reason: 'no public description source for this host' };
 }
 
@@ -261,19 +495,32 @@ export async function enrichCandidates(candidates, options = {}) {
   // Alert candidates are the ones scored blind, so they get the fetch budget first.
   // Scanned candidates arrive with a real title and company already, and reach the
   // caller in source order — without this they would eat the whole limit.
+  const alertEligible = eligible.filter(({ candidate }) => candidate.liveness === 'source-alert');
+  // Direct Gmail results carry a message id and are newest by construction.
+  // Persisted pipeline alerts do not retain message order, but pipeline writes
+  // append, so reverse them to spend the bounded fetch budget on the newest
+  // persisted alerts first.
+  const directAlerts = alertEligible.filter(({ candidate }) => candidate.sourceMessageId);
+  const persistedAlerts = alertEligible.filter(({ candidate }) => !candidate.sourceMessageId).reverse();
   const targets = [
-    ...eligible.filter(({ candidate }) => candidate.liveness === 'source-alert'),
+    ...directAlerts,
+    ...persistedAlerts,
     ...eligible.filter(({ candidate }) => candidate.liveness !== 'source-alert'),
   ].slice(0, limit);
   outcomes.skipped += eligible.length - targets.length;
 
   if (targets.length) {
-    await pool(targets, options.concurrency ?? 2, options.gapMs ?? 600, async ({ candidate, url }) => {
-      const result = await fetchPosting(url, { fetchFn: options.fetchFn });
+    const results = await fetchPostings(targets.map(({ url }) => url), {
+      concurrency: options.concurrency ?? 2,
+      gapMs: options.gapMs ?? 600,
+      fetchFn: options.fetchFn,
+    });
+    for (const [index, { candidate }] of targets.entries()) {
+      const result = results[index];
       if (!result.ok) {
         outcomes[result.outcome] += 1;
         if (result.outcome === 'expired') enriched.set(candidate, { ...candidate, liveness: 'expired' });
-        return;
+        continue;
       }
       outcomes.updated += 1;
       enriched.set(candidate, {
@@ -287,7 +534,7 @@ export async function enrichCandidates(candidates, options = {}) {
         liveness: result.liveness,
         descriptionFetchedAt: new Date().toISOString(),
       });
-    });
+    }
   }
 
   if (options.log) {
