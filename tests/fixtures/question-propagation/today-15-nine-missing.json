@@ -1,0 +1,223 @@
+{
+  "since": "2026-08-04T04:00:00.000Z",
+  "generatedAt": "2026-08-04T15:00:00.000Z",
+  "expected": {
+    "canonicalQuestions": 15,
+    "observations": 16,
+    "roles": 8,
+    "answerableQuestions": 9,
+    "humanOnlyFields": 4,
+    "alreadyAnsweredQuestions": 2,
+    "capturedButUnpublishedQuestions": 9
+  },
+  "service": {
+    "running": true,
+    "freshness": "stale",
+    "predatesSource": true,
+    "startedAt": "2026-08-04T12:05:26.000Z",
+    "startedAtSource": "process-table",
+    "pids": [45227],
+    "health": {
+      "reachable": true,
+      "exposesStartedAt": false,
+      "error": null
+    },
+    "processInspection": "available",
+    "processError": null,
+    "newestSource": {
+      "path": "queue-ui.mjs",
+      "modifiedAt": "2026-08-04T14:54:12.000Z"
+    },
+    "sourceFiles": []
+  },
+  "ledger": {
+    "schemaVersion": 2,
+    "entries": [
+      {
+        "id": "q_answerable_01",
+        "question": "Why do you want to join Fixture?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-1", "company": "Fixture Co 1", "role": "Fixture Role 1", "url": "https://example.test/role-1", "required": true, "recordedAt": "2026-08-04T13:01:00.000Z" },
+          { "queueId": "role-2", "company": "Fixture Co 2", "role": "Fixture Role 2", "url": "https://example.test/role-2", "required": true, "recordedAt": "2026-08-04T13:02:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_02",
+        "question": "Describe a production Python system you shipped.",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-3", "company": "Fixture Co 3", "role": "Fixture Role 3", "url": "https://example.test/role-3", "required": true, "recordedAt": "2026-08-04T13:03:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_03",
+        "question": "How do you use AI tools today?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-4", "company": "Fixture Co 4", "role": "Fixture Role 4", "url": "https://example.test/role-4", "required": true, "recordedAt": "2026-08-04T13:04:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_04",
+        "question": "Describe your customer delivery experience.",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-5", "company": "Fixture Co 5", "role": "Fixture Role 5", "url": "https://example.test/role-5", "required": true, "recordedAt": "2026-08-04T13:05:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_05",
+        "question": "Which cloud platforms have you used?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-6", "company": "Fixture Co 6", "role": "Fixture Role 6", "url": "https://example.test/role-6", "required": true, "recordedAt": "2026-08-04T13:06:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_06",
+        "question": "What is your earliest start date?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-7", "company": "Fixture Co 7", "role": "Fixture Role 7", "url": "https://example.test/role-7", "required": true, "recordedAt": "2026-08-04T13:07:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_07",
+        "question": "Where did you hear about this role?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": false,
+        "contexts": [
+          { "queueId": "role-8", "company": "Fixture Co 8", "role": "Fixture Role 8", "url": "https://example.test/role-8", "required": false, "recordedAt": "2026-08-04T13:08:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_08",
+        "question": "Will you require employment sponsorship?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "high",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-1", "company": "Fixture Co 1", "role": "Fixture Role 1", "url": "https://example.test/role-1", "required": true, "recordedAt": "2026-08-04T13:09:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_answerable_09",
+        "question": "What work location do you prefer?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "normal",
+        "required": false,
+        "contexts": [
+          { "queueId": "role-2", "company": "Fixture Co 2", "role": "Fixture Role 2", "url": "https://example.test/role-2", "required": false, "recordedAt": "2026-08-04T13:10:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_human_01",
+        "question": "I attest that the information is accurate.",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "high",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-3", "company": "Fixture Co 3", "role": "Fixture Role 3", "url": "https://example.test/role-3", "required": true, "recordedAt": "2026-08-04T13:11:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_human_02",
+        "question": "I certify that I meet the role requirements.",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "high",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-4", "company": "Fixture Co 4", "role": "Fixture Role 4", "url": "https://example.test/role-4", "required": true, "recordedAt": "2026-08-04T13:12:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_human_03",
+        "question": "Do you agree to the terms and conditions?",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "high",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-5", "company": "Fixture Co 5", "role": "Fixture Role 5", "url": "https://example.test/role-5", "required": true, "recordedAt": "2026-08-04T13:13:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_human_04",
+        "question": "Text message consent",
+        "answer": null,
+        "answerStatus": "unanswered",
+        "sensitivity": "high",
+        "required": false,
+        "contexts": [
+          { "queueId": "role-6", "company": "Fixture Co 6", "role": "Fixture Role 6", "url": "https://example.test/role-6", "required": false, "recordedAt": "2026-08-04T13:14:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_resolved_01",
+        "question": "Country/Region",
+        "answer": "Fixture resolved value",
+        "answerStatus": "confirmed",
+        "answerVersion": 1,
+        "scope": "question",
+        "source": "user",
+        "sensitivity": "normal",
+        "required": true,
+        "contexts": [
+          { "queueId": "role-7", "company": "Fixture Co 7", "role": "Fixture Role 7", "url": "https://example.test/role-7", "required": true, "recordedAt": "2026-08-04T13:15:00.000Z" }
+        ]
+      },
+      {
+        "id": "q_resolved_02",
+        "question": "Are you willing to travel?",
+        "answer": "Fixture resolved value",
+        "answerStatus": "confirmed",
+        "answerVersion": 1,
+        "scope": "question",
+        "source": "user",
+        "sensitivity": "normal",
+        "required": false,
+        "contexts": [
+          { "queueId": "role-8", "company": "Fixture Co 8", "role": "Fixture Role 8", "url": "https://example.test/role-8", "required": false, "recordedAt": "2026-08-04T13:16:00.000Z" }
+        ]
+      }
+    ]
+  },
+  "queue": {
+    "schemaVersion": 1,
+    "items": [
+      { "id": "role-1", "company": "Fixture Co 1", "title": "Fixture Role 1", "applyUrl": "https://example.test/role-1", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } },
+      { "id": "role-2", "company": "Fixture Co 2", "title": "Fixture Role 2", "applyUrl": "https://example.test/role-2", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } },
+      { "id": "role-3", "company": "Fixture Co 3", "title": "Fixture Role 3", "applyUrl": "https://example.test/role-3", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } },
+      { "id": "role-4", "company": "Fixture Co 4", "title": "Fixture Role 4", "applyUrl": "https://example.test/role-4", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } },
+      { "id": "role-5", "company": "Fixture Co 5", "title": "Fixture Role 5", "applyUrl": "https://example.test/role-5", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } },
+      { "id": "role-6", "company": "Fixture Co 6", "title": "Fixture Role 6", "applyUrl": "https://example.test/role-6", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } },
+      { "id": "role-7", "company": "Fixture Co 7", "title": "Fixture Role 7", "applyUrl": "https://example.test/role-7", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } },
+      { "id": "role-8", "company": "Fixture Co 8", "title": "Fixture Role 8", "applyUrl": "https://example.test/role-8", "status": "ready", "applicationState": "prepared_for_review", "applicationResult": { "needsReview": [] } }
+    ]
+  }
+}

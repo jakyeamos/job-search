@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "invariants": [
+    {
+      "id": "human-only-review-not-reusable",
+      "description": "Human-only legal and privacy acknowledgements remain in the per-application handoff and never enter the reusable answer-question queue.",
+      "owner": "application-review-classifier",
+      "surfaces": [
+        "apply/question-ledger.mjs",
+        "queue-ui.mjs",
+        "tests/queue-ui-payload.test.mjs"
+      ],
+      "verification": {
+        "argv": [
+          "node",
+          "--test",
+          "tests/queue-ui-payload.test.mjs"
+        ]
+      }
+    }
+  ]
+}

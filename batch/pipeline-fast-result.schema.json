@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requested",
+    "processed",
+    "decision_cards",
+    "skipped",
+    "errors",
+    "pipeline_verified"
+  ],
+  "properties": {
+    "requested": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "processed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "decision_cards": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pipeline_verified": {
+      "type": "boolean"
+    }
+  }
+}
