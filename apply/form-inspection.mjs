@@ -1,5 +1,8 @@
 // @ts-check
 
+import { normalizeChoiceField } from './lib/choice-shape.mjs';
+import { readReactSelectOptions } from './lib/react-select-options.mjs';
+
 /** @param {string} url */
 export function normalizeApplicationUrl(url) {
   const value = String(url || '').trim();
@@ -35,9 +38,10 @@ export function applicationAdapter(url) {
 
 /**
  * Inspect the rendered form without filling controls, selecting options,
- * uploading files, or reading current values. A posting-page Apply control
- * may be clicked only to reach the form; final submission controls remain
- * inspection-only.
+ * uploading files, or reading current values. Choice widgets may be opened
+ * briefly to read their rendered option labels and are closed immediately.
+ * A posting-page Apply control may be clicked only to reach the form; final
+ * submission controls remain inspection-only.
  * @param {import('playwright').Page} page
  * @param {{ expectedTitle?: string }} [options]
  */
@@ -273,7 +277,17 @@ export async function inspectApplicationPage(page, options = {}) {
         || hasApplicationShell),
     };
   }, String(options.expectedTitle || ''));
-  return { url: page.url(), ...report };
+  const controls = Array.isArray(report.controls) ? report.controls : [];
+  for (const control of controls) {
+    if (control.kind !== 'combobox' || control.category !== 'question' || control.options?.length) continue;
+    const options = await readReactSelectOptions(page, {
+      id: control.id,
+      label: control.label,
+    });
+    if (options.length) control.options = options;
+  }
+  const normalizedControls = controls.map(normalizeChoiceField);
+  return { url: page.url(), ...report, controls: normalizedControls };
 }
 
 /** @param {Record<string, unknown>} [inspection] */

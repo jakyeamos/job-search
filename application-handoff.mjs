@@ -11,6 +11,7 @@ import {
   adapterCommand,
   adapterForUrl,
   persistApplicationResult,
+  persistPreparedApplicationItem,
   prepareApplicationArtifacts,
   queueApplicationGate,
   runAdapter,
@@ -28,6 +29,7 @@ const SESSION_FILE = path.join(ROOT, 'data', 'application-handoff-session.json')
 const HANDOFF_LOCK_FILE = path.join(ROOT, 'data', 'application-handoff.lock');
 const HANDOFF_ROOT = path.join(ROOT, 'output', 'application-handoffs');
 const DEFAULT_TIMEOUT_SECONDS = 600;
+const MAX_TIMEOUT_SECONDS = 12 * 60 * 60;
 
 function readJson(file, fallback) {
   if (!existsSync(file)) return fallback;
@@ -80,12 +82,28 @@ async function waitForCdp(endpoint, timeoutMs = 10_000) {
   return false;
 }
 
+export function persistentContextOptions(port, channel = null) {
+  return {
+    headless: false,
+    ...(channel ? { channel } : {}),
+    args: [`--remote-debugging-port=${port}`],
+  };
+}
+
+export function launchPersistentHandoffContext(browserType, profileDir, port, channel = null) {
+  return browserType.launchPersistentContext(profileDir, persistentContextOptions(port, channel));
+}
+
 async function launchBrowserSession() {
   const existing = readJson(SESSION_FILE, null);
   if (existing?.status === 'running' && existing.endpoint) {
     try {
       const browser = await chromium.connectOverCDP(existing.endpoint);
-      const context = browser.contexts()[0] || await browser.newContext();
+      const context = browser.contexts()[0];
+      if (!context) {
+        await browser.close().catch(() => {});
+        throw new Error('the existing browser handoff has no persistent context');
+      }
       return { browser, context, endpoint: existing.endpoint, reused: true };
     } catch (error) {
       if (existing.pid && Number(existing.pid) !== process.pid) {
@@ -99,29 +117,41 @@ async function launchBrowserSession() {
     }
   }
 
+  saveSession({
+    status: 'starting',
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    error: null,
+    endpoint: null,
+    pid: null,
+    preparation: [],
+    pages: [],
+  });
+
   mkdirSync(HANDOFF_ROOT, { recursive: true });
   const port = await findFreePort();
   const endpoint = `http://127.0.0.1:${port}`;
   const profileDir = path.join(HANDOFF_ROOT, 'chrome-profile');
-  let controller = null;
+  let context = null;
   let lastError = null;
-  for (const channel of ['chrome-beta', 'chrome', null]) {
+  for (const channel of ['chrome', null]) {
     try {
-      controller = await chromium.launch(channel
-        ? { headless: false, channel, args: [`--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`] }
-        : { headless: false, args: [`--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`] });
+      context = await launchPersistentHandoffContext(chromium, profileDir, port, channel);
       break;
     } catch (error) {
       lastError = error;
     }
   }
-  if (!controller) throw lastError || new Error('unable to launch a headed Chrome handoff window');
+  if (!context) throw lastError || new Error('unable to launch a headed Chrome handoff window');
   if (!await waitForCdp(endpoint)) {
-    await controller.close();
+    await context.close().catch(() => {});
     throw new Error('Chrome launched but its handoff connection was unavailable');
   }
-  const browser = await chromium.connectOverCDP(endpoint);
-  const context = browser.contexts()[0] || await browser.newContext();
+  const browser = context.browser();
+  if (!browser) {
+    await context.close().catch(() => {});
+    throw new Error('Chrome launched without a browser for its persistent context');
+  }
   saveSession({
     schemaVersion: 1,
     status: 'running',
@@ -131,12 +161,16 @@ async function launchBrowserSession() {
     startedAt: new Date().toISOString(),
     pages: [],
   });
-  return { browser, controller, context, endpoint, reused: false };
+  return { browser, context, endpoint, reused: false };
 }
 
-function handoffEligible(item) {
-  return new Set(['submission_unknown', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_human'])
+export function handoffEligible(item) {
+  return new Set(['prepared_for_review', 'submission_unknown', 'blocked_by_question', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_human'])
     .has(String(item.applicationState || ''));
+}
+
+export function shouldWatchPreparedHandoff(result) {
+  return result?.ok === true && Boolean(result.page);
 }
 
 function runMetadata(item, adapter, resume) {
@@ -165,12 +199,62 @@ function pageForPreparedItem(context, before, item) {
   return pages.find((page) => page.url().replace(/\/$/, '').startsWith(target)) || null;
 }
 
+function preparedPagePayload(prepared) {
+  return prepared.map((entry) => ({
+    id: entry.item.id,
+    company: entry.item.company,
+    title: entry.item.title,
+    url: entry.item.applyUrl || entry.item.canonicalUrl,
+    status: 'waiting',
+  }));
+}
+
+export function handoffPreparationResult(result = {}) {
+  if (result.state !== 'handoff_ready') return result;
+  return {
+    ...result,
+    state: 'prepared_for_review',
+    reason: result.reason || 'form prepared in the shared browser session; human review and submission remain',
+  };
+}
+
+export function publishHandoffPreparation(state, item, result, persist = persistApplicationResult) {
+  return persist(state, item, handoffPreparationResult(result));
+}
+
+export function mergeHandoffObservation(preparationResult = {}, observationResult = {}) {
+  const prepared = handoffPreparationResult(preparationResult);
+  const observationState = String(observationResult.state || '');
+  const observation = {
+    state: observationState || null,
+    reason: observationResult.reason || '',
+    evidence: observationResult.evidence || null,
+  };
+  if (['human_handoff_closed', 'human_handoff_timeout'].includes(observationState)) {
+    return {
+      ...prepared,
+      handoffObservation: observation,
+      submissionEvidence: observation.evidence || prepared.submissionEvidence || null,
+    };
+  }
+  return {
+    ...prepared,
+    ...observationResult,
+    needsReview: observationState === 'submitted'
+      ? []
+      : Array.isArray(prepared.needsReview) ? prepared.needsReview : [],
+    handoffObservation: observation,
+    submissionEvidence: observation.evidence || prepared.submissionEvidence || null,
+  };
+}
+
 async function prepareHandoffItem(item, context, endpoint, policy) {
   const adapter = adapterForUrl(String(item.applyUrl || item.canonicalUrl || ''));
   const gate = queueApplicationGate(item, policy, adapter);
   if (!gate.ok) return { ok: false, item, reason: gate.reason };
   const prepared = await prepareApplicationArtifacts(item, policy);
   if (!prepared.ok) return { ok: false, item, reason: prepared.reason };
+  persistPreparedApplicationItem(item);
   const { resume } = prepared;
   const key = roleKey(item);
   if (!loadRuns(DEFAULT_RUNS_PATH).runs.some((run) => run.key === key)) {
@@ -192,11 +276,12 @@ async function prepareHandoffItem(item, context, endpoint, policy) {
 }
 
 async function watchPreparedItem(prepared, context, timeoutMs) {
-  const result = await observeHumanSubmission(prepared.page, {
+  const observation = await observeHumanSubmission(prepared.page, {
     adapter: prepared.adapter,
     url: prepared.item.applyUrl || prepared.item.canonicalUrl,
     timeoutMs,
   });
+  const result = mergeHandoffObservation(prepared.result, observation);
   const state = readQueueState(QUEUE_FILE);
   const item = (state.items || []).find((candidate) => candidate.id === prepared.item.id) || prepared.item;
   const key = roleKey(item);
@@ -213,7 +298,8 @@ export async function runHandoffBatch(queueIds, options = {}) {
   const policy = loadPolicy();
   if (!policy.enabled || !policy.authorized) return { ok: false, reason: 'application policy is disabled or not authorized' };
   const state = readQueueState(QUEUE_FILE);
-  const items = (state.items || []).filter((item) => queueIds.includes(item.id) && handoffEligible(item));
+  const items = (state.items || []).filter((item) => queueIds.includes(item.id)
+    && (handoffEligible(item) || (options.includeSelected === true && item.selectedForToday === true)));
   if (!items.length) return { ok: true, skipped: true, reason: 'no eligible browser handoffs found', results: [] };
   let release;
   try {
@@ -223,47 +309,57 @@ export async function runHandoffBatch(queueIds, options = {}) {
   }
 
   let session = null;
+  let preparation = [];
   try {
     session = await launchBrowserSession();
     const prepared = [];
-    const preparation = [];
     for (const item of items) {
       const result = await prepareHandoffItem(item, session.context, session.endpoint, policy);
-      preparation.push({ id: item.id, company: item.company, title: item.title, state: result.result?.state || null, ok: result.ok, reason: result.reason || result.result?.reason || null });
-      if (result.ok && result.result?.state !== 'blocked_by_question') prepared.push(result);
-      if (result.result?.state === 'blocked_by_question') {
+      let persisted = null;
+      if (result.result) {
         const current = readQueueState(QUEUE_FILE);
         const currentItem = (current.items || []).find((candidate) => candidate.id === item.id) || item;
-        finishRun(DEFAULT_RUNS_PATH, roleKey(currentItem), result.result);
-        persistApplicationResult(current, currentItem, result.result);
-        await result.page?.close().catch(() => {});
-      } else if (!result.ok) {
+        persisted = publishHandoffPreparation(current, currentItem, result.result);
+      }
+      preparation.push({ id: item.id, company: item.company, title: item.title, state: persisted?.state || result.result?.state || null, ok: result.ok, reason: result.reason || result.result?.reason || null });
+      if (shouldWatchPreparedHandoff(result)) prepared.push(result);
+      saveSession({
+        status: 'running',
+        pages: preparedPagePayload(prepared),
+        preparation,
+      });
+      if (!result.ok) {
         const existingRun = loadRuns(DEFAULT_RUNS_PATH).runs.find((run) => run.key === roleKey(item));
         if (!existingRun || existingRun.state === 'started') {
           finishRun(DEFAULT_RUNS_PATH, roleKey(item), result.result || { state: 'failed', reason: result.reason || 'handoff preparation failed' });
         }
       }
     }
-    saveSession({
-      status: 'running',
-      pages: prepared.map((entry) => ({ id: entry.item.id, company: entry.item.company, title: entry.item.title, url: entry.item.applyUrl || entry.item.canonicalUrl, status: 'waiting' })),
-    });
-    const timeoutMs = Math.max(30_000, Math.min(1_800_000, Number(options.timeoutSeconds || DEFAULT_TIMEOUT_SECONDS) * 1000));
+    const preparationFailures = preparation.filter((entry) => entry.ok !== true);
+    const preparationError = preparationFailures.length
+      ? preparationFailures.map((entry) => `${entry.company || entry.id}: ${entry.reason || 'handoff preparation failed'}`).join('; ')
+      : null;
+    if (!prepared.length) {
+      const reason = preparationError || 'no browser handoff tabs were prepared';
+      saveSession({ status: 'failed', error: reason, pages: [], preparation });
+      if (!session.reused) await session.context.close().catch(() => {});
+      return { ok: false, reason, preparation, results: [], submitted: 0 };
+    }
+    const timeoutSeconds = Math.max(30, Math.min(MAX_TIMEOUT_SECONDS, Number(options.timeoutSeconds || DEFAULT_TIMEOUT_SECONDS)));
+    const timeoutMs = timeoutSeconds * 1000;
     const results = await Promise.all(prepared.map((entry) => watchPreparedItem(entry, session.context, timeoutMs)));
     const submitted = results.filter((entry) => entry.persisted.submitted).length;
     const outreach = submitted ? await runPostApplicationOutreach() : { triggered: false, ok: true, reason: 'no confirmed handoff submissions' };
-    saveSession({ status: 'completed', completedAt: new Date().toISOString() });
+    saveSession({ status: 'completed', completedAt: new Date().toISOString(), error: preparationError, preparation });
     if (!session.reused) {
-      await session.browser.close().catch(() => {});
-      if (session.controller) await session.controller.close().catch(() => {});
+      await session.context.close().catch(() => {});
     }
     return { ok: true, preparation, results, submitted, outreach };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    saveSession({ status: 'failed', error: reason });
+    saveSession({ status: 'failed', error: reason, pages: [], preparation });
     if (session && !session.reused) {
-      await session.browser.close().catch(() => {});
-      if (session.controller) await session.controller.close().catch(() => {});
+      await session.context.close().catch(() => {});
     }
     throw error;
   } finally {

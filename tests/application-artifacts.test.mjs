@@ -35,7 +35,13 @@ test('artifact generation selects verified lane evidence and writes a truthful c
     });
     assert.equal(result.ok, true);
     assert.equal(result.cached, false);
-    assert.deepEqual(result.selectedProjects.map((project) => project.name), ['Tenure', 'BidCamp', 'Quality Runner']);
+    assert.deepEqual(result.selectedProjects.map((project) => project.name), [
+      'Tenure',
+      'BidCamp',
+      'Quality Runner',
+      'AI Context Runtime',
+      'Agent Eval Runtime',
+    ]);
     const resume = readFileSync(result.resumeMarkdown, 'utf8');
     const cover = readFileSync(result.coverLetterText, 'utf8');
     assert.match(resume, /Available for full-time work immediately/);
@@ -112,7 +118,13 @@ test('generator reads the configured profile lane matrix', async () => {
       lane: 'data_analytics',
     }), { outputRoot: root, renderPdf: false, fetchJobDescription: false });
     assert.equal(result.ok, true);
-    assert.deepEqual(result.selectedProjects.map((project) => project.name), ['Dsci-proj', 'BBDSE / CourtIQ', 'Tenure']);
+    assert.deepEqual(result.selectedProjects.map((project) => project.name), [
+      'Dsci-proj',
+      'BBDSE / CourtIQ',
+      'Agent Eval Runtime',
+      'AI Workflow Leverage',
+      'Tenure',
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

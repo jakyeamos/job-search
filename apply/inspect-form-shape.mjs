@@ -16,13 +16,13 @@ const { values, positionals } = parseArgs({
 
 const url = positionals[0];
 if (!url) {
-  console.error('Usage: node apply/inspect-form-shape.mjs <application-url> [--browser chrome-beta] [--cdp-endpoint <url>] [--headed]');
+  console.error('Usage: node apply/inspect-form-shape.mjs <application-url> [--browser chrome] [--cdp-endpoint <url>] [--headed]');
   process.exit(1);
 }
 
 const browser = await launchBrowser(chromium, {
   headless: !values.headed,
-  channel: values.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
+  channel: values.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome',
   cdpEndpoint: values['cdp-endpoint'] || process.env.CAREER_OPS_CDP_ENDPOINT || process.env.OPENCLI_CDP_ENDPOINT || '',
 });
 

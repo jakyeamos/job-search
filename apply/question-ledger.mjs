@@ -51,6 +51,8 @@ const PRODUCTION_SOFTWARE_RE = /\b(?:software|system|application|service|product
 const PRODUCTION_SOFTWARE_EXPERIENCE_RE = /\b(?:ship(?:ped|ping)?|operat(?:e|ed|ing)|deploy(?:ed|ing)?|production|live)\b/i;
 const AGENTIC_SYSTEM_RE = /\b(?:agentic\s+systems?|agent[-\s]?based|llm[-\s]?powered|large language model(?:[-\s]?powered)?|ai agents?)\b/i;
 const AGENTIC_EXPERIENCE_RE = /\b(?:hands[-\s]?on|build(?:ing|t)?|built|design(?:ed|ing)?|develop(?:ed|ing)?|evaluat(?:e|ed|ing)|deploy(?:ed|ing)?|operat(?:e|ed|ing)|use(?:d|ing)?|workflow(?:s)?|production)\b/i;
+const AI_SAFETY_TOPIC_RE = /\b(?:ai\s+safety|safety[-\s]?focused|model\s+safety|responsible\s+ai|trustworthy\s+ai|ai\s+alignment|alignment\s+work|safeguards?|guardrails?|red[-\s]?team(?:ing)?)\b/i;
+const AI_SAFETY_EXPERIENCE_RE = /\b(?:work|experience|built|project|contribut(?:e|ed|ion)|accomplish(?:ed|ment)?|impact(?:ful)?|relevant|hands[-\s]?on|evaluat(?:e|ed|ing)|develop(?:ed|ing)?|design(?:ed|ing)?|led|owned|responsib(?:le|ility)|focused|describe|tell|write|example)\b/i;
 const PYTHON_PROJECT_RE = /\bpython\b[\s\S]{0,80}\b(?:project|system|application|service|product)\b|\b(?:project|system|application|service|product)\b[\s\S]{0,80}\bpython\b/i;
 const PRODUCTION_SHIPPING_RE = /\b(?:production|shipped|shipping|deployed|deployment|live)\b/i;
 const CUSTOMER_DELIVERY_RE = /\b(?:customers?|clients?|prospects?)\b/i;
@@ -67,6 +69,7 @@ const ANSWER_STATUS_RANK = {
   [EVIDENCE_BACKED_ANSWER_STATUS]: 2,
   confirmed: 3,
 };
+const PRODUCTION_QUESTION_FAMILIES = new Set(['production end-user system', 'python production project']);
 
 /** @param {string} file */
 export function loadLedger(file = DEFAULT_LEDGER_PATH) {
@@ -76,13 +79,55 @@ export function loadLedger(file = DEFAULT_LEDGER_PATH) {
     return {
       schemaVersion: QUESTION_LEDGER_SCHEMA_VERSION,
       entries: Array.isArray(parsed?.entries)
-        ? parsed.entries.filter((entry) => entry && typeof entry === 'object').map(normalizeEntry)
+        ? expandLegacyCountryEntries(parsed.entries.filter((entry) => entry && typeof entry === 'object').map(normalizeEntry))
         : [],
       path: file,
     };
   } catch {
     return { schemaVersion: QUESTION_LEDGER_SCHEMA_VERSION, entries: [], path: file, loadError: 'question ledger is not valid JSON' };
   }
+}
+
+/** @param {Array<Record<string, unknown>>} entries */
+function expandLegacyCountryEntries(entries) {
+  const expanded = [];
+  for (const entry of entries) {
+    const question = normalizeQuestion(String(entry.question || ''));
+    const aliases = Array.isArray(entry.aliases) ? entry.aliases.map((value) => normalizeQuestion(String(value))) : [];
+    if (!/^country(?:\/region)?\*?$/i.test(question) || !aliases.some((alias) => canonicalQuestionKey(alias) !== canonicalQuestionKey(question))) {
+      expanded.push(entry);
+      continue;
+    }
+    expanded.push(normalizeEntry({
+      ...entry,
+      aliases: [],
+      questionKey: canonicalQuestionKey(question),
+      questionFingerprint: questionFingerprint(question),
+      options: [],
+    }));
+    for (const alias of aliases) {
+      expanded.push(normalizeEntry({
+        ...entry,
+        id: questionId(alias),
+        question: alias,
+        aliases: [],
+        questionKey: canonicalQuestionKey(alias),
+        questionFingerprint: questionFingerprint(alias),
+        pattern: alias,
+        answer: null,
+        status: 'unanswered',
+        options: [],
+        fieldKind: null,
+        answerVersion: 0,
+        answerStatus: 'unanswered',
+        answerSource: null,
+        evidenceRefs: [],
+        answerVariants: [],
+        answeredAt: null,
+      }));
+    }
+  }
+  return expanded;
 }
 
 /** @param {string} file @param {{ entries: Array<Record<string, unknown>> }} ledger */
@@ -142,10 +187,26 @@ export function isConfirmedAnswer(entry, answer = entry) {
     || (answer?.answerStatus === EVIDENCE_BACKED_ANSWER_STATUS && String(entry?.sensitivity || 'normal') !== 'high');
 }
 
+/** @param {Record<string, unknown>} answer */
+function answerAuthorityRank(answer) {
+  if (answer?.answerStatus === 'confirmed' || answer?.answerSource === 'user') return 2;
+  if (answer?.answerStatus === EVIDENCE_BACKED_ANSWER_STATUS || answer?.answerSource === 'career-ops-evidence') return 1;
+  return 0;
+}
+
 /** @param {Record<string, unknown>} entry */
 function answerVariants(entry) {
   if (Array.isArray(entry.answerVariants) && entry.answerVariants.length) return entry.answerVariants;
   return entry.answer === null || entry.answer === undefined || entry.answer === '' ? [] : [entry];
+}
+
+/** @param {Record<string, unknown>} answer @param {string} question */
+function answerMatchesQuestionFamily(answer, question) {
+  const source = String(answer?.answerSource || answer?.source || '');
+  const questionFamily = canonicalQuestionKey(question);
+  if (/application_answers\.python_production\b/.test(source)) return questionFamily === 'python production project';
+  if (/application_answers\.production_system\b/.test(source)) return questionFamily === 'production end-user system';
+  return true;
 }
 
 /** @param {Record<string, unknown>} variant @param {{ company?: string, role?: string, url?: string }} options */
@@ -156,13 +217,30 @@ function matchesAnswerScope(variant, options) {
     return normalizeKey(variant.role) === normalizeKey(options.role)
       && (!variant.company || !options.company || normalizeKey(variant.company) === normalizeKey(options.company));
   }
-  if (variant.scope === 'posting') return Boolean(variant.url && variant.url === options.url);
+  if (variant.scope === 'posting') {
+    return Boolean(variant.url && options.url && normalizePostingUrl(variant.url) === normalizePostingUrl(options.url));
+  }
   return false;
 }
 
 /** @param {Record<string, unknown>} variant */
 function answerContextKey(variant) {
-  return [variant.scope || 'question', normalizeKey(variant.company), normalizeKey(variant.role), String(variant.url || '')].join('|');
+  return [variant.scope || 'question', normalizeKey(variant.company), normalizeKey(variant.role), normalizePostingUrl(variant.url)].join('|');
+}
+
+/** @param {unknown} value */
+function normalizePostingUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    parsed.search = '';
+    parsed.hash = '';
+    parsed.pathname = parsed.pathname.replace(/\/application\/?$/i, '').replace(/\/+$/, '');
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return raw.replace(/[?#].*$/, '').replace(/\/application\/?$/i, '').replace(/\/+$/, '');
+  }
 }
 
 /** @param {string} question */
@@ -199,6 +277,12 @@ export function isProductionSystemQuestion(question) {
 export function isAgenticSystemsQuestion(question) {
   const normalized = normalizeQuestion(question);
   return AGENTIC_SYSTEM_RE.test(normalized) && AGENTIC_EXPERIENCE_RE.test(normalized);
+}
+
+/** @param {string} question */
+export function isAISafetyQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  return AI_SAFETY_TOPIC_RE.test(normalized) && AI_SAFETY_EXPERIENCE_RE.test(normalized);
 }
 
 /** @param {string} question */
@@ -249,13 +333,18 @@ export function isNonQuestionPrompt(question) {
  */
 export function canonicalQuestionKey(question) {
   const normalized = normalizeQuestion(question);
+  if (/^country(?:\/region)?\*?$/i.test(normalized)) return 'country field';
+  if (/\bcountry\b/i.test(normalized) && /\bworking from\b/i.test(normalized)) return 'country work location';
+  if (/\bcountry\b/i.test(normalized) && /\b(?:residence|reside)\b/i.test(normalized)) return 'country residence';
+  if (/\bcountry\b/i.test(normalized) && /\b(?:currently|current|located|based|living)\b/i.test(normalized)) return 'country current location';
   if (isAiUsageQuestion(normalized)) return 'ai usage';
+  if (isAISafetyQuestion(normalized)) return 'ai safety experience';
   if (isAgenticSystemsQuestion(normalized)) return 'agentic systems experience';
   if (isCustomerDeliveryQuestion(normalized)) return 'customer delivery experience';
   if (isTechnicalFoundationsQuestion(normalized)) return 'technical foundations';
   if (isCloudInfrastructureQuestion(normalized)) return 'cloud and container experience';
-  if (isProductionSystemQuestion(normalized)) return 'production end-user system';
   if (isPythonProductionQuestion(normalized)) return 'python production project';
+  if (isProductionSystemQuestion(normalized)) return 'production end-user system';
   if (isReferralSourceQuestion(normalized)) return 'referral source';
   const core = normalized
     .replace(/^yes\s*[-–—:]\s*/i, '')
@@ -272,6 +361,22 @@ export function canonicalQuestionKey(question) {
     .filter((token) => token && !QUESTION_STOP_WORDS.has(token))
     .filter((token) => token !== 'now' && token !== 'future' && token !== 'time');
   return [...new Set(tokens)].sort().join(' ');
+}
+
+/** @param {string} question */
+export function isCompanyMotivationQuestion(question) {
+  const normalized = normalizeQuestion(question);
+  const bareWhy = normalized.match(/^why\s+(.+?)\s*\??$/i)?.[1]?.trim() || '';
+  const bareWhyFirstWord = bareWhy.split(/\s+/)[0]?.toLowerCase() || '';
+  const bareWhyIsCompanyLabel = Boolean(bareWhy)
+    && bareWhy.split(/\s+/).length <= 6
+    && !['are', 'can', 'did', 'do', 'does', 'have', 'how', 'is', 'should', 'will', 'would', 'you'].includes(bareWhyFirstWord)
+    && !/^(?:me|you|yourself|this answer)$/i.test(bareWhy);
+  return /\bwhy\s+(?:do\s+)?you\s+want\s+to\s+(?:join|work (?:at|for))\b/i.test(normalized)
+    || /\bwhat about\b[\s\S]{0,120}\b(?:caught your attention|made you apply)\b/i.test(normalized)
+    || /\bwhy\s+(?:this|our)\s+(?:company|role|team)\b/i.test(normalized)
+    || /\bwhy are you interested in\b[\s\S]{0,100}\b(?:company|role|team|us)\b/i.test(normalized)
+    || bareWhyIsCompanyLabel;
 }
 
 /** @param {string} question @returns {string} */
@@ -294,7 +399,15 @@ export function questionMatchScore(entry, question, metadata = {}) {
   const target = normalizeQuestion(question).toLowerCase();
   const canonical = normalizeQuestion(String(entry.question || '')).toLowerCase();
   const aliases = Array.isArray(entry.aliases) ? entry.aliases.map((value) => normalizeQuestion(String(value)).toLowerCase()) : [];
-  if (target === canonical || aliases.includes(target)) return 1;
+  if (target === canonical) return 1;
+  if (aliases.includes(target)) {
+    const targetFamily = canonicalQuestionKey(question);
+    const canonicalFamily = canonicalQuestionKey(String(entry.question || ''));
+    if (targetFamily !== canonicalFamily
+      && PRODUCTION_QUESTION_FAMILIES.has(targetFamily)
+      && PRODUCTION_QUESTION_FAMILIES.has(canonicalFamily)) return 0;
+    return 1;
+  }
   const pattern = normalizeQuestion(String(entry.pattern || '')).toLowerCase();
   if (pattern.length >= 5 && !['location', 'search', 'other', 'phone', 'email'].includes(pattern)
     && (target.includes(pattern) || pattern.includes(target))) return 0.9;
@@ -554,7 +667,11 @@ export function recordEvidenceBackedAnswerInLedger(ledger, target, answer, optio
   if (!entry || String(entry.sensitivity || 'normal') === 'high' || isSensitiveQuestion(String(entry.question || ''))) return null;
 
   const requestedScope = String(options.scope || (options.role ? 'role' : 'question'));
-  const scope = ['question', 'global', 'company', 'role', 'posting'].includes(requestedScope) ? requestedScope : 'question';
+  const normalizedScope = ['question', 'global', 'company', 'role', 'posting'].includes(requestedScope) ? requestedScope : 'question';
+  const scope = isCompanyMotivationQuestion(String(entry.question || ''))
+    && ['question', 'global'].includes(normalizedScope)
+    ? 'posting'
+    : normalizedScope;
   const now = new Date().toISOString();
   const context = {
     scope,
@@ -708,9 +825,13 @@ export function answerQuestion(file, target, answer, options = {}) {
   }
   const now = new Date().toISOString();
   const requestedScope = options.scope || entry.scope || 'question';
-  const scope = ['question', 'global', 'company', 'role', 'posting'].includes(requestedScope)
+  const normalizedScope = ['question', 'global', 'company', 'role', 'posting'].includes(requestedScope)
     ? requestedScope
     : 'role';
+  const scope = isCompanyMotivationQuestion(String(entry.question || ''))
+    && ['question', 'global'].includes(normalizedScope)
+    ? 'posting'
+    : normalizedScope;
   const existingVariants = answerVariants(entry);
   const maxVersion = Math.max(Number(entry.answerVersion || 0), ...existingVariants.map((variant) => Number(variant.answerVersion || 0)));
   const nextVersion = Math.max(1, maxVersion + 1);
@@ -776,6 +897,7 @@ export function findReusableAnswer(question, ledger, context = {}) {
     .filter(({ entry, answer }) => {
       if (answer.answer === null || answer.answer === undefined || answer.answer === '' || !isConfirmedAnswer(entry, answer)) return false;
       if (answer.expiresAt && Date.parse(String(answer.expiresAt)) <= now) return false;
+      if (!answerMatchesQuestionFamily(answer, question)) return false;
       if (!questionMatchScore(entry, question, context)) return false;
       return matchesAnswerScope(answer, context);
     }).map(({ entry, answer }) => ({
@@ -784,11 +906,13 @@ export function findReusableAnswer(question, ledger, context = {}) {
       score: questionMatchScore(entry, question, context),
     })).sort((a, b) => b.score - a.score
       || scopeRank(b.answer.scope) - scopeRank(a.answer.scope)
+      || answerAuthorityRank(b.answer) - answerAuthorityRank(a.answer)
       || String(b.answer.updatedAt || b.entry.updatedAt || '').localeCompare(String(a.answer.updatedAt || a.entry.updatedAt || '')));
   if (!candidates.length) return null;
   const best = candidates[0];
   const competing = candidates.find((candidate) => candidate !== best
     && scopeRank(candidate.answer.scope) === scopeRank(best.answer.scope)
+    && answerAuthorityRank(candidate.answer) === answerAuthorityRank(best.answer)
     && Math.abs(candidate.score - best.score) < 0.04
     && String(candidate.answer.answer) !== String(best.answer.answer));
   if (competing) return null;
@@ -900,7 +1024,9 @@ function matchesScope(entry, context) {
   if (entry.scope === 'global') return true;
   if (entry.scope === 'company') return normalizeKey(entry.company) === normalizeKey(context.company);
   if (entry.scope === 'role') return normalizeKey(entry.role) === normalizeKey(context.role);
-  if (entry.scope === 'posting') return Boolean(entry.url && entry.url === context.url);
+  if (entry.scope === 'posting') {
+    return Boolean(entry.url && context.url && normalizePostingUrl(entry.url) === normalizePostingUrl(context.url));
+  }
   return false;
 }
 

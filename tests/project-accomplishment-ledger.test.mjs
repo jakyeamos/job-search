@@ -6,7 +6,7 @@ import {
   projectAccomplishmentAnswerTable,
   selectProjectAccomplishment,
 } from '../project-accomplishment-ledger.mjs';
-import { answerFor, loadLedgerAnswers } from '../apply/lib/adapter-core.mjs';
+import { answerFor, commonQuestions, loadLedgerAnswers } from '../apply/lib/adapter-core.mjs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,7 +41,16 @@ const ledger = {
 
 test('recognizes accomplishment questions without matching ordinary form fields', () => {
   assert.equal(isProjectAccomplishmentQuestion('What is the most impressive thing you built with AI?'), true);
+  assert.equal(isProjectAccomplishmentQuestion('Please write a few sentences about your most impactful AI Safety focused work that is relevant for this role.'), true);
   assert.equal(isProjectAccomplishmentQuestion('Are you authorized to work in the United States?'), false);
+});
+
+test('AI Safety accomplishment prompts delegate to the dedicated evidence-backed answer', () => {
+  const question = 'Please write a few sentences about your most impactful AI Safety focused work that is relevant for this role.';
+  assert.equal(selectProjectAccomplishment({ question, title: 'ML/Research Engineer, Safeguards' }, ledger), null);
+  assert.deepEqual(projectAccomplishmentAnswerTable({ question, title: 'ML/Research Engineer, Safeguards' }, ledger), []);
+  const answer = 'I have hands-on experience with LLM evaluation, observability, and guardrails.';
+  assert.equal(answerFor(question, [commonQuestions({ application_answers: { llm_evaluation: { answer } } })]), answer);
 });
 
 test('selects the project whose lane and job signals fit best', () => {

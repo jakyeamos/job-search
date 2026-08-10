@@ -23,6 +23,7 @@
 import { chromium } from 'playwright';
 import {
   parseCliArgs, loadProfile, loadAnswers, loadLedgerAnswers, commonQuestions, answerFor,
+  matchAnswerToOptions, matchAnswersToOptions,
   createSummary, fillBySelector, attachFile, detectRequired, launchBrowser, createBrowserPage, reconcile, finish,
   settle, EEO_LABEL_RE, LEGAL_LABEL_RE, MARKETING_RE,
 } from './lib/adapter-core.mjs';
@@ -38,7 +39,14 @@ async function main() {
     description: args.jobDescription,
     lane: args.lane,
   });
-  const tables = [answers, ledgerAnswers, commonQuestions(profile)];
+  const tables = [answers, ledgerAnswers, commonQuestions(profile, {
+    company: args.company,
+    title: args.title,
+    location: args.jobLocation,
+    url: args.url,
+    description: args.jobDescription,
+    lane: args.lane,
+  })];
 
   const resumePath = args.resume || profile.defaults?.resume_path || '';
 
@@ -90,13 +98,20 @@ async function main() {
       continue;
     }
 
-    const value = resolveValue(c.label, id, profile, tables);
+    const rawValue = resolveValue(c.label, id, profile, tables);
+    const value = rawValue === null
+      ? null
+      : c.kind === 'checkbox'
+        ? matchAnswersToOptions(rawValue, c.options)
+        : matchAnswerToOptions(rawValue, c.options);
     if (value === null) {
       if (c.required) tools.review(c.label, 'no matching profile value — answer manually', { options: c.options, kind: c.kind, required: true });
       continue;
     }
 
-    if (c.kind === 'radio' || c.kind === 'checkbox') {
+    if (c.kind === 'checkbox') {
+      await checkOptionsByValue(page, c.name, value, c.label, tools);
+    } else if (c.kind === 'radio') {
       await checkOptionByValue(page, c.name, value, c.label, tools);
     } else if (c.kind === 'select') {
       await selectNativeByName(page, c.name, value, c.label, tools);
@@ -225,6 +240,22 @@ async function checkOptionByValue(page, name, value, label, tools) {
   const ok = await robustCheck(page, input);
   if (ok) tools.ok(label, name);
   else tools.review(label, 'could not toggle option — set it manually');
+}
+
+async function checkOptionsByValue(page, name, values, label, tools) {
+  if (!Array.isArray(values) || !values.length) {
+    tools.review(label, 'no checkbox options were selected');
+    return;
+  }
+  const optionTools = createSummary();
+  for (const value of values) {
+    await checkOptionByValue(page, name, value, label, optionTools);
+  }
+  if (optionTools.summary.needsReview.length) {
+    tools.review(label, optionTools.summary.needsReview.map((item) => item.reason).join('; '));
+  } else {
+    tools.ok(label, name);
+  }
 }
 
 async function robustCheck(page, input) {

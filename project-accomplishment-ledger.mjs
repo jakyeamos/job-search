@@ -3,11 +3,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isAISafetyQuestion } from './apply/question-ledger.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_PROJECT_ACCOMPLISHMENT_LEDGER_PATH = path.join(ROOT, 'config', 'project-accomplishment-ledger.json');
 
-const ACCOMPLISHMENT_QUESTION_RE = /(?:most impressive|proud of|personally built|built or automated|technical accomplishment|project.*proud|accomplishment.*(?:ai|system|project))/i;
+const ACCOMPLISHMENT_QUESTION_RE = /(?:most impressive|proud of|personally built|built or automated|technical accomplishment|project.*proud|accomplishment.*(?:ai|system|project)|most impactful[\s\S]{0,80}\b(?:work|project|contribution|accomplishment|system|thing)\b|impactful[\s\S]{0,60}\b(?:work|project|contribution|accomplishment|system|thing)\b)/i;
 
 const LANE_PATTERNS = [
   ['data_analytics', /data|analytics|sql|warehouse|pipeline|experiment|statistics|modeling|insights/i],
@@ -72,6 +73,9 @@ function scoreEntry(entry, lane, signal) {
 export function selectProjectAccomplishment(context = {}, ledger = loadProjectAccomplishmentLedger()) {
   const question = String(context.question || 'What accomplishment are you most proud of?');
   if (!isProjectAccomplishmentQuestion(question)) return null;
+  // AI-safety prompts need the dedicated evidence-backed profile answer when
+  // one exists; do not silently substitute an unrelated generic project.
+  if (isAISafetyQuestion(question)) return null;
   const lane = inferProjectAccomplishmentLane(context);
   const signal = normalizedKey(`${context.company || ''} ${context.title || ''} ${context.description || ''}`);
   const ranked = (ledger.entries || [])

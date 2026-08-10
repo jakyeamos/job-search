@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { buildApplicationPacket, buildPacketMarkdown, packetFreshnessGate, packetPathsForItem } from '../apply/application-packets.mjs';
+import { OUTREACH_DISCOVERY_PIPELINE_VERSION } from '../outreach-lib.mjs';
 
 test('packet paths are stable and separated from application artifacts', () => {
   const item = { id: 'q1', company: 'Acme', title: 'Backend Engineer', applyUrl: 'https://jobs.example/acme/1' };
@@ -151,27 +152,29 @@ test('packet counts only nontrivial answer preparation and keeps standard fields
       outputRoot: root,
       generateArtifacts: false,
     });
-    assert.equal(packet.status, 'needs-user-input');
+    assert.equal(packet.status, 'ready-for-human-review');
     assert.deepEqual(packet.questions.map((question) => question.question), ['Why Acme?']);
+    assert.match(packet.questions[0].answer, /I am interested in Acme/);
+    assert.equal(packet.questions[0].source, 'job-aware-motivation');
     assert.deepEqual(packet.simpleFields.map((question) => question.question), ['Are you open to working in person?']);
     assert.equal(packet.simpleFields[0].answer, 'Yes');
     assert.equal(packet.simpleFields[0].status, 'confirmed');
     assert.equal(packet.standardFields.length, 4);
     assert.equal(packet.manualItems.length, 1);
-    assert.deepEqual(packet.unresolved.map((question) => question.question), ['Why Acme?']);
+    assert.deepEqual(packet.unresolved.map((question) => question.question), []);
     assert.deepEqual(packet.simpleUnresolved.map((question) => question.question), []);
     assert.deepEqual(packet.answerPrep, {
       questionCount: 1,
-      unresolvedCount: 1,
+      unresolvedCount: 0,
       simpleFieldCount: 1,
       simpleUnresolvedCount: 0,
       standardFieldCount: 4,
       manualFieldCount: 1,
       artifactFieldCount: 0,
-      requiredUnresolvedCount: 1,
+      requiredUnresolvedCount: 0,
     });
     assert.equal(packet.ledger.canonicalQuestionCount, 2);
-    assert.equal(packet.ledger.unresolvedCount, 1);
+    assert.equal(packet.ledger.unresolvedCount, 0);
     assert.doesNotMatch(packet.markdown, /First Name/);
     assert.match(packet.markdown, /Why Acme\?/);
     assert.match(packet.markdown, /Simple fields to complete in the form/);
@@ -202,6 +205,7 @@ test('profile evidence does not answer capability, relocation, sponsorship, or c
         formReady: true,
         controls: [
           { id: 'location', label: 'Current Location', kind: 'combobox', category: 'question', required: true, options: [] },
+          { id: 'work-country', label: 'Which country are you working from?', kind: 'combobox', category: 'question', required: true, options: [] },
           { id: 'capability', label: 'Have you worked with Salesforce integrations in an engineering capacity?', kind: 'textarea', category: 'question', required: true, options: [] },
           { id: 'relocation', label: 'Are you open to relocation for this role?', kind: 'combobox', category: 'question', required: true, options: ['Yes', 'No'] },
           { id: 'sponsorship', label: 'Will you now or in the future require visa sponsorship?', kind: 'checkbox', category: 'question', required: true, options: ['Yes', 'No'] },
@@ -220,6 +224,7 @@ test('profile evidence does not answer capability, relocation, sponsorship, or c
     });
     assert.equal(packet.status, 'needs-user-input');
     assert.equal(packet.simpleFields.find((field) => field.question === 'Current Location')?.answer, 'Buffalo, NY');
+    assert.equal(packet.simpleFields.find((field) => field.question === 'Which country are you working from?')?.answer, 'United States');
     assert.equal(packet.questions.find((field) => field.question.startsWith('Have you worked with Salesforce'))?.status, 'unanswered');
     assert.equal(packet.manualItems.find((field) => field.label.startsWith('Are you open to relocation'))?.reason, 'sensitive or eligibility field — complete manually');
     assert.equal(packet.manualItems.find((field) => field.label.startsWith('Will you now or in the future'))?.reason, 'sensitive or eligibility field — complete manually');
@@ -939,6 +944,173 @@ test('packet dry-run never snapshots an existing packet into history', async () 
     assert.deepEqual(dryRun.history, []);
     assert.equal(existsSync(path.join(packetDirectory, 'history')), false);
     assert.equal(readFileSync(path.join(packetDirectory, 'submission-packet.json'), 'utf8').includes('Submit application'), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function contactDiscoveryPacketItem(fitScore, suffix) {
+  return {
+    id: `packet-contact-${suffix}`,
+    company: 'Acme',
+    title: 'Backend Engineer',
+    location: 'New York, NY',
+    applyUrl: `https://jobs.example/acme/backend-${suffix}`,
+    canonicalUrl: `https://jobs.example/acme/backend-${suffix}`,
+    liveness: 'active',
+    fitScore,
+    firstSeenAt: '2026-07-29T00:00:00.000Z',
+    description: 'Build Python and TypeScript backend services, REST APIs, data pipelines, PostgreSQL workflows, automated tests, and reliable production systems with product and engineering partners.',
+  };
+}
+
+function contactDiscoveryInspection(item) {
+  return {
+    url: item.applyUrl,
+    title: 'Apply — Acme',
+    heading: item.title,
+    formCount: 1,
+    formReady: true,
+    controls: [],
+    buttons: [{ text: 'Submit application', submitLike: true, nextLike: false, blockedLike: false, disabled: false }],
+    pages: [],
+    manualSignals: [],
+    blocked: false,
+    blockedReason: '',
+  };
+}
+
+test('packet prep runs contact discovery at the 4.3 floor and reports evidence without authorizing outreach', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-contact-floor-'));
+  const item = contactDiscoveryPacketItem(4.3, 'floor');
+  const calls = [];
+  try {
+    const packet = await buildApplicationPacket(item, {
+      inspection: contactDiscoveryInspection(item),
+      ledgerPath: path.join(root, 'question-ledger.json'),
+      outputRoot: root,
+      generateArtifacts: false,
+      contactDiscoveryRunner: async (target) => {
+        calls.push(target.id);
+        return {
+          status: 'found',
+          pipelineVersion: 11,
+          mode: 'packet-prep',
+          reason: 'verified public employer contact',
+          contacts: [{
+            name: 'Ada Lovelace',
+            role: 'Engineering Manager',
+            email: 'ada@acme.example',
+            emailVerified: true,
+            sourceUrl: 'https://acme.example/team',
+          }],
+          sources: ['https://acme.example/team'],
+          queries: [],
+          errors: [],
+          warnings: [],
+        };
+      },
+    });
+
+    assert.deepEqual(calls, [item.id]);
+    assert.equal(packet.contactDiscovery.outcome, 'found');
+    assert.equal(packet.contactDiscovery.threshold, 4.3);
+    assert.equal(packet.contactDiscovery.sendAuthorized, false);
+    assert.equal(packet.contactDiscovery.submissionGate, 'confirmed-submission-required');
+    assert.match(packet.markdown, /Contact research/);
+    assert.match(packet.markdown, /Ada Lovelace/);
+    assert.match(packet.markdown, /does not authorize outreach/);
+    assert.equal('draft' in packet.contactDiscovery, false);
+    assert.equal('message' in packet.contactDiscovery, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('packet prep below 4.3 does not consume contact discovery', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-contact-below-floor-'));
+  const item = contactDiscoveryPacketItem(4.2, 'below-floor');
+  let called = false;
+  try {
+    const packet = await buildApplicationPacket(item, {
+      inspection: contactDiscoveryInspection(item),
+      ledgerPath: path.join(root, 'question-ledger.json'),
+      outputRoot: root,
+      generateArtifacts: false,
+      contactDiscoveryRunner: async () => {
+        called = true;
+        throw new Error('discovery must not run below the approved floor');
+      },
+    });
+
+    assert.equal(called, false);
+    assert.equal(packet.contactDiscovery.outcome, 'not-eligible');
+    assert.equal(packet.contactDiscovery.threshold, 4.3);
+    assert.match(packet.contactDiscovery.reason, /below the 4\.3 contact-discovery floor/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('contact discovery unavailability never blocks packet completion', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-contact-unavailable-'));
+  const item = contactDiscoveryPacketItem(4.7, 'unavailable');
+  try {
+    const packet = await buildApplicationPacket(item, {
+      inspection: contactDiscoveryInspection(item),
+      ledgerPath: path.join(root, 'question-ledger.json'),
+      outputRoot: root,
+      generateArtifacts: false,
+      contactDiscoveryRunner: async () => {
+        throw new Error('provider rate limit');
+      },
+    });
+
+    assert.equal(packet.ok, true);
+    assert.equal(packet.status, 'ready-for-human-review');
+    assert.equal(packet.contactDiscovery.outcome, 'unavailable');
+    assert.match(packet.contactDiscovery.reason, /provider rate limit/);
+    assert.match(packet.markdown, /Unavailable/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('packet prep reuses a valid cached discovery snapshot', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'career-ops-packet-contact-cache-'));
+  const item = {
+    ...contactDiscoveryPacketItem(4.5, 'cache'),
+    outreach: {
+      discovery: {
+        pipelineVersion: OUTREACH_DISCOVERY_PIPELINE_VERSION,
+        status: 'found',
+        attemptedAt: '2026-07-29T12:00:00.000Z',
+        cacheExpiresAt: '2099-08-01T00:00:00.000Z',
+        contacts: [{
+          name: 'Grace Hopper',
+          role: 'Technical Recruiter',
+          email: 'grace@acme.example',
+          emailVerified: true,
+          sourceUrl: 'https://acme.example/careers',
+        }],
+        sources: ['https://acme.example/careers'],
+        queries: [],
+        errors: [],
+        warnings: [],
+      },
+    },
+  };
+  try {
+    const packet = await buildApplicationPacket(item, {
+      inspection: contactDiscoveryInspection(item),
+      ledgerPath: path.join(root, 'question-ledger.json'),
+      outputRoot: root,
+      generateArtifacts: false,
+    });
+
+    assert.equal(packet.contactDiscovery.outcome, 'found');
+    assert.equal(packet.contactDiscovery.cacheReused, true);
+    assert.equal(packet.contactDiscovery.contacts[0].name, 'Grace Hopper');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

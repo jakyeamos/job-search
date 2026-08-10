@@ -14,6 +14,8 @@ import {
   createBrowserPage,
   launchBrowser,
   loadProfile,
+  matchAnswerToOptions,
+  sponsorshipRequirement,
   settle,
   EEO_LABEL_RE,
   LEGAL_LABEL_RE,
@@ -22,6 +24,7 @@ import {
 import {
   DEFAULT_LEDGER_PATH,
   findReusableAnswer,
+  isAISafetyQuestion,
   isCloudInfrastructureQuestion,
   isCustomerDeliveryQuestion,
   isAgenticSystemsQuestion,
@@ -37,6 +40,7 @@ import {
   saveLedger,
 } from './question-ledger.mjs';
 import { selectProjectAccomplishment } from '../project-accomplishment-ledger.mjs';
+import { motivationAnswerForItem } from './motivation-answer.mjs';
 import { assessResumeReuse, generateApplicationArtifacts, jobHash } from './application-artifacts.mjs';
 import { auditHumanizedText } from './application-humanizer.mjs';
 import {
@@ -53,6 +57,7 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DEFAULT_PROFILE_PATH = path.join(ROOT, 'config', 'application-profile.json');
 const DEFAULT_PACKET_ROOT = path.join(ROOT, 'output', 'application-packets');
 const QUEUE_PATH = path.join(ROOT, 'data', 'job-queue.json');
+export const PACKET_CONTACT_DISCOVERY_MIN_FIT_SCORE = 4.3;
 
 /** @param {string} value */
 function normalize(value) {
@@ -143,6 +148,7 @@ function isCurrentLocationPrompt(label) {
   if (isSensitiveQuestion(text)) return false;
   return /^(?:location|current location|current city|current state|current country|location\s*\(city\))$/i.test(text)
     || /\bcurrent(?:ly)?\s+(?:based|located|living|working)\b/i.test(text)
+    || /\bwhich country are you working from\b/i.test(text)
     || /\bwhere\s+are\s+you\s+(?:currently\s+)?(?:located|based|living)\b/i.test(text)
     || /\b(?:where|what)\s+is\s+your\s+specific\s+working\s+location\b/i.test(text);
 }
@@ -168,6 +174,10 @@ function configuredApplicationAnswerKey(label) {
   if (/have you ever interviewed at anthropic before/i.test(text)) return 'anthropic_interview';
   if (/do you know anyone currently at glean/i.test(text)) return 'glean_relationship';
   if (/\bdutch\b[\s\S]{0,100}\bc1\s*\/\s*c2\b|\bc1\s*\/\s*c2\b[\s\S]{0,100}\bdutch\b/i.test(text)) return 'dutch_proficiency';
+  if (/\bat least\s+3\s+years\b[\s\S]{0,120}\bprofessional experience\b[\s\S]{0,80}\bsoftware engineering\b/i.test(text)) return 'professional_software_engineering_3_years';
+  if (/\btravel\b[\s\S]{0,120}\b(?:customers?|partners?)\b[\s\S]{0,80}\b(?:less than|under|up to)?\s*20\s*%/i.test(text)) return 'travel_up_to_20_percent';
+  if (/\bhave you contributed to open[- ]source projects before\b/i.test(text)) return 'open_source_contribution';
+  if (/\bshare an example\b[\s\S]{0,180}\bopen[- ]source contribution\b/i.test(text)) return 'open_source_contribution_example';
   const questionCue = /\b(?:are|would|will|can|do)\s+you\b/i.test(text);
   const workMode = /\b(?:hybrid|in[- ]?person|on[- ]?site|onsite|office)\b/i.test(text);
   const citySchedule = /\b(?:nyc|new york|san francisco|sf)\b[\s\S]{0,100}(?:\bdays?\s+(?:per|a)\s+week\b|\b\d+\s*%\b)/i.test(text);
@@ -179,6 +189,7 @@ function configuredApplicationAnswerKey(label) {
   if (/\b(?:located|live|based|reside)\b[\s\S]{0,60}\bsan francisco bay area\b/i.test(text)) return 'located_in_bay_area';
   if (/\blive in one of the following states\b/i.test(text)) return 'restricted_state_residence';
   if (/\b(?:used|worked with|experience with)\s+sentry\b|sentry experience/i.test(text)) return 'sentry_experience';
+  if (isAISafetyQuestion(text)) return 'llm_evaluation';
   if (/(?:\bllm\b[\s\S]{0,100}\b(?:evaluation|observability|guardrails?)\b|\b(?:evaluation|observability|guardrails?)\b[\s\S]{0,100}\bllm\b)/i.test(text)) return 'llm_evaluation';
   if (/\bhow\s+long\b[\s\S]{0,220}\bcommit(?:ted|ting)?\b[\s\S]{0,120}\b(?:repository|repo)\b/i.test(text)) return 'recent_code_commit';
   if (/\bwhich programming languages\b|\bprogramming languages do you know\b/i.test(text)) return 'programming_languages';
@@ -199,6 +210,8 @@ function compatibleConfiguredOption(answer, options) {
   if (!normalizedAnswer || !options.length) return String(answer || '').trim();
   const exact = options.find((option) => String(option).trim().toLowerCase() === normalizedAnswer);
   if (exact) return exact;
+  const matchedConfiguredOption = matchAnswerToOptions(answer, options);
+  if (matchedConfiguredOption !== String(answer).trim()) return matchedConfiguredOption;
   if (/^yes$/i.test(normalizedAnswer)) {
     return options.find((option) => /^yes\b/i.test(String(option)) && /\brelocat\w*\b/i.test(String(option)))
       || options.find((option) => /^yes\b/i.test(String(option)) && /\b(?:office|hybrid|days?\s+(?:per|a)\s+week)\b/i.test(String(option)))
@@ -231,6 +244,9 @@ function profileAnswer(profile, label) {
   for (const [pattern, value, source] of values) {
     if (pattern.test(text) && value) return { answer: String(value), source };
   }
+  if (/\bwhich country are you working from\b/i.test(text) && country) {
+    return { answer: String(country), source: 'profile:address.country' };
+  }
   if (isCurrentLocationPrompt(text) && location) return { answer: String(location), source: 'profile:address' };
   if (/^(?:country|country\/region|country of residence)\b/i.test(text) && country) {
     return { answer: String(country), source: 'profile:address.country' };
@@ -239,14 +255,21 @@ function profileAnswer(profile, label) {
 }
 
 /** @param {Record<string, unknown>} profile @param {string} label */
-function profileQuestionAnswer(profile, label) {
+function profileQuestionAnswer(profile, label, context = {}) {
   const text = label.toLowerCase();
   const authorization = profile.work_authorization || {};
   if (/legally authorized|authorized to work|eligible to work|work authorization|right to work/.test(text)) {
     return { answer: authorization.authorized_us ? 'Yes' : 'No', source: 'profile:work_authorization.authorized_us', sensitive: true };
   }
   if (/sponsor|require .*(petition|immigration)|file a petition|immigration status|nonimmigrant|visa status/.test(text)) {
-    return { answer: authorization.requires_sponsorship ? 'Yes' : 'No', source: 'profile:work_authorization.requires_sponsorship', sensitive: true };
+    const requiresSponsorship = sponsorshipRequirement(profile, context);
+    return {
+      answer: requiresSponsorship ? 'Yes' : 'No',
+      source: requiresSponsorship
+        ? 'profile:work_authorization.requires_sponsorship_outside_us'
+        : 'profile:work_authorization.requires_sponsorship',
+      sensitive: true,
+    };
   }
   if (isRecentEmployerPrompt(label)) {
     const experiences = Array.isArray(profile.work_experience) ? profile.work_experience : [];
@@ -291,10 +314,10 @@ function profileApplicationAnswer(profile, label, options = []) {
           ? 'technical_foundations'
           : isCloudInfrastructureQuestion(label)
             ? 'cloud_infrastructure'
-            : isProductionSystemQuestion(label)
-              ? 'production_system'
-              : isPythonProductionQuestion(label)
-                ? 'python_production'
+            : isPythonProductionQuestion(label)
+              ? 'python_production'
+              : isProductionSystemQuestion(label)
+                ? 'production_system'
               : isRecentEmployerPrompt(label)
                   ? 'most_recent_employer'
                   : isRecentTitlePrompt(label)
@@ -448,7 +471,7 @@ function coverLetterReview(draft, generatedPath = '') {
 }
 
 /** @param {Record<string, unknown>} control @param {Record<string, unknown>} item @param {Record<string, unknown>} profile @param {{ entries: Array<Record<string, unknown>> }} ledger @param {{ drafts?: { questions: Array<Record<string, unknown>> }, draftsPath?: string }} [options] */
-function answerForControl(control, item, profile, ledger, options = {}) {
+export function answerForControl(control, item, profile, ledger, options = {}) {
   const label = String(control.label || '');
   const sensitivity = isSensitiveQuestion(label) ? 'high' : 'normal';
   const reusable = findReusableAnswer(label, ledger, {
@@ -490,6 +513,12 @@ function answerForControl(control, item, profile, ledger, options = {}) {
     if (drafted) return drafted;
   }
 
+  const motivation = motivationAnswerForItem({
+    ...item,
+    question: label,
+  }, profile);
+  if (motivation) return motivation;
+
   const accomplishment = selectProjectAccomplishment({
     question: label,
     company: item.company,
@@ -518,7 +547,7 @@ function answerForControl(control, item, profile, ledger, options = {}) {
     };
   }
 
-  const profileValue = profileQuestionAnswer(profile, label) || profileAnswer(profile, label);
+  const profileValue = profileQuestionAnswer(profile, label, item) || profileAnswer(profile, label);
   if (profileValue) {
     return {
       ...profileValue,
@@ -528,7 +557,7 @@ function answerForControl(control, item, profile, ledger, options = {}) {
     };
   }
 
-  const common = answerFor(label, [commonQuestions(profile)]);
+  const common = answerFor(label, [commonQuestions(profile, item)]);
   if (common !== null) return { answer: common, source: 'profile:common-question-rule', kind: 'verified-profile', sensitive: sensitivity === 'high' };
   return null;
 }
@@ -634,7 +663,13 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
     const entry = recorded.find((candidate) => candidate.control === control)?.entry || null;
     const manualFieldReason = manualReason(control);
     if (manualFieldReason) {
-      manual.push({ label, required: control.required === true, reason: manualFieldReason, options: control.options || [] });
+      manual.push({
+        label,
+        required: control.required === true,
+        reason: manualFieldReason,
+        options: control.options || [],
+        multiple: control.multiple === true,
+      });
       continue;
     }
     let resolved = answerForControl(control, item, profile, ledger, options);
@@ -669,6 +704,7 @@ function buildQuestions(item, inspection, profile, ledgerPath, options = {}) {
       required: control.required === true,
       fieldKind: control.kind || control.type || 'text',
       options: Array.isArray(control.options) ? control.options : [],
+      multiple: control.multiple === true,
       category: control.category || 'question',
       answer,
       rawAnswer: resolved?.rawAnswer || (resolved?.kind === 'draft' ? answer : null),
@@ -724,6 +760,85 @@ export function packetFreshnessGate(item, now = new Date().toISOString()) {
     };
   }
   return { ok: true, freshness };
+}
+
+/**
+ * @param {Record<string, unknown>} item
+ * @param {{ dryRun?: boolean, contactDiscoveryRunner?: (item: Record<string, unknown>) => Promise<Record<string, unknown>> }} [options]
+ */
+export async function contactDiscoveryForPacket(item, options = {}) {
+  const fitScore = Number(item.fitScore);
+  const base = {
+    threshold: PACKET_CONTACT_DISCOVERY_MIN_FIT_SCORE,
+    fitScore: Number.isFinite(fitScore) ? fitScore : null,
+    contacts: [],
+    sources: [],
+    queries: [],
+    errors: [],
+    warnings: [],
+    emailConventions: [],
+    emailHypotheses: [],
+    emailVerification: [],
+    candidateEmailVerification: [],
+    cacheReused: false,
+    sendAuthorized: false,
+    submissionGate: 'confirmed-submission-required',
+  };
+  if (!Number.isFinite(fitScore) || fitScore < PACKET_CONTACT_DISCOVERY_MIN_FIT_SCORE) {
+    return {
+      ...base,
+      eligible: false,
+      outcome: 'not-eligible',
+      reason: Number.isFinite(fitScore)
+        ? `fit score ${fitScore.toFixed(1)} is below the 4.3 contact-discovery floor`
+        : 'fit score is unavailable, so the 4.3 contact-discovery floor cannot be confirmed',
+    };
+  }
+
+  try {
+    const runner = options.contactDiscoveryRunner || (async (target) => {
+      const outreach = await import('../outreach.mjs');
+      return outreach.discoverContactEvidenceForPacket(target, { dryRun: options.dryRun === true });
+    });
+    const result = await runner(item);
+    const contacts = Array.isArray(result?.contacts) ? result.contacts : [];
+    const pipelineStatus = String(result?.status || 'unavailable');
+    const outcome = contacts.length || pipelineStatus === 'found'
+      ? 'found'
+      : pipelineStatus === 'no_contacts'
+        ? 'no-verified-result'
+        : 'unavailable';
+    return {
+      ...base,
+      eligible: true,
+      outcome,
+      pipelineStatus,
+      pipelineVersion: result?.pipelineVersion || null,
+      mode: result?.mode || 'packet-prep',
+      reason: String(result?.reason || (outcome === 'no-verified-result'
+        ? 'no verified contact result was found'
+        : 'contact discovery is unavailable')),
+      contacts,
+      sources: Array.isArray(result?.sources) ? result.sources : [],
+      queries: Array.isArray(result?.queries) ? result.queries : [],
+      errors: Array.isArray(result?.errors) ? result.errors : [],
+      warnings: Array.isArray(result?.warnings) ? result.warnings : [],
+      emailConventions: Array.isArray(result?.emailConventions) ? result.emailConventions : [],
+      emailHypotheses: Array.isArray(result?.emailHypotheses) ? result.emailHypotheses : [],
+      emailVerification: Array.isArray(result?.emailVerification) ? result.emailVerification : [],
+      candidateEmailVerification: Array.isArray(result?.candidateEmailVerification) ? result.candidateEmailVerification : [],
+      cacheReused: result?.cacheReused === true,
+    };
+  } catch (error) {
+    return {
+      ...base,
+      eligible: true,
+      outcome: 'unavailable',
+      pipelineStatus: 'error',
+      reason: error instanceof Error ? error.message : String(error),
+      errors: [error instanceof Error ? error.message : String(error)],
+    };
+  }
 }
 
 /** @param {Record<string, unknown>} packet */
@@ -807,6 +922,38 @@ export function buildPacketMarkdown(packet) {
   }
   const research = Array.isArray(packet.research?.references) ? packet.research.references : [];
   if (research.length) lines.push('## Research references', '', ...research.map((reference) => `- ${reference}`), '');
+  const discovery = packet.contactDiscovery || {};
+  const discoveryLabel = {
+    found: 'Found',
+    'no-verified-result': 'No verified result',
+    unavailable: 'Unavailable',
+    'not-eligible': 'Not eligible',
+  }[discovery.outcome] || 'Unavailable';
+  lines.push('## Contact research', '');
+  lines.push(`- Outcome: ${discoveryLabel}`);
+  lines.push(`- Fit score: ${discovery.fitScore === null || discovery.fitScore === undefined ? 'not available' : Number(discovery.fitScore).toFixed(1)}/5`);
+  lines.push(`- Discovery floor: ${Number(discovery.threshold || PACKET_CONTACT_DISCOVERY_MIN_FIT_SCORE).toFixed(1)}/5`);
+  if (discovery.reason) lines.push(`- Detail: ${discovery.reason}`);
+  if (discovery.cacheReused) lines.push('- Evidence source: valid cached discovery snapshot');
+  const discoveredContacts = Array.isArray(discovery.contacts) ? discovery.contacts : [];
+  for (const contact of discoveredContacts) {
+    const identity = [contact.name, contact.role || contact.title].filter(Boolean).join(' — ') || 'Contact';
+    const verification = contact.emailVerified === true ? 'verified' : 'unverified';
+    lines.push(`- ${identity}${contact.email ? ` — ${contact.email} (${verification})` : ''}`);
+    if (contact.sourceUrl || contact.profileUrl) lines.push(`  Source: ${contact.sourceUrl || contact.profileUrl}`);
+  }
+  const discoverySources = Array.isArray(discovery.sources) ? discovery.sources : [];
+  for (const source of discoverySources) lines.push(`- Source: ${source}`);
+  const emailHypotheses = Array.isArray(discovery.emailHypotheses) ? discovery.emailHypotheses : [];
+  for (const hypothesis of emailHypotheses.filter((entry) => entry.sendable !== true)) {
+    lines.push(`- ${[hypothesis.name, hypothesis.email].filter(Boolean).join(' — ') || 'Email convention hypothesis'} (unverified hypothesis; not sendable)`);
+  }
+  const discoveryQueries = Array.isArray(discovery.queries) ? discovery.queries : [];
+  if (!discoveredContacts.length && discoveryQueries.length) {
+    lines.push('- Manual follow-up searches:');
+    for (const query of discoveryQueries) lines.push(`  - ${query}`);
+  }
+  lines.push('- Contact discovery is research only and does not authorize outreach; confirmed submission is still required.', '');
   const manual = Array.isArray(packet.manualItems) ? packet.manualItems : [];
   lines.push('## Human-only checks', '');
   if (!manual.length) lines.push('- Review the form and final submission control.');
@@ -815,7 +962,7 @@ export function buildPacketMarkdown(packet) {
   return `${lines.join('\n').trim()}\n`;
 }
 
-/** @param {Record<string, unknown>} item @param {{ browser?: string, headed?: boolean, cdpEndpoint?: string, ledgerPath?: string, profilePath?: string, outputRoot?: string, generateArtifacts?: boolean, generateCoverLetter?: boolean, dryRun?: boolean, inspection?: Record<string, unknown>, maxPages?: number, answersPath?: string, drafts?: { questions: Array<Record<string, unknown>>, coverLetter?: Record<string, unknown>, sourcePath?: string }, researchReferences?: string[], jackCoaching?: Record<string, unknown> }} [options] */
+/** @param {Record<string, unknown>} item @param {{ browser?: string, headed?: boolean, cdpEndpoint?: string, ledgerPath?: string, profilePath?: string, outputRoot?: string, generateArtifacts?: boolean, generateCoverLetter?: boolean, dryRun?: boolean, inspection?: Record<string, unknown>, maxPages?: number, answersPath?: string, drafts?: { questions: Array<Record<string, unknown>>, coverLetter?: Record<string, unknown>, sourcePath?: string }, researchReferences?: string[], jackCoaching?: Record<string, unknown>, contactDiscoveryRunner?: (item: Record<string, unknown>) => Promise<Record<string, unknown>> }} [options] */
 export async function buildApplicationPacket(item, options = {}) {
   const freshnessGate = packetFreshnessGate(item);
   if (!freshnessGate.ok) return { ok: false, status: 'stale', reason: freshnessGate.reason };
@@ -834,7 +981,7 @@ export async function buildApplicationPacket(item, options = {}) {
     try {
       browser = await launchBrowser(chromium, {
         headless: options.headed !== true,
-        channel: options.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
+        channel: options.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome',
         cdpEndpoint,
       });
       const page = await createBrowserPage(browser, { shared: Boolean(cdpEndpoint) });
@@ -957,6 +1104,7 @@ export async function buildApplicationPacket(item, options = {}) {
   ].filter(Boolean).map(String))];
   const formHash = shortHash(JSON.stringify({ pages, controls: allControls, buttons: allButtons }));
   const humanizationWarnings = questions.flatMap((question) => question.humanization?.errors || []);
+  const contactDiscovery = await contactDiscoveryForPacket(effectiveItem, options);
   const packet = {
     schemaVersion: 2,
     type: 'application-submission-packet',
@@ -1018,6 +1166,7 @@ export async function buildApplicationPacket(item, options = {}) {
       coaching: options.jackCoaching || { primary: 'career-ops-local-coaching', fallback: 'jackandjill-on-demand' },
       answerDraftsPath: options.answersPath || drafts.sourcePath || null,
     },
+    contactDiscovery,
     hashes: {
       jd: jobHash(effectiveItem),
       form: formHash,

@@ -14,9 +14,12 @@
 import { chromium } from 'playwright';
 import {
   parseCliArgs, loadProfile, loadAnswers, loadLedgerAnswers, commonQuestions, answerFor,
+  matchAnswerToOptions, matchAnswersToOptions,
   createSummary, fillBySelector, attachFile, detectRequired, launchBrowser, createBrowserPage, reconcile, finish,
   settle, EEO_LABEL_RE, LEGAL_LABEL_RE, MARKETING_RE,
 } from './lib/adapter-core.mjs';
+import { normalizeChoiceField } from './lib/choice-shape.mjs';
+import { readReactSelectOptions } from './lib/react-select-options.mjs';
 
 function normalizeUrl(url) {
   if (/\/application\/?$/.test(url)) return url;
@@ -46,7 +49,14 @@ async function main() {
     description: args.jobDescription,
     lane: args.lane,
   });
-  const tables = [answers, ledgerAnswers, commonQuestions(profile)];
+  const tables = [answers, ledgerAnswers, commonQuestions(profile, {
+    company: args.company,
+    title: args.title,
+    location: args.jobLocation,
+    url: args.url,
+    description: args.jobDescription,
+    lane: args.lane,
+  })];
 
   const resumePath = args.resume || profile.defaults?.resume_path || '';
   const coverPath = args.cover || profile.defaults?.cover_letter_path || '';
@@ -70,7 +80,7 @@ async function main() {
   }
 
   // --- Custom + label-addressed fields -------------------------------------
-  const fields = await collectFields(page);
+  const fields = (await collectFields(page)).map(normalizeChoiceField);
   for (const f of fields) {
     if (EEO_LABEL_RE.test(f.label)) {
       tools.review(`EEO: ${f.label}`, 'voluntary self-identification — fill it yourself');
@@ -85,9 +95,19 @@ async function main() {
       continue;
     }
 
-    const value = resolveValue(f.label, f.kind, id, profile, tables);
+    const rawValue = resolveValue(f.label, f.kind, id, profile, tables);
+    const value = rawValue === null
+      ? null
+      : f.kind === 'checkbox' && f.multiple
+        ? matchAnswersToOptions(rawValue, f.options)
+        : matchAnswerToOptions(rawValue, f.options);
     if (value === null) {
-      if (f.required) tools.review(f.label, 'no matching profile value — answer manually', { options: f.options, kind: f.kind, required: true });
+      if (f.required) tools.review(f.label, 'no matching profile value — answer manually', {
+        options: f.options,
+        kind: f.kind,
+        multiple: f.multiple,
+        required: true,
+      });
       continue;
     }
 
@@ -97,6 +117,8 @@ async function main() {
       await fillByName(page, f.name, f.id, value, f.label, tools);
     } else if (f.kind === 'select') {
       await selectNativeByName(page, f.name, value, f.label, tools);
+    } else if (f.kind === 'checkbox' && f.multiple) {
+      await checkOptionsByText(page, f.name, value, f.label, tools, f.containerSelector);
     } else if (f.kind === 'radio' || f.kind === 'checkbox') {
       await checkOptionByText(page, f.name, value, f.label, tools, f.containerSelector);
     }
@@ -155,7 +177,7 @@ function resolveValue(label, kind, id, profile, tables) {
 // reCAPTCHA. Groups radio/checkbox inputs by name.
 // -------------------------------------------------------------------------
 async function collectFields(page) {
-  return page.evaluate(() => {
+  const fields = await page.evaluate(() => {
     let nextFieldId = 0;
     const fieldEntry = (el) => el.closest('[data-field-path], [class*="_fieldEntry"], [class*="Field"], fieldset');
     const fieldPath = (el) => {
@@ -268,6 +290,20 @@ async function collectFields(page) {
     for (const g of groups.values()) if (g.label) out.push(g);
     return out;
   });
+  const optionCache = new Map();
+  for (const field of fields) {
+    if (field.kind !== 'combobox' || field.options?.length) continue;
+    const cacheKey = field.id || field.label;
+    if (!optionCache.has(cacheKey)) {
+      optionCache.set(cacheKey, await readReactSelectOptions(page, {
+        id: field.id,
+        label: field.label,
+      }));
+    }
+    const options = optionCache.get(cacheKey);
+    if (options?.length) field.options = options;
+  }
+  return fields;
 }
 
 function esc(s) { return s.replace(/(["\\])/g, '\\$1'); }
@@ -345,6 +381,22 @@ async function checkOptionByText(page, name, value, label, tools, containerSelec
     }
   }
   tools.review(label, `no option matched "${value}"`);
+}
+
+async function checkOptionsByText(page, name, values, label, tools, containerSelector = '') {
+  if (!Array.isArray(values) || !values.length) {
+    tools.review(label, 'no checkbox options were selected');
+    return;
+  }
+  const optionTools = createSummary();
+  for (const value of values) {
+    await checkOptionByText(page, name, value, label, optionTools, containerSelector);
+  }
+  if (optionTools.summary.needsReview.length) {
+    tools.review(label, optionTools.summary.needsReview.map((item) => item.reason).join('; '));
+  } else {
+    tools.ok(label, name);
+  }
 }
 
 function regexEscape(value) {

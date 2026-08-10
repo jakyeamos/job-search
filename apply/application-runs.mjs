@@ -6,6 +6,7 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const DEFAULT_RUNS_PATH = path.join(ROOT, 'data', 'application-runs.json');
 export const TERMINAL_RUN_STATES = new Set([
   'started',
+  'prepared_for_review',
   'blocked_by_question',
   'blocked_by_human',
   'submitted',

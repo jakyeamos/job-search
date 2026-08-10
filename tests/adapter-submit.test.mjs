@@ -133,7 +133,7 @@ test('Greenhouse adapter submits only after the authorized gate and records conf
     const result = await execFileAsync(process.execPath, [
       'apply/fill-greenhouse.mjs', `http://127.0.0.1:${port}/jobs/1`,
       '--profile', profilePath, '--policy', policyPath, '--ledger', ledgerPath,
-      '--resume', resumePath, '--submit', '--headless', '--browser', 'chrome-beta',
+      '--resume', resumePath, '--submit', '--headless', '--browser', 'chrome',
       '--fit-score', '4.5', '--liveness', 'active', '--company', 'Local Test', '--title', 'Backend Engineer',
     ], { cwd: path.resolve(new URL('..', import.meta.url).pathname), timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
     const marker = result.stdout.split('\n').find((line) => line.startsWith('CAREER_OPS_APPLICATION_RESULT '));

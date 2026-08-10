@@ -8,7 +8,6 @@ import { promisify } from 'util';
 
 import { recordApplication } from './apply/record-application.mjs';
 import {
-  DEFAULT_CONTACT_DISCOVERY_LIMIT,
   normalizeUrl,
   readQueueState,
   renderQueueMarkdown,
@@ -36,6 +35,7 @@ const ADAPTERS = {
 };
 
 const TERMINAL_APPLICATION_STATES = new Set([
+  'prepared_for_review',
   'submitted',
   'submission_unknown',
   'blocked_by_antispam',
@@ -165,6 +165,7 @@ export function adapterCommand(item, adapter, options, resume, artifacts = {}) {
     '--company', String(item.company || ''),
     '--title', String(item.title || ''),
     '--lane', String(item.lane || ''),
+    '--job-location', String(item.location || ''),
     '--job-description', String(item.description || ''),
     '--fit-score', String(item.fitScore || 0),
     '--liveness', String(item.liveness || ''),
@@ -173,8 +174,6 @@ export function adapterCommand(item, adapter, options, resume, artifacts = {}) {
     command.push('--prepare-only');
   } else if (options.humanHandoff) {
     command.push('--human-handoff', '--human-timeout', String(options.humanTimeoutSeconds || 600));
-  } else {
-    command.push('--submit');
   }
   if (options.cdpEndpoint) command.push('--cdp-endpoint', options.cdpEndpoint);
   if (options.headless) command.push('--headless');
@@ -200,6 +199,8 @@ export async function prepareApplicationArtifacts(item, policy) {
   if (artifacts.jobDescription && String(artifacts.jobDescription).length > String(item.description || '').length) {
     item.description = artifacts.jobDescription;
   }
+  if (artifacts.job?.descriptionSource) item.descriptionSource = String(artifacts.job.descriptionSource);
+  if (artifacts.job?.descriptionEndpoint) item.descriptionEndpoint = String(artifacts.job.descriptionEndpoint);
   if (!item.lane && artifacts.lane) item.lane = artifacts.lane;
   const registered = registerResumeArtifact(item, ROOT, {
     artifactPath: artifacts.resumePdf,
@@ -222,9 +223,29 @@ export async function prepareApplicationArtifacts(item, policy) {
   return { ok: true, artifacts, resume };
 }
 
+/**
+ * Persist the prepared item's fetched posting and generated artifact metadata
+ * before a browser handoff reads the queue again. The handoff holds the
+ * exclusive application lock, so merging the prepared record is safe and
+ * preserves the rest of the queue state.
+ * @param {Record<string, unknown>} item
+ */
+export function persistPreparedApplicationItem(item) {
+  const state = readQueueState(QUEUE_FILE);
+  const index = (state.items || []).findIndex((candidate) => candidate.id === item.id);
+  if (index < 0) return null;
+  state.items[index] = { ...state.items[index], ...item };
+  saveQueue(state);
+  return state.items[index];
+}
+
 /** @param {Record<string, unknown>} state @param {Record<string, unknown>} item @param {Record<string, unknown>} result */
 export function persistApplicationResult(state, item, result) {
-  const normalizedState = result.state === 'blocked' && Array.isArray(result.needsReview) && result.needsReview.length
+  const normalizedState = result.state === 'handoff_ready'
+    ? 'prepared_for_review'
+    : result.state === 'not_requested' && String(result.reason || '').includes('fill-only mode')
+    ? 'prepared_for_review'
+    : result.state === 'blocked' && Array.isArray(result.needsReview) && result.needsReview.length
     ? 'blocked_by_question'
     : result.state === 'blocked' && /submit control|captcha|mfa|sign[- ]in|human handoff|verification/i.test(String(result.reason || ''))
       ? 'blocked_by_human'
@@ -239,6 +260,7 @@ export function persistApplicationResult(state, item, result) {
     queueId: result.queueId || item.id,
     needsReview: Array.isArray(result.needsReview) ? result.needsReview : [],
     submissionEvidence: result.submissionEvidence || null,
+    handoffObservation: result.handoffObservation || null,
   };
   item.selectedForToday = false;
   item.queueRank = null;
@@ -299,7 +321,7 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
   const items = (state.items || [])
     .filter((item) => item.selectedForToday
       && ['ready', 'in_review'].includes(item.status)
-      && !['submitted', 'submission_unknown', 'blocked', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_question', 'blocked_by_human'].includes(String(item.applicationState || '')))
+      && !['prepared_for_review', 'submitted', 'submission_unknown', 'blocked', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_question', 'blocked_by_human'].includes(String(item.applicationState || '')))
     .sort((a, b) => Number(a.queueRank || 999) - Number(b.queueRank || 999));
   const dailyCap = Math.min(Number(options.limit || policy.dailyLimit), policy.dailyLimit);
   const today = new Date().toISOString().slice(0, 10);
@@ -375,11 +397,14 @@ export async function runApplicationQueue(options = { dryRun: false, limit: 6, h
       continue;
     }
 
-    const result = await runAdapter(adapterCommand(item, adapter, { headless: !options.headed }, resume, {
+    const rawResult = await runAdapter(adapterCommand(item, adapter, { headless: !options.headed }, resume, {
       coverLetterPdf: item.coverLetterArtifact,
       coverLetterText: item.coverLetterText,
     }), 180_000)
       || { state: 'failed', reason: 'adapter did not return a machine-readable result' };
+    const result = rawResult.state === 'not_requested' && String(rawResult.reason || '').includes('fill-only mode')
+      ? { ...rawResult, state: 'prepared_for_review', reason: 'form filled to the maximum safe point; human review and submission remain' }
+      : rawResult;
     finishRun(DEFAULT_RUNS_PATH, key, result);
     const persisted = persistApplicationResult(state, item, result);
     if (persisted.submitted) {
@@ -449,17 +474,20 @@ export async function resumeApplication(queueId, options = {}) {
   }, { allowQuestionResume: true });
   if (!started.ok) return { ok: false, reason: started.reason };
   options.onProgress?.({ phase: 'resuming', id: item.id, company: item.company, title: item.title, status: 'started' });
-  const result = await runAdapter(adapterCommand(item, adapter, { headless: true }, resume, {
+  const rawResult = await runAdapter(adapterCommand(item, adapter, { headless: true }, resume, {
     coverLetterPdf: item.coverLetterArtifact,
     coverLetterText: item.coverLetterText,
   }), 180_000) || { state: 'failed', reason: 'adapter did not return a machine-readable result' };
+  const result = rawResult.state === 'not_requested' && String(rawResult.reason || '').includes('fill-only mode')
+    ? { ...rawResult, state: 'prepared_for_review', reason: 'form filled to the maximum safe point; human review and submission remain' }
+    : rawResult;
   finishRun(DEFAULT_RUNS_PATH, key, result);
   const persisted = persistApplicationResult(state, item, result);
   const outreach = persisted.submitted ? await runPostApplicationOutreach() : { triggered: false, ok: true, reason: 'no confirmed submission; outreach not run' };
   return { ok: true, id: item.id, company: item.company, title: item.title, result, persisted, outreach };
 }
 
-/** @param {{ limit?: number, dryRun?: boolean }} [options] */
+/** @param {{ limit?: number, dryRun?: boolean, humanTimeoutSeconds?: number }} [options] */
 export async function runClearQueue(options = {}) {
   const policy = loadPolicy();
   const limit = Math.min(Number(options.limit || policy.dailyLimit), policy.dailyLimit);
@@ -484,8 +512,6 @@ export async function runClearQueue(options = {}) {
       'refresh',
       '--limit',
       String(limit),
-      '--discovery-limit',
-      String(DEFAULT_CONTACT_DISCOVERY_LIMIT),
     ];
     if (dryRun) refreshArgs.push('--dry-run');
     refreshArgs.push('--skip-outreach');
@@ -519,23 +545,19 @@ export async function runClearQueue(options = {}) {
       refreshOutput,
       selected: selected.map((item) => ({ id: item.id, company: item.company, title: item.title })),
     });
-    const application = await runApplicationQueue({
-      dryRun: false,
-      limit,
-      headed: false,
-      onProgress: (event) => updateClearState(DEFAULT_CLEAR_STATE_PATH, { phase: 'applying', current: event }),
+    const handoffIds = selected.map((item) => item.id).filter(Boolean);
+    updateClearState(DEFAULT_CLEAR_STATE_PATH, { phase: 'handoff', handoffs: handoffIds });
+    const module = await import('./application-handoff.mjs');
+    const handoff = await module.runHandoffBatch(handoffIds, {
+      timeoutSeconds: Number(options.humanTimeoutSeconds || 600),
+      includeSelected: true,
     });
-    const handoffStates = new Set(['submission_unknown', 'blocked_by_antispam', 'blocked_by_captcha', 'blocked_by_mfa', 'blocked_by_human']);
-    const handoffIds = (application.report || [])
-      .filter((entry) => handoffStates.has(String(entry.action || '')))
-      .map((entry) => entry.id)
-      .filter(Boolean);
-    let handoff = { ok: true, skipped: true, reason: 'no browser handoffs required' };
-    if (handoffIds.length) {
-      updateClearState(DEFAULT_CLEAR_STATE_PATH, { phase: 'handoff', handoffs: handoffIds });
-      const module = await import('./application-handoff.mjs');
-      handoff = await module.runHandoffBatch(handoffIds, { timeoutSeconds: 600 });
-    }
+    const application = {
+      ok: handoff.ok,
+      submittedToday: Number(handoff.submitted || 0),
+      submittedThisRun: Number(handoff.submitted || 0),
+      report: handoff.preparation || [],
+    };
     const finalState = readQueueState(QUEUE_FILE);
     const questions = (finalState.items || [])
       .filter((item) => item.applicationState === 'blocked_by_question')

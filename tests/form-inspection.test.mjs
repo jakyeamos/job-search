@@ -45,6 +45,89 @@ test('extracts the rendered application-page job description without reading for
   }
 });
 
+test('classifies checkbox-backed Yes/No controls as single-choice', async (t) => {
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (error) {
+    t.skip(`Playwright browser is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <form>
+        <div data-field-path="openSource">
+          <h3>Have you contributed to open-source projects before?</h3>
+          <input id="open-source-value" type="checkbox">
+          <button type="button">Yes</button>
+          <button type="button">No</button>
+        </div>
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+
+    const inspection = await inspectApplicationPage(page);
+    assert.equal(inspection.controls[0].kind, 'checkbox');
+    assert.deepEqual(inspection.controls[0].options, ['Yes', 'No']);
+    assert.equal(inspection.controls[0].multiple, false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens custom comboboxes read-only so choice options are captured before rendering', async (t) => {
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (error) {
+    t.skip(`Playwright browser is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <form>
+        <div class="field-wrapper">
+          <label for="question_event">Which campus event did you attend? (Select 'Not applicable' if you haven't attended one yet)</label>
+          <div class="select__control">
+            <input id="question_event" role="combobox" aria-expanded="false" aria-haspopup="true">
+          </div>
+        </div>
+      </form>
+      <script>
+        const control = document.querySelector('.select__control');
+        const input = document.querySelector('#question_event');
+        control.addEventListener('click', () => {
+          input.setAttribute('aria-expanded', 'true');
+          input.setAttribute('aria-controls', 'event-options');
+          if (document.querySelector('#event-options')) return;
+          const list = document.createElement('div');
+          list.id = 'event-options';
+          list.setAttribute('role', 'listbox');
+          list.innerHTML = '<div role="option">Campus event</div><div role="option">Not applicable</div>';
+          document.body.append(list);
+        });
+        input.addEventListener('keydown', (event) => {
+          if (event.key !== 'Escape') return;
+          document.querySelector('#event-options')?.remove();
+          input.setAttribute('aria-expanded', 'false');
+          input.removeAttribute('aria-controls');
+        });
+      </script>
+    `);
+
+    const inspection = await inspectApplicationPage(page);
+    const question = inspection.controls.find((control) => control.id === 'question_event');
+    assert.equal(question.kind, 'combobox');
+    assert.deepEqual(question.options, ['Campus event', 'Not applicable']);
+    assert.equal(await page.locator('#event-options').count(), 0);
+    assert.equal(await page.locator('#question_event').getAttribute('aria-expanded'), 'false');
+  } finally {
+    await browser.close();
+  }
+});
+
 test('read-only flow traverses an optional page and stops before required inputs', async (t) => {
   let browser;
   try {

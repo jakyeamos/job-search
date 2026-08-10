@@ -21,6 +21,7 @@ import { readFile } from 'fs/promises';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { randomUUID } from 'node:crypto';
+import { copyResumePdfToDelivery, loadResumeProfile } from './resume-delivery.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -244,13 +245,15 @@ async function generatePDF() {
   const args = process.argv.slice(2);
 
   // Parse arguments
-  let inputPath, outputPath, format = 'a4', reportNum = '';
+  let inputPath, outputPath, format = 'a4', reportNum = '', resumeCompany = '';
 
   for (const arg of args) {
     if (arg.startsWith('--format=')) {
       format = arg.split('=')[1].toLowerCase();
     } else if (arg.startsWith('--report=')) {
       reportNum = arg.split('=')[1].trim();
+    } else if (arg.startsWith('--resume-company=')) {
+      resumeCompany = arg.slice('--resume-company='.length).trim();
     } else if (!inputPath) {
       inputPath = arg;
     } else if (!outputPath) {
@@ -259,7 +262,7 @@ async function generatePDF() {
   }
 
   if (!inputPath || !outputPath) {
-    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN]');
+    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--resume-company=Company] [--format=letter|a4] [--report=NNN]');
     process.exit(1);
   }
 
@@ -311,13 +314,23 @@ async function generatePDF() {
     console.log(`🧹 ATS normalization: ${totalReplacements} replacements (${breakdown})`);
   }
 
-  return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
+  const result = await renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
+  if (resumeCompany) {
+    const deliveryPdfPath = copyResumePdfToDelivery(
+      result.outputPath,
+      resumeCompany,
+      loadResumeProfile(__dirname),
+    );
+    console.log(`📤 Delivery copy: ${deliveryPdfPath}`);
+    return { ...result, deliveryPdfPath };
+  }
+  return result;
 }
 
 /** @param {{ headless: boolean, channel?: string }} options */
 async function launchPdfBrowser(options) {
-  const requested = options.channel || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta';
-  const channels = [...new Set([requested, requested === 'chrome-beta' ? 'chrome' : null, null])];
+  const requested = options.channel || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome';
+  const channels = [...new Set([requested, null])];
   let lastError = null;
   for (const channel of channels) {
     try {

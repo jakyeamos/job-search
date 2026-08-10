@@ -9,8 +9,10 @@ import { readFile } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { DEFAULT_POLICY_PATH, loadPolicy, submissionGate } from '../application-policy.mjs';
-import { DEFAULT_LEDGER_PATH, answerTable, loadLedger, recordQuestion } from '../question-ledger.mjs';
+import { DEFAULT_LEDGER_PATH, answerTable, isAISafetyQuestion, loadLedger, recordQuestion } from '../question-ledger.mjs';
+import { LEGAL_LABEL_RE } from '../question-visibility.mjs';
 import { projectAccomplishmentAnswerTable } from '../../project-accomplishment-ledger.mjs';
+import { motivationAnswerForItem } from '../motivation-answer.mjs';
 
 const DEFAULT_PROFILE = fileURLToPath(
   new URL('../../config/application-profile.json', import.meta.url),
@@ -222,6 +224,7 @@ export function parseCliArgs() {
       company: { type: 'string' },
       title: { type: 'string' },
       lane: { type: 'string' },
+      'job-location': { type: 'string' },
       'job-description': { type: 'string' },
       'fit-score': { type: 'string' },
       liveness: { type: 'string' },
@@ -256,10 +259,11 @@ export function parseCliArgs() {
     company: values.company || '',
     title: values.title || '',
     lane: values.lane || '',
+    jobLocation: values['job-location'] || '',
     jobDescription: values['job-description'] || '',
     fitScore: values['fit-score'] === undefined ? null : Number(values['fit-score']),
     liveness: values.liveness || '',
-    browser: values.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome-beta',
+    browser: values.browser || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome',
     cdpEndpoint: values['cdp-endpoint'] || '',
     humanHandoff: !!values['human-handoff'],
     prepareOnly: !!values['prepare-only'],
@@ -309,8 +313,8 @@ export async function loadLedgerAnswers(path, context = {}) {
 /** @param {import('playwright').ChromiumType} chromium @param {{ headless: boolean, channel?: string }} options */
 export async function launchBrowser(chromium, options) {
   if (options.cdpEndpoint) return chromium.connectOverCDP(options.cdpEndpoint);
-  const requested = options.channel || 'chrome-beta';
-  const channels = [requested, requested === 'chrome-beta' ? 'chrome' : null, null].filter((value, index, all) => value !== null ? all.indexOf(value) === index : all.indexOf(value) === index);
+  const requested = options.channel || 'chrome';
+  const channels = [requested, null].filter((value, index, all) => value !== null ? all.indexOf(value) === index : all.indexOf(value) === index);
   let lastError = null;
   for (const channel of channels) {
     try {
@@ -350,10 +354,28 @@ function isHybridWorkQuestion(questionText) {
 }
 
 // Recurring custom questions every ATS tends to ask. Values come ONLY from the profile.
-export function commonQuestions(profile) {
+const US_JOB_LOCATION_RE = /\b(?:united states|u\.s\.a?\.?|usa|us[- ](?:based|only|remote)|remote[- ]us|new york|california|texas|florida|washington|massachusetts|illinois|colorado|georgia|north carolina|virginia|pennsylvania|ohio|michigan|arizona|oregon|maryland|new jersey|tennessee|minnesota|connecticut|utah|wisconsin|missouri|indiana|iowa|kansas|kentucky|louisiana|maine|mississippi|montana|nebraska|nevada|new hampshire|new mexico|north dakota|oklahoma|rhode island|south carolina|south dakota|vermont|west virginia|wyoming|district of columbia)\b/i;
+const NON_US_JOB_LOCATION_RE = /\b(?:canada|mexico|united kingdom|u\.k\.?|uk|england|scotland|wales|ireland|europe|emea|e\.u\.?|eu|netherlands|amsterdam|germany|france|spain|italy|belgium|switzerland|austria|portugal|poland|sweden|norway|denmark|finland|australia|new zealand|india|singapore|japan|south korea|latin america|latam|apac|asia|africa|middle east)\b/i;
+
+/** @param {Record<string, unknown>} profile @param {{ company?: string, location?: string, jobLocation?: string, title?: string, role?: string, url?: string, description?: string, lane?: string, coverLetterText?: string, applicationArtifactManifest?: string }} [context] */
+export function sponsorshipRequirement(profile, context = {}) {
+  const authorization = profile.work_authorization || {};
+  const defaultRequirement = Boolean(authorization.requires_sponsorship);
+  const outsideUsRequirement = authorization.requires_sponsorship_outside_us;
+  const location = String(context.location || context.jobLocation || '');
+  const title = String(context.title || context.role || '');
+  const jurisdictionText = `${location} ${title}`.trim();
+  if (US_JOB_LOCATION_RE.test(jurisdictionText)) return defaultRequirement;
+  if (NON_US_JOB_LOCATION_RE.test(jurisdictionText) && outsideUsRequirement !== undefined) {
+    return Boolean(outsideUsRequirement);
+  }
+  return defaultRequirement;
+}
+
+export function commonQuestions(profile, context = {}) {
   const wa = profile.work_authorization || {};
   const authorized = wa.authorized_us ? 'Yes' : 'No';
-  const needsSponsorship = wa.requires_sponsorship ? 'Yes' : 'No';
+  const needsSponsorship = sponsorshipRequirement(profile, context) ? 'Yes' : 'No';
   const applicationAnswers = profile.application_answers && typeof profile.application_answers === 'object'
     ? profile.application_answers
     : {};
@@ -363,11 +385,32 @@ export function commonQuestions(profile) {
     const answer = String(value.answer || '').trim();
     return answer || null;
   };
+  const motivation = motivationAnswerForItem({
+    question: `Why ${context.company || 'this company'}?`,
+    company: context.company,
+    title: context.title || context.role,
+    description: context.description,
+    lane: context.lane,
+    applyUrl: context.url,
+    canonicalUrl: context.url,
+    coverLetterText: context.coverLetterText,
+    applicationArtifactManifest: context.applicationArtifactManifest,
+  }, profile);
   const rules = [
     // Authorization is checked BEFORE sponsorship so "authorized to work ... without
     // sponsorship?" resolves to the authorization answer, not the sponsorship one.
     { re: /legally authorized|authorized to work|eligible to work|work authorization|right to work/i, value: authorized },
     { re: /sponsor|require .*(petition|immigration)|file a petition|immigration status|nonimmigrant|visa status/i, value: needsSponsorship },
+    { re: /^(?:how|where)(?:\s+did|(?:'|’)d)\s+you(?:\s+first)?\s+hear\s+about\b/i, value: configured('referral_source') },
+    { re: /\bseeking\b[\s\S]{0,40}\bfull[- ]time position\b|\bseeking a full[- ]time\b/i, value: configured('full_time') },
+    { re: /\btechnology\b[\s\S]{0,80}\bmost experience\b/i, value: configured('technology_most_experience') },
+    { re: /^\s*kubernetes experience\s*$/i, value: configured('kubernetes_experience') },
+    { re: /\bparticipate\b[\s\S]{0,80}\bon[- ]call rotation\b|\bwilling\b[\s\S]{0,80}\bon[- ]call\b/i, value: configured('on_call_rotation') },
+    { re: /\bhave you ever used sentry before\b|\bever used sentry\b/i, value: configured('sentry_used') },
+    { re: /\bat least\s+3\s+years\b[\s\S]{0,120}\bprofessional experience\b[\s\S]{0,80}\bsoftware engineering\b/i, value: configured('professional_software_engineering_3_years') },
+    { re: /\btravel\b[\s\S]{0,120}\b(?:customers?|partners?)\b[\s\S]{0,80}\b(?:less than|under|up to)?\s*20\s*%/i, value: configured('travel_up_to_20_percent') },
+    { re: /\bhave you contributed to open[- ]source projects before\b/i, value: configured('open_source_contribution') },
+    { re: /\bshare an example\b[\s\S]{0,180}\bopen[- ]source contribution\b/i, value: configured('open_source_contribution_example') },
     { re: /(previously|ever).*(employed|worked).*(here|for (us|this)|at (this )?compan)|former employee|prior employment/i, value: 'No' },
     { re: /at least 18|18 years of age|are you 18/i, value: 'Yes' },
     { re: /currently.*(employed|work).*(here|for (us|this compan))/i, value: 'No' },
@@ -380,7 +423,19 @@ export function commonQuestions(profile) {
     { re: /\b(?:located|live|based|reside)\b[\s\S]{0,60}\bsan francisco bay area\b/i, value: configured('located_in_bay_area') },
     { re: /live in one of the following states\b/i, value: configured('restricted_state_residence') },
     { re: /\b(?:used|worked with|experience with)\s+sentry\b|sentry experience/i, value: configured('sentry_experience') },
+    { match: isAISafetyQuestion, value: configured('llm_evaluation') || configured('agentic_systems') },
     { re: /llm evaluation|observability|guardrails/i, value: configured('llm_evaluation') },
+    { match: (question) => motivationAnswerForItem({
+      question,
+      company: context.company,
+      title: context.title || context.role,
+      description: context.description,
+      lane: context.lane,
+      applyUrl: context.url,
+      canonicalUrl: context.url,
+      coverLetterText: context.coverLetterText,
+      applicationArtifactManifest: context.applicationArtifactManifest,
+    }, profile) !== null, value: motivation?.answer || null },
     { re: /\bhow\s+long\b[\s\S]{0,220}\bcommit(?:ted|ting)?\b[\s\S]{0,120}\b(?:repository|repo)\b/i, value: configured('recent_code_commit') },
     { re: /which programming languages[\s\S]*most complex application|programming languages do you know/i, value: configured('programming_languages') },
     { re: /what is your main development language/i, value: configured('main_development_language') },
@@ -398,6 +453,41 @@ export function answerFor(questionText, tables) {
     }
   }
   return null;
+}
+
+/** @param {unknown} answer @param {Array<unknown>} options */
+export function matchAnswerToOptions(answer, options = []) {
+  const requested = String(answer || '').trim();
+  if (!requested || !Array.isArray(options) || !options.length) return requested;
+  const normalized = requested.toLowerCase();
+  const values = options.map((option) => String(option).trim()).filter(Boolean);
+  const exact = values.find((option) => option.toLowerCase() === normalized);
+  if (exact) return exact;
+  if (normalized === 'job board') {
+    return values.find((option) => /^job board(?:\b|\s*\()/i.test(option)) || requested;
+  }
+  return requested;
+}
+
+/** @param {unknown} answer @param {Array<unknown>} options */
+export function matchAnswersToOptions(answer, options = []) {
+  let requested;
+  if (Array.isArray(answer)) {
+    requested = answer;
+  } else {
+    const text = String(answer || '').trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      requested = Array.isArray(parsed) ? parsed : text.split(/\s*;\s*|\r?\n/);
+    } catch {
+      requested = text.split(/\s*;\s*|\r?\n/);
+    }
+  }
+  return [...new Set(requested
+    .map((value) => matchAnswerToOptions(value, options))
+    .map((value) => String(value || '').trim())
+    .filter(Boolean))];
 }
 
 // ---------------------------------------------------------------------------
@@ -505,7 +595,7 @@ export async function selectNative(page, selector, value, label, tools) {
 
 export const EEO_LABEL_RE = /gender|race|ethnic|hispanic|latino|veteran|disabilit|self[-\s]?identif|voluntary self/i;
 export const MARKETING_RE = /marketing|newsletter|updates|promotional|subscribe|keep me (posted|informed)|receive (emails|communications)/i;
-export const LEGAL_LABEL_RE = /attest|certif|background|criminal|conviction|terms (?:and|of)|agree.*(?:accurate|truth|conditions|terms)|privacy\s+(?:notice|policy)|ai\s+policy|double[- ]check|accuracy is crucial|information provided above|full[- ]time\s+(?:on[- ]?site|in[- ]person)[\s\S]*\b(?:london|germany|france|spain|netherlands|belgium|italy)\b/i;
+export { LEGAL_LABEL_RE } from '../question-visibility.mjs';
 
 // ---------------------------------------------------------------------------
 // Required-field detection (page.evaluate). Group-aware; skips reCAPTCHA.
@@ -748,6 +838,7 @@ export async function finish(page, browser, tools, {
       source: `adapter:${adapter}`,
       options: review.options,
       fieldKind: review.kind || review.fieldKind || null,
+      required: review.required === true,
       reason: review.reason || '',
     });
   }

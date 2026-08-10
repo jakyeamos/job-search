@@ -17,6 +17,7 @@ import { load as loadYaml } from 'js-yaml';
 import { renderHtmlToPdf } from '../generate-pdf.mjs';
 import { auditResume } from '../resume-audit.mjs';
 import { resolveResumeArtifact } from '../resume-contract.mjs';
+import { copyResumePdfToDelivery } from '../resume-delivery.mjs';
 import { fetchAtsJobDescription } from './public-job-description.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -818,6 +819,9 @@ export async function generateApplicationArtifacts(item, options = {}) {
       const filesReady = requiredPdfPaths.every((file) => !needsPdf || (file && existsSync(file)));
       const statusReady = cached.status === 'ready' || (options.renderPdf === false && cached.status === 'unrendered');
       if (!options.force && cached.jdHash === effectiveJobHash && cached.sourceHash === currentSourceHash && statusReady && filesReady) {
+        const deliveryResumePdf = cached.resume?.pdfPath && existsSync(cached.resume.pdfPath)
+          ? copyResumePdfToDelivery(cached.resume.pdfPath, effectiveItem.company, profile)
+          : cached.resume?.deliveryPdfPath || '';
         return {
           ok: true,
           cached: true,
@@ -826,6 +830,7 @@ export async function generateApplicationArtifacts(item, options = {}) {
           resumeMarkdown: cached.resume?.markdownPath || '',
           resumeHtml: cached.resume?.htmlPath || '',
           resumePdf: cached.resume?.pdfPath || '',
+          deliveryResumePdf,
           coverLetterHtml: cached.coverLetter?.htmlPath || '',
           coverLetterPdf: cached.coverLetter?.pdfPath || '',
           coverLetterText: cached.coverLetter?.textPath || '',
@@ -886,6 +891,7 @@ export async function generateApplicationArtifacts(item, options = {}) {
   }
 
   let resumePdf = reusedResume ? resumePdfPath : '';
+  let deliveryResumePdf = '';
   let coverLetterPdf = '';
   let resumeAudit = reusedResume
     ? (reusedResumeRecord.audit || { passed: true, errors: [], warnings: [] })
@@ -902,6 +908,10 @@ export async function generateApplicationArtifacts(item, options = {}) {
       coverPageCount = pageCount(output.coverLetterPdf);
       if (coverPageCount !== null && coverPageCount > 1) return { ok: false, reason: `generated cover letter is ${coverPageCount} pages; one page is required` };
     }
+  }
+
+  if (resumePdf && existsSync(resumePdf)) {
+    deliveryResumePdf = copyResumePdfToDelivery(resumePdf, effectiveItem.company, profile);
   }
 
   const manifest = {
@@ -932,6 +942,7 @@ export async function generateApplicationArtifacts(item, options = {}) {
       markdownPath: resumeMarkdownPath,
       htmlPath: resumeHtmlPath,
       pdfPath: resumePdf,
+      deliveryPdfPath: deliveryResumePdf,
       audit: resumeAudit,
     },
     coverLetter: options.includeCoverLetter === false ? null : {
@@ -950,6 +961,7 @@ export async function generateApplicationArtifacts(item, options = {}) {
     resumeMarkdown: resumeMarkdownPath,
     resumeHtml: resumeHtmlPath,
     resumePdf,
+    deliveryResumePdf,
     coverLetterHtml: output.coverLetterHtml,
     coverLetterPdf,
     coverLetterText: options.includeCoverLetter === false ? '' : output.coverLetterText,

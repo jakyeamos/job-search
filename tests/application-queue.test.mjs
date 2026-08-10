@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  adapterCommand,
   adapterForUrl,
   parseAdapterResult,
   queueApplicationGate,
@@ -30,6 +31,19 @@ test('worker consumes the adapter result marker', () => {
   assert.deepEqual(result, { state: 'submitted', reason: 'confirmed' });
   assert.equal(parseAdapterResult('no marker'), null);
 });
+
+test('queue adapter commands are fill-only unless an explicit mode requests otherwise', () => {
+  const command = adapterCommand(
+    { id: 'q1', applyUrl: 'https://jobs.ashbyhq.com/acme/1', company: 'Acme', title: 'Engineer', location: 'London, UK', lane: 'engineering', description: 'Build things', fitScore: 4.5, liveness: 'active' },
+    'ashby',
+    { headless: true },
+    { artifactPath: '/tmp/resume.pdf' },
+  );
+  assert.equal(command.includes('--submit'), false);
+  assert.equal(command.includes('--headless'), true);
+  assert.equal(command[command.indexOf('--job-location') + 1], 'London, UK');
+});
+
 
 test('post-application outreach only runs after confirmed non-dry-run submissions', () => {
   assert.equal(shouldRunPostApplicationOutreach(1, false), true);

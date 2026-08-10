@@ -11,9 +11,11 @@ import {
   canonicalQuestionKey,
   compactLedger,
   findReusableAnswer,
+  isAISafetyQuestion,
   isAgenticSystemsQuestion,
   isAiUsageQuestion,
   isCloudInfrastructureQuestion,
+  isCompanyMotivationQuestion,
   isCustomerDeliveryQuestion,
   isNonQuestionPrompt,
   isProductionSystemQuestion,
@@ -28,6 +30,14 @@ import {
   recordQuestion,
   saveLedger,
 } from '../apply/question-ledger.mjs';
+
+test('bare company motivation labels are recognized without misclassifying generic why questions', () => {
+  assert.equal(isCompanyMotivationQuestion('Why Anthropic?'), true);
+  assert.equal(isCompanyMotivationQuestion('Why The New York Times?'), true);
+  assert.equal(isCompanyMotivationQuestion('Why this role?'), true);
+  assert.equal(isCompanyMotivationQuestion('Why do you write code?'), false);
+  assert.equal(isCompanyMotivationQuestion('Why me?'), false);
+});
 
 test('ledger records an unresolved form question and reuses an explicit global answer', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-ledger-'));
@@ -129,6 +139,62 @@ test('different semantic questions do not collapse into one ledger entry', () =>
   }
 });
 
+test('phone-country, working-country, and residence-country questions remain separate', () => {
+  assert.equal(canonicalQuestionKey('Country*'), 'country field');
+  assert.equal(canonicalQuestionKey('Which country are you working from?'), 'country work location');
+  assert.equal(canonicalQuestionKey('What is your country of residence?'), 'country residence');
+
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-country-intents-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    writeFileSync(file, JSON.stringify({
+      schemaVersion: 2,
+      entries: [{
+        id: 'legacy-country',
+        question: 'Country*',
+        aliases: ['Which country are you working from?', 'What is your country of residence?'],
+        answer: null,
+        fieldKind: 'combobox',
+        options: ['United States', 'Canada'],
+      }],
+    }));
+    const ledger = loadLedger(file);
+    assert.equal(ledger.entries.length, 3);
+    assert.deepEqual(
+      new Set(ledger.entries.map((entry) => canonicalQuestionKey(String(entry.question)))),
+      new Set(['country field', 'country work location', 'country residence']),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('company-motivation answers cannot be stored with global reuse', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'career-ops-motivation-scope-'));
+  try {
+    const file = path.join(dir, 'ledger.json');
+    const entry = recordQuestion(file, 'Why do you want to join Acme?', {
+      company: 'Acme',
+      role: 'Backend Engineer',
+      url: 'https://jobs.example/acme/1',
+    });
+    const answered = answerQuestion(file, entry.id, 'Because the mission intersects with my work.', { scope: 'global' });
+    assert.equal(answered.scope, 'posting');
+    assert.equal(findReusableAnswer(entry.question, loadLedger(file), {
+      company: 'Acme',
+      role: 'Backend Engineer',
+      url: 'https://jobs.example/acme/1/application',
+    })?.answer, 'Because the mission intersects with my work.');
+    assert.equal(findReusableAnswer(entry.question, loadLedger(file), {
+      company: 'Acme',
+      role: 'Backend Engineer',
+      url: 'https://jobs.example/acme/2',
+    }), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('geography-specific location questions do not reuse one another', () => {
   const questions = [
     'Are you located in the United States?',
@@ -188,10 +254,12 @@ test('experience prompts resolve to distinct evidence-backed families', () => {
   const productionQuestion = 'Describe a production, end-user-facing system you owned end-to-end while working closely with Product and UX.';
   const agenticQuestion = 'Do you have hands-on experience building or evaluating agentic systems?';
   const pythonQuestion = 'Please share an example of a Python project you shipped to production.';
+  const reportedPythonQuestion = 'Please share an example of a Python project you shipped to production. How did you ensure the code was clean, testable, and scalable? Mention any tools or practices you used.';
   const customerQuestion = 'Have you built customer-facing demos or proof-of-concepts?';
   const customerPocQuestion = 'Do you have experience working directly with customers during POCs, architecture reviews, and technical evaluations?';
   const foundationsQuestion = 'Do you have strong Python, JavaScript and systems fundamentals?';
   const cloudQuestion = 'Do you have experience with cloud environments, containers, and basic Kubernetes?';
+  const aiSafetyQuestion = "Please write a few sentences about your most impactful AI Safety focused work that is relevant for this role.";
 
   assert.equal(isProductionSystemQuestion(productionQuestion), true);
   assert.equal(isAgenticSystemsQuestion(agenticQuestion), true);
@@ -200,12 +268,15 @@ test('experience prompts resolve to distinct evidence-backed families', () => {
   assert.equal(isCustomerDeliveryQuestion(customerPocQuestion), true);
   assert.equal(isTechnicalFoundationsQuestion(foundationsQuestion), true);
   assert.equal(isCloudInfrastructureQuestion(cloudQuestion), true);
+  assert.equal(isAISafetyQuestion(aiSafetyQuestion), true);
   assert.equal(canonicalQuestionKey(productionQuestion), 'production end-user system');
   assert.equal(canonicalQuestionKey(agenticQuestion), 'agentic systems experience');
   assert.equal(canonicalQuestionKey(pythonQuestion), 'python production project');
+  assert.equal(canonicalQuestionKey(reportedPythonQuestion), 'python production project');
   assert.equal(canonicalQuestionKey(customerQuestion), 'customer delivery experience');
   assert.equal(canonicalQuestionKey(foundationsQuestion), 'technical foundations');
   assert.equal(canonicalQuestionKey(cloudQuestion), 'cloud and container experience');
+  assert.equal(canonicalQuestionKey(aiSafetyQuestion), 'ai safety experience');
   assert.equal(isAgenticSystemsQuestion('Tell us about your experience with AI or agentic systems.'), false);
   assert.equal(isAgenticSystemsQuestion('Have you deployed AI agents in production, especially using LangChain?'), true);
   assert.equal(isProductionSystemQuestion('Have you shipped and operated production software?'), true);
@@ -213,6 +284,36 @@ test('experience prompts resolve to distinct evidence-backed families', () => {
   assert.equal(isAgenticSystemsQuestion('Have you designed agent-based or LLM-powered applications?'), true);
   assert.equal(isTechnicalFoundationsQuestion('How many years of Python experience do you have?'), false);
   assert.equal(isPythonProductionQuestion('How many years of Python experience do you have?'), false);
+  assert.equal(isAISafetyQuestion('What are your views on AI safety?'), false);
+});
+
+test('Python-specific evidence wins over a generic production answer in a legacy mixed entry', () => {
+  const question = 'Please share an example of a Python project you shipped to production. How did you ensure the code was clean, testable, and scalable? Mention any tools or practices you used.';
+  const ledger = {
+    entries: [{
+      id: 'legacy-mixed-production',
+      question,
+      pattern: question,
+      fieldKind: 'textarea',
+      sensitivity: 'normal',
+      answerVariants: [
+        {
+          answer: 'Quality Runner is my Python production example.',
+          answerStatus: 'evidence-backed',
+          answerSource: 'profile:application_answers.python_production',
+          scope: 'question',
+        },
+        {
+          answer: 'BidCamp is my general production-system example.',
+          answerStatus: 'evidence-backed',
+          answerSource: 'profile:application_answers.production_system',
+          scope: 'question',
+        },
+      ],
+    }],
+  };
+
+  assert.equal(findReusableAnswer(question, ledger)?.answer, 'Quality Runner is my Python production example.');
 });
 
 test('ledger compaction migrates legacy AI usage duplicates without losing contexts', () => {
