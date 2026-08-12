@@ -1,0 +1,15 @@
+[quality_runner]
+default_profile = "default"
+
+# Quality Runner 0.6 executes known capability ids. This read-only capability
+# delegates to the repository-owned semantic invariant manifest so each
+# invariant retains its stable id, owner, surfaces, and executable proof.
+[[quality_runner.gates]]
+id = "runtime_smoke"
+command = "node scripts/verify-quality-invariants.mjs"
+ecosystem = "node"
+source = "quality-invariants.json"
+owner = "repository-quality"
+required = true
+severity = "blocker"
+mutating_risk = "safe"
