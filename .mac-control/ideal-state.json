@@ -1,0 +1,1044 @@
+{
+  "schema": "mac-control-task-manifest/v4",
+  "repository_id": "repo-b3b7faaaa9499f6a",
+  "repository_name": "career-ops",
+  "applicability": "applicable",
+  "applicability_reason": "Career Ops owns a Bubble Tea terminal dashboard with direct app-defined key commands, visible selection and filter readbacks, explicit picker confirmation and cancellation, and operation-result messages. Terminal text is the readback surface; no synthetic AX control identity is claimed.",
+  "app": {
+    "name": "Career Ops dashboard",
+    "launch": "cd dashboard && go run ."
+  },
+  "criteria": {},
+  "tasks": [
+    {
+      "surface_kind": "native_app_ui",
+      "focus_policy": "foreground",
+      "foreground_postcondition": "target_foreground",
+      "fallback_policy": "fresh_state_handoff",
+      "change_states": [],
+      "change_state_exemptions": {
+        "loading": "The task uses a synchronous local surface; navigation progress is owned and reported by the selected provider.",
+        "modal": "The task does not own a modal overlay.",
+        "disabled": "The read-only target remains available whenever its containing surface is present.",
+        "permission_unavailable": "The task requires no additional app-level permission; provider permission failures are reported before dispatch."
+      },
+      "navigation_strategy": "shortcut",
+      "route_candidates": [
+        {
+          "id": "terminal-keyboard",
+          "provider": "mac_control",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        },
+        {
+          "id": "computer-keyboard",
+          "provider": "computer_use",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        }
+      ],
+      "shortcut_acceleration": {
+        "disposition": "built_in_verified",
+        "command_id": "career-ops.pipeline.next",
+        "chord": "j",
+        "conflict_policy": "app_managed",
+        "contextual_availability": true
+      },
+      "task_id": "browse-pipeline",
+      "stable_target_id": "j",
+      "hierarchy": "Career Ops dashboard > Pipeline > Application rows > Next application",
+      "semantic_action": "move selection to the next application",
+      "observable_postcondition": "The highlighted row and application preview both identify the newly selected application",
+      "observable_states": [
+        "enabled",
+        "focused",
+        "visible",
+        "completed"
+      ],
+      "state_exemptions": {
+        "selected": "The target is a momentary action or read-only surface rather than a selectable item.",
+        "expanded": "The target does not own an expandable disclosure.",
+        "loading": "The selected provider owns navigation progress; the app exposes the resulting task state."
+      },
+      "accessibility": {
+        "identifier": "j",
+        "label": "Next application",
+        "role": "command"
+      },
+      "verification_oracle": {
+        "oracle_id": "browse-pipeline.task-state",
+        "kind": "task_state",
+        "expected_state": "selected_application_preview",
+        "independent_readback": true
+      },
+      "semantic_evidence": {
+        "stable_identity": {
+          "level": "source_grounded",
+          "claims": {
+            "selector_kind": "command_id",
+            "selector_value": "j",
+            "scope": "career-ops-terminal-dashboard-pipeline",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {",
+              "evidence_tokens": [
+                "case \"down\", \"j\":",
+                "m.cursor++",
+                "m.adjustScroll()"
+              ]
+            }
+          ]
+        },
+        "correct_semantics": {
+          "level": "source_grounded",
+          "claims": {
+            "role": "command",
+            "accessible_name": "Next application",
+            "action": "move selection to the next application"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {",
+              "evidence_tokens": [
+                "case \"down\", \"j\":",
+                "m.cursor++",
+                "m.adjustScroll()"
+              ]
+            }
+          ]
+        },
+        "observable_state": {
+          "level": "source_grounded",
+          "claims": {
+            "property": "cursor_and_selected_row",
+            "unavailable_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "selected := i == m.cursor",
+              "evidence_tokens": [
+                "m.renderAppLine(app, selected)"
+              ]
+            }
+          ]
+        },
+        "useful_hierarchy": {
+          "level": "source_grounded",
+          "claims": {
+            "container": "career-ops-terminal-dashboard-pipeline",
+            "relationship": "Career Ops dashboard > Pipeline > Application rows > Next application",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "sections := []string{header, tabs, metricsBar, sortBar}",
+              "evidence_tokens": [
+                "m.renderColumnHeader()",
+                "body",
+                "preview",
+                "help"
+              ]
+            }
+          ]
+        },
+        "efficient_navigation": {
+          "level": "source_grounded",
+          "claims": {
+            "strategy": "shortcut",
+            "entry_point": "j"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {",
+              "evidence_tokens": [
+                "case \"down\", \"j\":",
+                "m.cursor++",
+                "m.adjustScroll()"
+              ]
+            }
+          ]
+        },
+        "verifiable_outcomes": {
+          "level": "source_grounded",
+          "claims": {
+            "readback_provider": "mac_control",
+            "property": "selected_application_preview",
+            "operator": "equals",
+            "expected": "selected_application_preview"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "func (m PipelineModel) renderPreview() string {",
+              "evidence_tokens": [
+                "m.CurrentApp()",
+                "LabelOutcome"
+              ]
+            }
+          ]
+        },
+        "route_flexibility": {
+          "level": "source_grounded",
+          "claims": {
+            "primary_provider": "mac_control",
+            "secondary_provider": "computer_use",
+            "fallback_policy": "fresh_state_handoff"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "keyStyle.Render(\"↑↓/jk\") + descStyle.Render(i18n.Current.HelpNav)",
+              "evidence_tokens": [
+                "HelpTabs",
+                "HelpSearch"
+              ]
+            }
+          ]
+        },
+        "stable_change_behavior": {
+          "level": "source_grounded",
+          "claims": {
+            "scenarios": "loading,modal,disabled,permission_unavailable",
+            "failure_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "return emptyStyle.Render(i18n.Current.NoOffersMatch)",
+              "evidence_tokens": [
+                "len(m.filtered) == 0"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface_kind": "native_app_ui",
+      "focus_policy": "foreground",
+      "foreground_postcondition": "target_foreground",
+      "fallback_policy": "fresh_state_handoff",
+      "change_states": [],
+      "change_state_exemptions": {
+        "loading": "The task uses a synchronous local surface; navigation progress is owned and reported by the selected provider.",
+        "modal": "The task does not own a modal overlay.",
+        "disabled": "The read-only target remains available whenever its containing surface is present.",
+        "permission_unavailable": "The task requires no additional app-level permission; provider permission failures are reported before dispatch."
+      },
+      "navigation_strategy": "shortcut",
+      "route_candidates": [
+        {
+          "id": "terminal-keyboard",
+          "provider": "mac_control",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        },
+        {
+          "id": "computer-keyboard",
+          "provider": "computer_use",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        }
+      ],
+      "shortcut_acceleration": {
+        "disposition": "built_in_verified",
+        "command_id": "career-ops.pipeline.search",
+        "chord": "/",
+        "conflict_policy": "app_managed",
+        "contextual_availability": true
+      },
+      "task_id": "filter-pipeline",
+      "stable_target_id": "/",
+      "hierarchy": "Career Ops dashboard > Pipeline > Search filter > Matching rows",
+      "semantic_action": "open the search filter and enter a query",
+      "observable_postcondition": "The visible search line reports the query and matching-row count while the pipeline rows are filtered",
+      "observable_states": [
+        "enabled",
+        "focused",
+        "visible",
+        "completed"
+      ],
+      "state_exemptions": {
+        "selected": "The target is a momentary action or read-only surface rather than a selectable item.",
+        "expanded": "The target does not own an expandable disclosure.",
+        "loading": "The selected provider owns navigation progress; the app exposes the resulting task state."
+      },
+      "accessibility": {
+        "identifier": "/",
+        "label": "Search pipeline",
+        "role": "command"
+      },
+      "verification_oracle": {
+        "oracle_id": "filter-pipeline.task-state",
+        "kind": "task_state",
+        "expected_state": "search_query_and_match_count",
+        "independent_readback": true
+      },
+      "semantic_evidence": {
+        "stable_identity": {
+          "level": "source_grounded",
+          "claims": {
+            "selector_kind": "command_id",
+            "selector_value": "/",
+            "scope": "career-ops-terminal-dashboard-pipeline",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"/\":",
+              "evidence_tokens": [
+                "m.searchInput = true",
+                "Open search input"
+              ]
+            }
+          ]
+        },
+        "correct_semantics": {
+          "level": "source_grounded",
+          "claims": {
+            "role": "command",
+            "accessible_name": "Search pipeline",
+            "action": "open the search filter and enter a query"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"/\":",
+              "evidence_tokens": [
+                "m.searchInput = true",
+                "Open search input"
+              ]
+            }
+          ]
+        },
+        "observable_state": {
+          "level": "source_grounded",
+          "claims": {
+            "property": "search_input_and_query",
+            "unavailable_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "func (m PipelineModel) renderSearchBar() string {",
+              "evidence_tokens": [
+                "m.searchInput",
+                "m.searchQuery"
+              ]
+            }
+          ]
+        },
+        "useful_hierarchy": {
+          "level": "source_grounded",
+          "claims": {
+            "container": "career-ops-terminal-dashboard-pipeline",
+            "relationship": "Career Ops dashboard > Pipeline > Search filter > Matching rows",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "if searchBar != \"\" {",
+              "evidence_tokens": [
+                "sections = append(sections, searchBar)"
+              ]
+            }
+          ]
+        },
+        "efficient_navigation": {
+          "level": "source_grounded",
+          "claims": {
+            "strategy": "shortcut",
+            "entry_point": "/"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"/\":",
+              "evidence_tokens": [
+                "m.searchInput = true",
+                "Open search input"
+              ]
+            }
+          ]
+        },
+        "verifiable_outcomes": {
+          "level": "source_grounded",
+          "claims": {
+            "readback_provider": "mac_control",
+            "property": "query_and_match_count",
+            "operator": "equals",
+            "expected": "search_query_and_match_count"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "matchInfo := hintStyle.Render(fmt.Sprintf(i18n.Current.SearchMatching",
+              "evidence_tokens": [
+                "len(m.filtered)",
+                "tabFiltered"
+              ]
+            }
+          ]
+        },
+        "route_flexibility": {
+          "level": "source_grounded",
+          "claims": {
+            "primary_provider": "mac_control",
+            "secondary_provider": "computer_use",
+            "fallback_policy": "fresh_state_handoff"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "keyStyle.Render(\"/\")",
+              "evidence_tokens": [
+                "HelpSearch"
+              ]
+            }
+          ]
+        },
+        "stable_change_behavior": {
+          "level": "source_grounded",
+          "claims": {
+            "scenarios": "loading,modal,disabled,permission_unavailable",
+            "failure_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "return emptyStyle.Render(i18n.Current.NoOffersMatch)",
+              "evidence_tokens": [
+                "len(m.filtered) == 0"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface_kind": "native_app_ui",
+      "focus_policy": "foreground",
+      "foreground_postcondition": "target_foreground",
+      "fallback_policy": "fresh_state_handoff",
+      "change_states": [],
+      "change_state_exemptions": {
+        "loading": "The task uses a synchronous local surface; navigation progress is owned and reported by the selected provider.",
+        "modal": "The task does not own a modal overlay.",
+        "disabled": "The read-only target remains available whenever its containing surface is present.",
+        "permission_unavailable": "The task requires no additional app-level permission; provider permission failures are reported before dispatch."
+      },
+      "navigation_strategy": "shortcut",
+      "route_candidates": [
+        {
+          "id": "terminal-keyboard",
+          "provider": "mac_control",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        },
+        {
+          "id": "computer-keyboard",
+          "provider": "computer_use",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        }
+      ],
+      "shortcut_acceleration": {
+        "disposition": "built_in_verified",
+        "command_id": "career-ops.application.status",
+        "chord": "c",
+        "conflict_policy": "app_managed",
+        "contextual_availability": true
+      },
+      "task_id": "update-application-status",
+      "stable_target_id": "c",
+      "hierarchy": "Career Ops dashboard > Pipeline > Selected application > Change status picker > Confirm or cancel",
+      "semantic_action": "open the status picker and confirm a new status",
+      "observable_postcondition": "The dashboard reports Status updated or Status update failed, then the selected row reflects persisted tracker state",
+      "observable_states": [
+        "enabled",
+        "focused",
+        "visible",
+        "completed"
+      ],
+      "state_exemptions": {
+        "selected": "The target is a momentary action or read-only surface rather than a selectable item.",
+        "expanded": "The target does not own an expandable disclosure.",
+        "loading": "The selected provider owns navigation progress; the app exposes the resulting task state."
+      },
+      "accessibility": {
+        "identifier": "c",
+        "label": "Change application status",
+        "role": "command"
+      },
+      "verification_oracle": {
+        "oracle_id": "update-application-status.task-state",
+        "kind": "task_state",
+        "expected_state": "status_update_result_visible",
+        "independent_readback": true
+      },
+      "semantic_evidence": {
+        "stable_identity": {
+          "level": "source_grounded",
+          "claims": {
+            "selector_kind": "command_id",
+            "selector_value": "c",
+            "scope": "career-ops-terminal-dashboard-pipeline",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"c\":",
+              "evidence_tokens": [
+                "m.statusPicker = true",
+                "No application selected to update"
+              ]
+            }
+          ]
+        },
+        "correct_semantics": {
+          "level": "source_grounded",
+          "claims": {
+            "role": "command",
+            "accessible_name": "Change application status",
+            "action": "open the status picker and confirm a new status"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"c\":",
+              "evidence_tokens": [
+                "m.statusPicker = true",
+                "No application selected to update"
+              ]
+            }
+          ]
+        },
+        "observable_state": {
+          "level": "source_grounded",
+          "claims": {
+            "property": "status_picker_and_flash",
+            "unavailable_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "picker = append(picker, padStyle.Render(borderStyle.Render(i18n.Current.PickerChangeStatus)))",
+              "evidence_tokens": [
+                "m.currentStatusPairs()",
+                "m.statusCursor"
+              ]
+            }
+          ]
+        },
+        "useful_hierarchy": {
+          "level": "source_grounded",
+          "claims": {
+            "container": "career-ops-terminal-dashboard-pipeline",
+            "relationship": "Career Ops dashboard > Pipeline > Selected application > Change status picker > Confirm or cancel",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "body = m.overlayStatusPicker(body)",
+              "evidence_tokens": [
+                "if m.statusPicker"
+              ]
+            }
+          ]
+        },
+        "efficient_navigation": {
+          "level": "source_grounded",
+          "claims": {
+            "strategy": "shortcut",
+            "entry_point": "c"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"c\":",
+              "evidence_tokens": [
+                "m.statusPicker = true",
+                "No application selected to update"
+              ]
+            }
+          ]
+        },
+        "verifiable_outcomes": {
+          "level": "source_grounded",
+          "claims": {
+            "readback_provider": "mac_control",
+            "property": "status_update_result",
+            "operator": "equals",
+            "expected": "status_update_result_visible"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/main.go",
+              "anchor": "m.pipeline = m.pipeline.WithFlash(\"Status updated to \" + msg.NewStatus)",
+              "evidence_tokens": [
+                "data.UpdateApplicationStatus",
+                "m.reloadPipelineData()"
+              ]
+            }
+          ]
+        },
+        "route_flexibility": {
+          "level": "source_grounded",
+          "claims": {
+            "primary_provider": "mac_control",
+            "secondary_provider": "computer_use",
+            "fallback_policy": "fresh_state_handoff"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "keyStyle.Render(\"c\")",
+              "evidence_tokens": [
+                "HelpChange"
+              ]
+            }
+          ]
+        },
+        "stable_change_behavior": {
+          "level": "source_grounded",
+          "claims": {
+            "scenarios": "loading,modal,disabled,permission_unavailable",
+            "failure_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/main.go",
+              "anchor": "case screens.PipelineUpdateStatusMsg:",
+              "evidence_tokens": [
+                "Status update failed",
+                "m.reloadPipelineData()"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface_kind": "native_app_ui",
+      "focus_policy": "foreground",
+      "foreground_postcondition": "target_foreground",
+      "fallback_policy": "fresh_state_handoff",
+      "change_states": [],
+      "change_state_exemptions": {
+        "loading": "The task uses a synchronous local surface; navigation progress is owned and reported by the selected provider.",
+        "modal": "The task does not own a modal overlay.",
+        "disabled": "The read-only target remains available whenever its containing surface is present.",
+        "permission_unavailable": "The task requires no additional app-level permission; provider permission failures are reported before dispatch."
+      },
+      "navigation_strategy": "shortcut",
+      "route_candidates": [
+        {
+          "id": "terminal-keyboard",
+          "provider": "mac_control",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        },
+        {
+          "id": "computer-keyboard",
+          "provider": "computer_use",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        }
+      ],
+      "shortcut_acceleration": {
+        "disposition": "built_in_verified",
+        "command_id": "career-ops.application.report",
+        "chord": "enter",
+        "conflict_policy": "app_managed",
+        "contextual_availability": true
+      },
+      "task_id": "open-application-report",
+      "stable_target_id": "enter",
+      "hierarchy": "Career Ops dashboard > Pipeline > Selected application > Report viewer",
+      "semantic_action": "open the selected application's report",
+      "observable_postcondition": "The report viewer opens with company and role title, or the pipeline reports that no report is available",
+      "observable_states": [
+        "enabled",
+        "focused",
+        "visible",
+        "completed"
+      ],
+      "state_exemptions": {
+        "selected": "The target is a momentary action or read-only surface rather than a selectable item.",
+        "expanded": "The target does not own an expandable disclosure.",
+        "loading": "The selected provider owns navigation progress; the app exposes the resulting task state."
+      },
+      "accessibility": {
+        "identifier": "enter",
+        "label": "Open application report",
+        "role": "command"
+      },
+      "verification_oracle": {
+        "oracle_id": "open-application-report.task-state",
+        "kind": "task_state",
+        "expected_state": "report_view_or_unavailable_message",
+        "independent_readback": true
+      },
+      "semantic_evidence": {
+        "stable_identity": {
+          "level": "source_grounded",
+          "claims": {
+            "selector_kind": "command_id",
+            "selector_value": "enter",
+            "scope": "career-ops-terminal-dashboard-pipeline",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: jobURL, App: app}",
+              "evidence_tokens": [
+                "case \"enter\":",
+                "app.ReportPath"
+              ]
+            }
+          ]
+        },
+        "correct_semantics": {
+          "level": "source_grounded",
+          "claims": {
+            "role": "command",
+            "accessible_name": "Open application report",
+            "action": "open the selected application's report"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: jobURL, App: app}",
+              "evidence_tokens": [
+                "case \"enter\":",
+                "app.ReportPath"
+              ]
+            }
+          ]
+        },
+        "observable_state": {
+          "level": "source_grounded",
+          "claims": {
+            "property": "report_path_or_flash",
+            "unavailable_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "m.flash = \"No report available for this application\"",
+              "evidence_tokens": [
+                "app.ReportPath == \"\"",
+                "return m, nil"
+              ]
+            }
+          ]
+        },
+        "useful_hierarchy": {
+          "level": "source_grounded",
+          "claims": {
+            "container": "career-ops-terminal-dashboard-pipeline",
+            "relationship": "Career Ops dashboard > Pipeline > Selected application > Report viewer",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/main.go",
+              "anchor": "case viewReport:",
+              "evidence_tokens": [
+                "return m.viewer.View()"
+              ]
+            }
+          ]
+        },
+        "efficient_navigation": {
+          "level": "source_grounded",
+          "claims": {
+            "strategy": "shortcut",
+            "entry_point": "enter"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: jobURL, App: app}",
+              "evidence_tokens": [
+                "case \"enter\":",
+                "app.ReportPath"
+              ]
+            }
+          ]
+        },
+        "verifiable_outcomes": {
+          "level": "source_grounded",
+          "claims": {
+            "readback_provider": "mac_control",
+            "property": "report_view_state",
+            "operator": "equals",
+            "expected": "report_view_or_unavailable_message"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/main.go",
+              "anchor": "case screens.PipelineOpenReportMsg:",
+              "evidence_tokens": [
+                "screens.NewViewerModel",
+                "m.state = viewReport"
+              ]
+            }
+          ]
+        },
+        "route_flexibility": {
+          "level": "source_grounded",
+          "claims": {
+            "primary_provider": "mac_control",
+            "secondary_provider": "computer_use",
+            "fallback_policy": "fresh_state_handoff"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "keyStyle.Render(\"Enter\") + descStyle.Render(i18n.Current.HelpReport)",
+              "evidence_tokens": [
+                "HelpReport"
+              ]
+            }
+          ]
+        },
+        "stable_change_behavior": {
+          "level": "source_grounded",
+          "claims": {
+            "scenarios": "loading,modal,disabled,permission_unavailable",
+            "failure_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "m.flash = \"No report available for this application\"",
+              "evidence_tokens": [
+                "app.ReportPath == \"\""
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface_kind": "native_app_ui",
+      "focus_policy": "foreground",
+      "foreground_postcondition": "target_foreground",
+      "fallback_policy": "fresh_state_handoff",
+      "change_states": [],
+      "change_state_exemptions": {
+        "loading": "The task uses a synchronous local surface; navigation progress is owned and reported by the selected provider.",
+        "modal": "The task does not own a modal overlay.",
+        "disabled": "The read-only target remains available whenever its containing surface is present.",
+        "permission_unavailable": "The task requires no additional app-level permission; provider permission failures are reported before dispatch."
+      },
+      "navigation_strategy": "shortcut",
+      "route_candidates": [
+        {
+          "id": "terminal-keyboard",
+          "provider": "mac_control",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        },
+        {
+          "id": "computer-keyboard",
+          "provider": "computer_use",
+          "method": "keyboard",
+          "interaction_mode": "keyboard"
+        }
+      ],
+      "shortcut_acceleration": {
+        "disposition": "built_in_verified",
+        "command_id": "career-ops.application.progress",
+        "chord": "p",
+        "conflict_policy": "app_managed",
+        "contextual_availability": true
+      },
+      "task_id": "open-progress",
+      "stable_target_id": "p",
+      "hierarchy": "Career Ops dashboard > Pipeline > Progress analytics > Funnel, scores, rates, weekly activity",
+      "semantic_action": "open application progress analytics",
+      "observable_postcondition": "The Progress screen renders the funnel, score distribution, response/interview/offer rates, and weekly activity or explicit no-data states",
+      "observable_states": [
+        "enabled",
+        "focused",
+        "visible",
+        "completed"
+      ],
+      "state_exemptions": {
+        "selected": "The target is a momentary action or read-only surface rather than a selectable item.",
+        "expanded": "The target does not own an expandable disclosure.",
+        "loading": "The selected provider owns navigation progress; the app exposes the resulting task state."
+      },
+      "accessibility": {
+        "identifier": "p",
+        "label": "Open progress analytics",
+        "role": "command"
+      },
+      "verification_oracle": {
+        "oracle_id": "open-progress.task-state",
+        "kind": "task_state",
+        "expected_state": "progress_analytics_visible",
+        "independent_readback": true
+      },
+      "semantic_evidence": {
+        "stable_identity": {
+          "level": "source_grounded",
+          "claims": {
+            "selector_kind": "command_id",
+            "selector_value": "p",
+            "scope": "career-ops-terminal-dashboard-pipeline",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"p\":",
+              "evidence_tokens": [
+                "PipelineOpenProgressMsg"
+              ]
+            }
+          ]
+        },
+        "correct_semantics": {
+          "level": "source_grounded",
+          "claims": {
+            "role": "command",
+            "accessible_name": "Open progress analytics",
+            "action": "open application progress analytics"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"p\":",
+              "evidence_tokens": [
+                "PipelineOpenProgressMsg"
+              ]
+            }
+          ]
+        },
+        "observable_state": {
+          "level": "source_grounded",
+          "claims": {
+            "property": "active_view",
+            "unavailable_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/main.go",
+              "anchor": "case screens.PipelineOpenProgressMsg:",
+              "evidence_tokens": [
+                "screens.NewProgressModel",
+                "m.state = viewProgress"
+              ]
+            }
+          ]
+        },
+        "useful_hierarchy": {
+          "level": "source_grounded",
+          "claims": {
+            "container": "career-ops-terminal-dashboard-pipeline",
+            "relationship": "Career Ops dashboard > Pipeline > Progress analytics > Funnel, scores, rates, weekly activity",
+            "uniqueness": "exactly_one"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/progress.go",
+              "anchor": "body := lipgloss.JoinVertical(lipgloss.Left,",
+              "evidence_tokens": [
+                "funnel",
+                "scores",
+                "rates",
+                "weekly"
+              ]
+            }
+          ]
+        },
+        "efficient_navigation": {
+          "level": "source_grounded",
+          "claims": {
+            "strategy": "shortcut",
+            "entry_point": "p"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "case \"p\":",
+              "evidence_tokens": [
+                "PipelineOpenProgressMsg"
+              ]
+            }
+          ]
+        },
+        "verifiable_outcomes": {
+          "level": "source_grounded",
+          "claims": {
+            "readback_provider": "mac_control",
+            "property": "progress_panels",
+            "operator": "equals",
+            "expected": "progress_analytics_visible"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/progress.go",
+              "anchor": "func (m ProgressModel) View() string {",
+              "evidence_tokens": [
+                "m.renderFunnel()",
+                "m.renderScoreDistribution()",
+                "m.renderRates()",
+                "m.renderWeeklyActivity()"
+              ]
+            }
+          ]
+        },
+        "route_flexibility": {
+          "level": "source_grounded",
+          "claims": {
+            "primary_provider": "mac_control",
+            "secondary_provider": "computer_use",
+            "fallback_policy": "fresh_state_handoff"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/pipeline.go",
+              "anchor": "keyStyle.Render(\"p\")",
+              "evidence_tokens": [
+                "HelpProgress"
+              ]
+            }
+          ]
+        },
+        "stable_change_behavior": {
+          "level": "source_grounded",
+          "claims": {
+            "scenarios": "loading,modal,disabled,permission_unavailable",
+            "failure_behavior": "block_and_explain"
+          },
+          "source_refs": [
+            {
+              "path": "dashboard/internal/ui/screens/progress.go",
+              "anchor": "if len(m.metrics.FunnelStages) == 0 {",
+              "evidence_tokens": [
+                "i18n.Current.NoData",
+                "return strings.Join(lines, \"\\n\")"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
