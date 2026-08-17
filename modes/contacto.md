@@ -22,23 +22,36 @@ short message; otherwise run the LinkedIn power move below.
 This mode has two variants that share the same persona engine (recruiter → hard
 requirements; hiring manager → impact/vision):
 
-- **LinkedIn power move** (default) — find contacts and draft a ≤300-char message
-  tied to a specific application/interview. This is the flow below.
+- **Targeted outreach** (default) — find contacts across verified professional
+  email, X/Twitter, and LinkedIn, then draft a message tied to a specific
+  application/interview. This is the flow below.
 - **Greeting** — a single ultra-short first-touch message for platforms with a hard
   character budget (BOSS Zhipin 打招呼, job-board chat, a cold-email opener). No
   contact discovery. See **Greeting variant** at the end of this file.
 
+All generated outreach must run through the shared Humanizer and outreach
+quality gate before it is persisted anywhere. The resulting
+`outreach-draft-quality-receipt/v1` receipt is bound to the exact final copy;
+any later content change invalidates it. Email is also an RDW career artifact:
+research the recipient and role, bind the selected candidate proof to `cv.md`,
+the profile, or the accomplishment ledger, then obtain an
+`rdw-artifact-receipt/v1` receipt before the message can enter the Gmail-draft
+path. Passing either gate means ready for human review, never authorized to send.
+
 **Pick the variant:** use **Greeting** when the user says "greeting" / "打招呼" /
 "cold opener", names a chat-style platform (e.g. BOSS Zhipin), or asks for a very
-short message; otherwise run the LinkedIn power move below.
+short message; otherwise run targeted outreach below.
 
-## LinkedIn power move (default)
+## Targeted outreach (default)
 
 1. **Identify targets** via WebSearch:
    - Hiring manager of the team
    - Assigned recruiter
    - 2-3 team peers (people with similar roles)
    - Interviewer (if the candidate already has a scheduled interview)
+   - If none of those can be verified, any current employee at the company.
+     Current employment is the eligibility gate; role relevance is a ranking
+     preference, not a reason to discard an otherwise valid contact.
 
 2. **Classify contact type** -- ask the candidate or infer from context:
    - **Recruiter** -- person whose role is talent acquisition, sourcing, or recruiting
@@ -46,9 +59,22 @@ short message; otherwise run the LinkedIn power move below.
    - **Peer** -- someone with a similar role in the team (indirect referral)
    - **Interviewer** -- someone who will interview the candidate (known date)
 
-3. **Select primary target**: the person who would benefit most from the candidate being there
+3. **Select primary target** using this enforced channel hierarchy:
+   1. Exact, independently verified professional email
+   2. Verified current-employer X/Twitter profile
+   3. Verified current-employer LinkedIn profile
 
-4. **Generate message** with a 3-sentence framework adapted to the contact type:
+   LinkedIn-only contacts are valid fallback candidates, but they must not
+   displace an otherwise eligible email or X/Twitter candidate. Within the same
+   channel tier, prefer the person who would benefit most from the candidate
+   being there. An X bio does not need to name the employer when a separate
+   current-employment source binds the exact person to the company and the X
+   profile's displayed identity matches that person.
+
+4. **Generate message** with the researched relevance → candidate proof →
+   low-friction CTA framework adapted to the contact type. Use
+   `domains/career/research-basis.md` from the RDW checkout as the maintained
+   source basis; do not present any one template as universally optimal.
 
    ### Recruiter
    - **Sentence 1 (Fit)**: Direct match criteria -- role, relevant experience, availability, or location
@@ -71,6 +97,12 @@ short message; otherwise run the LinkedIn power move below.
    - **Sentence 2 (Context)**: Light connection to the candidate's experience in that area
    - **Sentence 3 (CTA)**: "Looking forward to our conversation on [date]"
    - **Note**: Light tone, not desperate. The goal is to show that you prepared.
+
+   ### Company-adjacent employee (routing fallback)
+   - State that the application was submitted.
+   - Ask them to point the candidate to the appropriate hiring or engineering
+     contact.
+   - Do not imply that they work on the role or know the hiring team.
 
 5. **Versions**:
    - EN (default)
@@ -107,6 +139,84 @@ not quote the note verbatim in a public-facing message.
 - Something that makes them want to respond
 - NEVER share phone number
 - The contact type changes the EMPHASIS, not the structure
+- Recipient relevance must cite public or first-party relationship evidence
+- Candidate proof must bind to an existing Career Ops evidence source
+- A content change after RDW validation invalidates the receipt
+- A content change after Humanizer/quality validation invalidates that receipt
+- X copy is persisted to the local X outbox and shown in the UI only after both
+  Humanizer and quality stages pass
+- LinkedIn copy is shown in the UI only after both stages pass
+- Email copy enters `jakyejobs@gmail.com` Drafts only after Humanizer, outreach
+  quality, RDW, recipient verification, and application-confirmation gates pass
+- Unsent draft creation is not rate-limited; sending remains manual and no
+  automatic-send path is enabled
+
+## Career Ops outreach handoff
+
+When this mode is run for an application already marked `Applied`, it may write
+public professional contact candidates to the local ignored file
+`data/outreach-contacts.json` using the shape below. This is an input manifest
+for the outreach processor, not a permission to send. The scheduled processor
+also runs its own bounded Firecrawl-backed public discovery pass after an
+application signal, so this manifest is a supplement or a correction path, not
+a manual prerequisite.
+
+```json
+{
+  "applications": [
+    {
+      "applicationKey": "company::rolewithnospaces",
+      "contacts": [
+        {
+          "name": "Public professional name",
+          "title": "Engineering Manager",
+          "company": "Company",
+          "email": "name@company.com",
+          "emailVerified": true,
+          "publicProfessional": true,
+          "sourceType": "company-site",
+          "sourceUrl": "https://company.example/team/name",
+          "profileUrl": "https://www.linkedin.com/in/name",
+          "roleRelevance": "high"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Public company/job/profile sources qualify an email for Gmail draft creation when
+the address is employer-domain verified. A first-party professional relationship
+from the authorized Gmail mailbox may also qualify when the address is observed
+in a Gmail header, the source message ID is retained, and the domain is
+professional. Ad-hoc guesses, personal mailboxes, LinkedIn scraping, TeamWork
+Online crawling, and contacts whose identity or current employment is uncertain
+remain blocked. Role relevance affects ordering, not eligibility. X/Twitter and
+LinkedIn output remain manual drafts in the Career Ops UI, with LinkedIn-only
+contacts ranked as the weakest fallback. If discovery cannot
+identify a specific employer from the application evidence, the record is held
+for correction and cannot send.
+
+When `outreach_policy.requireVerifiedPublicEmail: false`, a named convention
+hypothesis may also enter the sendable contact list when at least two named
+public examples support the same employer-domain convention across distinct
+source URLs. It remains marked guessed and unverified, and the UI preserves that
+state; it is not promoted to `emailVerified`. With the default `true` setting,
+the same hypothesis remains review-only. Discovery still performs a bounded
+exact-address Firecrawl query and promotes the hypothesis to verified only when
+the exact address and the same named person appear together in public evidence.
+Never test a hypothesis by sending mail or probing SMTP. Career Ops creates a
+Gmail draft only after application confirmation, verified recipient evidence,
+a valid content-bound Humanizer/quality receipt, and a valid content-bound RDW
+receipt. The user reviews and sends manually; no receipt or outbox state makes
+an unverified hypothesis eligible.
+
+When a named public candidate has no address, discovery may run at most two
+exact-name Firecrawl searches for each of the top four candidates, whether the
+candidate came from the public company search or a warm-network search. These
+are evidence searches, not address generation: only the same person, an exact
+employer-domain address, and an allowed public source can be promoted. Data
+brokers and blocked job boards never qualify.
 
 ---
 

@@ -123,7 +123,7 @@ After detecting archetype, read `modes/_profile.md` for the user's specific fram
 
 1. Invent experience or metrics
 2. Modify cv.md or portfolio files
-3. Submit applications on behalf of the candidate
+3. Submit applications on behalf of the candidate unless the candidate has explicitly enabled the revocable auto-apply policy; then submit only through the audited queue worker and supported ATS adapters
 4. Share phone number in generated messages
 5. Recommend comp below market rate
 6. Generate a PDF without reading the JD first
@@ -143,6 +143,7 @@ After detecting archetype, read `modes/_profile.md` for the user's specific fram
 7. Be direct and actionable -- no fluff
 8. Native tech English for generated text. Short sentences, action verbs, no passive voice.
 8b. Case study URLs in PDF Professional Summary (recruiter may only read this).
+8c. **Explain personal projects before naming them.** Never use a bare project or package name as proof in candidate-facing text. Pair it with a plain-English description of what it does and why it matters; include the proper name only after that description when it adds useful credibility.
 9. **Tracker additions as TSV** -- NEVER edit applications.md directly. Write TSV in `batch/tracker-additions/`.
 10. **Include `**URL:**` in every report header.**
 
@@ -191,3 +192,5 @@ These rules apply to ALL generated text that ends up in candidate-facing documen
 - "Cut p95 latency from 2.1s to 380ms" beats "improved performance"
 - "Postgres + pgvector for retrieval over 12k docs" beats "designed scalable RAG architecture"
 - Name tools, projects, and customers when allowed
+- For personal projects, write "built an MCP server that produces evidence-backed quality checks (Quality Runner)" rather than "built Quality Runner." The reader should understand the work without already knowing the project's name.
+- Mention a project name without a descriptor only when the name itself is the subject of the question or the surrounding text has already explained it.

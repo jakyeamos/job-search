@@ -1,10 +1,15 @@
-# career-ops Batch Worker — Evaluación Completa + PDF + Tracker Line
+# career-ops Batch Worker — Evaluación Completa + Tracker Line
 
 Canonical base language: English.
 
 1. Evaluación completa A-G (report .md)
-2. PDF personalizado ATS-optimizado
-3. Línea de tracker para merge posterior
+2. Línea de tracker para merge posterior
+3. Resume HTML/PDF únicamente when the orchestrator explicitly opts in
+
+**Discovery default:** Do not generate tailored HTML, PDF, or any other resume artifact.
+The normal queue run is report + tracker only. Resume artifacts are an explicit follow-up
+for a shortlisted role, normally through `/career-ops pdf {company-slug}` or a worker prompt
+that explicitly says resume-artifact opt-in.
 
 You receive a job URL plus a local JD text file and must produce:
 
@@ -348,7 +353,7 @@ Report header:
 **Score:** {X.X/5}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
 **URL:** {URL de la oferta original}
-**PDF:** {output/cv-candidate-{company-slug}-{{DATE}}.pdf if score ≥ the resolved `auto_pdf_score_threshold` from Paso 4, else `not generated — run /career-ops pdf {company-slug} to create on demand`}
+**Resume artifacts:** `not generated — run /career-ops pdf {company-slug} to create HTML/PDF on demand`
 **Batch ID:** {{ID}}
 
 
@@ -428,20 +433,24 @@ If score is greater than or equal to the threshold:
 11. Write HTML to `output/cv-candidate-{company-slug}.html`.
 12. Run:
 
-### Paso 4 — Generar PDF (configurable)
+### Paso 4 — Generar PDF (solo con opt-in explícito)
 
-**Gate:** Read `config/profile.yml` → `auto_pdf_score_threshold`. If the key is absent, default to **`3.0`** (the original gate of Path A). This step ONLY runs when the score from Paso 2 is **≥ the resolved threshold**. For everything below it, skip this entire step — the user can generate a tailored PDF on demand later via `/career-ops pdf {company-slug}` using the report from Paso 3 as input.
+**Default discovery behavior:** Skip this entire step. Do not write tailored HTML or PDF.
+Only enter this step when the orchestrator explicitly provides resume-artifact opt-in
+(for example, the standalone runner's `--with-pdf` option or an equivalent user request).
 
-**Rationale:** Generating a tailored PDF costs ~30–60s per offer (Playwright launch + HTML render) and produces files that often go unused — most roles score 2.x/3.x and never reach application. The `3.0` default matches Path A's original behavior; raise `auto_pdf_score_threshold` (e.g. `4.0`) to pre-generate fewer PDFs, or set `0` to generate one for every offer. Both Path A (`/career-ops pipeline`) and Path B (this batch worker) read the same config key for consistency.
+**Gate:** Resume artifacts require explicit orchestrator opt-in. A score threshold alone
+does not authorize HTML/PDF generation. When opt-in is present, apply the configured
+`auto_pdf_score_threshold` from `config/profile.yml`; otherwise skip this entire step.
 
-**If score < threshold:**
+**If no explicit opt-in (the normal discovery queue):**
 - Skip steps 1–14 below.
-- In the report header use: `**PDF:** not generated — run /career-ops pdf {company-slug} to create on demand`.
+- In the report header use: `**Resume artifacts:** not generated — run /career-ops pdf {company-slug} to create HTML/PDF on demand`.
 - In Paso 5 (tracker line) use `pdf_emoji` = `❌`.
 - In Paso 6 (output JSON) set `"pdf": null`.
 - Done — move to Paso 5.
 
-**If score ≥ threshold**, generate the tailored PDF:
+**If explicit opt-in is present and score ≥ threshold**, generate the tailored HTML/PDF:
 
 1. Lee `cv.md` + `i18n.ts`
 2. Extrae 15-20 keywords del JD

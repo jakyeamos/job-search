@@ -309,10 +309,10 @@ if (dupReports === 0) ok('No duplicate reports for the same company+role');
 const referencedNums = new Set();
 for (const e of entries) {
   referencedNums.add(e.num);
-  const linkText = e.report.match(/\[(\d+)\]/);
-  if (linkText) referencedNums.add(parseInt(linkText[1], 10));
-  const linkTarget = e.report.match(/\]\(([^)]+)\)/);
-  if (linkTarget) {
+  for (const linkText of e.report.matchAll(/\[(\d+)\]/g)) {
+    referencedNums.add(parseInt(linkText[1], 10));
+  }
+  for (const linkTarget of e.report.matchAll(/\]\(([^)]+)\)/g)) {
     const m = linkTarget[1].split('/').pop().match(/^(\d+)-/);
     if (m) referencedNums.add(parseInt(m[1], 10));
   }

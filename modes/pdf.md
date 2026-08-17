@@ -5,6 +5,8 @@ Optional pass:
 
 ## Full pipeline
 
+0. Read `modes/resume-standard.md` before drafting. It is the adapted Career
+   Ops resume policy and overrides generic resume advice when the two differ.
 1. Read `cv.md` as the source of truth
 2. Ask the user for the JD if it is not in context (text or URL)
 3. Extract 15-20 keywords from the JD
@@ -34,7 +36,7 @@ Optional pass:
 14. Generate full HTML from template + personalized content
 15. Read `name` from `config/profile.yml` → normalize to kebab-case lowercase (e.g. "John Doe" → "john-doe") → `{candidate}`
 16. Write HTML to `output/cv-{candidate}-{company}.html` (NOT a temp dir — the recorded HTML is what the dashboard's `D` hotkey regenerates from, so it must survive temp cleanup)
-17. Execute: `node generate-pdf.mjs output/cv-{candidate}-{company}.html output/cv-{candidate}-{company}-{YYYY-MM-DD}.pdf --format={letter|a4} --report={report number}` — `{report number}` is the NNN from the report filename/link (e.g. `008` for `reports/008-acme-….md`), not the tracker `#` column. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `data/pdf-index.tsv` so the dashboard can open and regenerate the exact PDF. Omit it only for one-off CVs with no tracker entry.
+17. Execute: `node generate-pdf.mjs output/cv-{candidate}-{company}.html output/cv-{candidate}-{company}-{YYYY-MM-DD}.pdf --resume-company="{Company}" --format={letter|a4} --report={report number}` — `{report number}` is the NNN from the report filename/link (e.g. `008` for `reports/008-acme-….md`), not the tracker `#` column. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `data/pdf-index.tsv` so the dashboard can open and regenerate the exact canonical PDF, then creates the candidate-facing copy as `Jakye-Amos-CV-{Company}.pdf` in `~/Desktop/CVs`. Omit `--report` only for one-off CVs with no tracker entry.
 18. Report: PDF path, number of pages, keyword coverage %
 
 ## ATS Rules (clean parsing)
@@ -314,10 +316,16 @@ If the user says yes, run the full cover letter flow from `modes/cover.md` in sl
 4. Surface any gaps (Step 5)
 5. Ask the four prompts: why / problems / approach / tone (Step 6)
 6. Draft in chat, wait for approval (Steps 7-8)
-7. Generate cover letter PDF via `node generate-cover-letter.mjs` (Step 9)
+7. For a queue role, generate the evidence-bound resume and cover letter with
+   `node apply/application-artifacts.mjs build --queue-id <queue-id>` (or use
+   `pnpm cover-letter -- --queue-id <queue-id>`). The queue path is deterministic
+   and does not invent claims; an interactive rewrite remains optional.
 8. Report both PDF paths
 
-Do not auto-generate the cover letter PDF without going through the interactive steps above.
+For the authorized application queue, deterministic artifact generation may run
+without the interactive rewrite. The interactive flow is still required when
+you want a researched, manually approved letter beyond the canonical evidence
+template.
 
 ## Post-generation
 

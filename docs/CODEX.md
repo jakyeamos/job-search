@@ -41,6 +41,26 @@ codex exec "Run career-ops email mode for the latest evaluated role. Draft only;
 codex exec "Run career-ops tracker mode and summarize the current statuses."
 ```
 
+## Fast persistent queue worker
+
+For a large pending queue, use the repository's grouped ATS prefetch and one
+lean Codex worker for a 30-role chunk:
+
+```bash
+node pipeline-fast-runner.mjs --prepare-only
+node pipeline-fast-runner.mjs
+```
+
+The first command performs only public ATS extraction and deterministic routing.
+The second command runs one persistent `codex exec` session across the entire
+manifest. It uses `--ignore-user-config` by default so unrelated plugins and MCP
+servers do not add startup cost; Codex subscription authentication still comes
+from `CODEX_HOME`, and repository rules remain loaded. Use `--normal-config`
+only when the worker genuinely needs the desktop/plugin configuration.
+
+Discovery runs create compact decision cards for PASS/MARGINAL roles and defer
+full A-G evaluations and resume artifacts until the user shortlists a role.
+
 ## Notes
 
 - If your Codex environment exposes slash commands, the shared `/career-ops` router semantics still apply.

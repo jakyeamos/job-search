@@ -1,6 +1,11 @@
 # Mode: tracker — Applications Tracker
 
-Read and display `data/applications.md`.
+Read `data/search-ops.md` first when it exists, then read and display
+`data/applications.md`. The search-ops board is the active execution layer;
+`data/applications.md` remains the application history and evaluation ledger.
+
+If the user asks what to do next, how the search is going, or for a weekly
+review, route to `modes/weekly.md` after loading the same two files.
 
 **Tracker Format:**
 
@@ -44,6 +49,12 @@ Be honest about timing: this check catches damage after the fact. The preventive
 Also show statistics:
 - Total applications
 - Breakdown by state
+- Submitted applications separately from `Evaluated` and `SKIP`
+- Current-week applications when the active week is present in `data/search-ops.md`
 - Average score
 - % with PDF generated
 - % with report generated
+
+Never treat an evaluated-but-unsubmitted role as an application. Keep the
+historical tracker unchanged unless the user explicitly supplies a status
+update for a specific row.
