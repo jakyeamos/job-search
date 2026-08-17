@@ -52,6 +52,29 @@ See `plugins/README.md` for the full contract + the honest trust model (plain
 ESM has no hard sandbox — bundled plugins are code-reviewed; your own are your
 trust).
 
+## Authenticated marketplace sources
+
+Handshake, Wellfound, Contra, and Braintrust use a separate cache-backed,
+read-only browser lane. The adapter reads visible DOM content from an already
+authenticated tab, performs bounded detail reads, restores the source tab, and
+writes local ignored caches. It does not read cookies or storage and does not
+click Apply, Save, Message, Submit, or other account-side controls:
+
+```bash
+node marketplace.mjs doctor --source all
+node marketplace.mjs sync --source all --write
+node plugins.mjs run wellfound --dry-run
+node plugins.mjs run contra --dry-run
+node plugins.mjs run braintrust --dry-run
+```
+
+The three new caches are `data/wellfound-recommendations.json`,
+`data/contra-recommendations.json`, and `data/braintrust-recommendations.json`.
+Incomplete cards stay `source-alert`; active queue candidates require an
+authenticated detail record with a visible title, company, substantive
+description, and Apply control. A missing tab or bridge preserves the last
+cache and remains visible as a source warning.
+
 ## Publishing + getting approved
 
 1. Develop locally, then publish your plugin as its **own public GitHub repo**
@@ -62,7 +85,7 @@ trust).
 2. File a **Plugin registration** issue (becomes your plugin's home/changelog).
 3. Open a **registry PR** (the `?template=plugin-registry.md` template — the
    template repo's release workflow can open it for you on a release tag) that
-   adds your entry to `plugins-registry.json`, pinned to an exact commit. CI
+   adds your `plugins-registry/<id>.json` file, pinned to an exact commit. CI
    (`plugin-registry-validate`) checks the naming, manifest, min-files, license,
    egress, and a static audit before a maintainer reviews. Once merged, users can
    `node plugins.mjs add <name>` and your plugin ships to them via the normal

@@ -65,9 +65,17 @@ Jakye Amos -- Full-Stack / Backend Software Engineer, New Grad (B.A. Computer Sc
 | Remote but restricted to a non-US region (EMEA/LATAM/APAC only) | 1.0 (DQ) |
 | Onsite outside US requiring visa/sponsorship the candidate doesn't have | 1.0 (DQ) |
 
+## Experience-Floor Scoring
+
+- 0-2 years: no penalty
+- 3 years: mild downscore, never a blocker
+- 4-5 years: heavy downscore; block only when the role's substance also misses the target lanes
+- 6+ years: hard DQ, score capped at 2.0
+- Only required floors count. Ignore preferred / nice-to-have floors and statements ending in "is a plus."
+
 ## Hard DQ Criteria (auto-FAIL, score capped at 2.0)
 
-1. Minimum experience stated is 3+ years (candidate is new grad / 0-2 YOE)
+1. Required experience floor is 6+ years, or 4-5 years when the role's substance also misses the target lanes
 2. Role geographically restricted to a region excluding the US, with no US-remote option (EMEA-only, LATAM-only, APAC-only)
 3. Requires visa/work authorization the candidate doesn't have (candidate is a US citizen -- this only bites on non-US roles requiring local citizenship/visa)
 4. Requires fluency in a language other than English or French

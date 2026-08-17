@@ -66,6 +66,77 @@ node plugins.mjs run notion search "platform"    # search
 node plugins.mjs run notion export [--dry-run]   # export
 ```
 
+### Jack & Jill (authenticated, read-only)
+
+Jack & Jill is an opt-in recommendation and coaching source. Its private
+OpenCLI adapter uses the authorized Chrome session through the browser
+bridge; it does not store credentials, inspect cookies, or submit applications:
+
+```bash
+opencli jackandjill jobs -f json
+opencli jackandjill job --url 'https://www.jackandjill.ai/jobs/<uuid>' -f json
+node jackandjill.mjs coach --job-url 'https://www.jackandjill.ai/jobs/<uuid>'
+node jackandjill.mjs sync --write
+node plugins.mjs run jackandjill --dry-run
+```
+
+`sync --write` stores normalized recommendations in the ignored
+`data/jackandjill-recommendations.json` cache. The ingest plugin reads that
+cache, canonicalizes Jack UUID URLs (including Gmail tracking wrappers), keeps
+`sourceMessageId` provenance, and leaves incomplete records as
+`source-alert` items. Coaching output remains a local review artifact and is
+never an application submission.
+
+### Handshake (authenticated, read-only)
+
+Handshake uses the user’s already-open authenticated Chrome tabs through the
+OpenCLI browser bridge. It reads visible feed/detail content and the visible
+inbox list (plus the thread already open in that tab), keeps recommendations and
+inbox evidence in separate ignored caches, and never reads cookies or storage,
+navigates between inbox conversations, or submits an application:
+
+```bash
+node handshake.mjs doctor
+node handshake.mjs sync --write
+node handshake.mjs inbox --write
+node plugins.mjs run handshake --dry-run
+```
+
+The default bridge session is `career-ops-handshake`. A detail page needs a
+visible title, company, substantive description, and Apply control before it
+becomes an active queue candidate; feed-only or incomplete records remain
+`source-alert`. Inbox records remain a separate human-review surface and never
+enter the job pipeline. Inbox sync reports unread count, participant/thread
+evidence, and linked job URLs while explicitly disabling reply, mark-read, and
+archive actions. If the bridge is unavailable, the last cache is preserved and
+the queue reports Handshake as unavailable/cache-only rather than treating the
+source as healthy.
+
+### Wellfound, Contra, and Braintrust (authenticated, read-only)
+
+These sources use the same cache-backed browser lane. The adapter reads the
+visible DOM from an already authenticated tab, reuses that tab for a bounded
+number of detail pages, restores the original tab URL, and writes only local
+ignored caches. It never reads cookies or storage and never clicks Apply, Save,
+Message, Submit, or similar controls:
+
+```bash
+node marketplace.mjs doctor --source all
+node marketplace.mjs sync --source wellfound --write
+node marketplace.mjs sync --source contra --write
+node marketplace.mjs sync --source braintrust --write
+node marketplace.mjs sync --source all --write
+node plugins.mjs run wellfound --dry-run
+node plugins.mjs run contra --dry-run
+node plugins.mjs run braintrust --dry-run
+```
+
+Each source has its own cache and status file under `data/`. Incomplete feed
+cards remain `source-alert`; only an authenticated detail record with a visible
+title, company, substantive description, and Apply control is marked active.
+If a bridge or tab is unavailable, the last cache is preserved and the queue
+shows the source as unavailable/cache-only.
+
 ### The `ctx` object
 
 - `fetch(url, opts)` — the **guarded** primitive: HTTPS-only, pinned to your

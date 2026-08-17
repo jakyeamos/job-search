@@ -4,12 +4,23 @@
  * generate-pdf.mjs — HTML → PDF via Playwright
  *
  * Usage:
- *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN]
+ *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--allow-reorder] [--max-pages=N] [--strict-pages]
  *
  * --report links the generated PDF to its tracker/report number and records
  * the linkage in data/pdf-index.tsv so downstream tools (e.g. the TUI
  * dashboard's `d`/`D` hotkeys) can locate the exact PDF for an application.
  * Without --report a manifest row is still written, just unkeyed.
+ *
+ * --allow-reorder downgrades the CV section-order guard from a thrown error
+ * to a console warning, for JDs where the section order was deliberately
+ * tailored (e.g. Projects moved ahead of Education for a technical-heavy
+ * role) rather than accidentally scrambled by an agent. Without this flag,
+ * any divergence from cv.md's section order still fails generation.
+ *
+ * --max-pages=N sets the preferred rendered CV length (default: 2 pages).
+ * The actual page count is checked after Chromium writes the PDF; overflow
+ * warns with trimming guidance by default. --strict-pages turns that warning
+ * into a hard rejection without publishing the render as successful.
  *
  * Requires: @playwright/test (or playwright) installed.
  * Uses Chromium headless to render the HTML and produce a clean, ATS-parseable PDF.
@@ -21,8 +32,10 @@ import { readFile } from 'fs/promises';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { randomUUID } from 'node:crypto';
+import { readStyleTokens, injectThemeStyle } from './theme-style.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const PDF_PAGE_MARGIN = '0.6in';
 
 // Ensure output directory exists (fresh setup)
 mkdirSync(resolve(__dirname, 'output'), { recursive: true });
@@ -90,11 +103,44 @@ function normalizeTextForATS(html) {
     // wrong for half of users \u2014 better to leave the glyph than emit bad data.
     t = t.replace(/\u20AC/g, () => { bump('euro', 1); return 'EUR '; });
     t = t.replace(/\u00A3/g, () => { bump('pound', 1); return 'GBP '; });
+    // Markdown bold from tailored CV builders (SUMMARY_TEXT uses **…**).
+    t = t.replace(/\*\*([^*]+?)\*\*/g, (_, inner) => {
+      bump('markdown-bold', 1);
+      return `<strong>${inner}</strong>`;
+    });
     return t;
   }
 }
 
+/**
+ * Strip diacritics so a heading is recognized regardless of how it was typed.
+ *
+ * Rendered Polish headings are not always spelled with their diacritics —
+ * "Wykształcenie" and "Wyksztalcenie" both occur in already-generated CVs.
+ * NFD splits most Polish letters into a base plus a combining mark we drop;
+ * ł (U+0142) has no canonical decomposition, so it needs its own pass.
+ *
+ * Only used for alias lookup — display titles keep their diacritics.
+ */
+function foldDiacritics(text) {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ł/g, 'l');
+}
+
+/**
+ * Heading spelling -> canonical section key.
+ *
+ * Polish (modes/pl) is here because without these aliases the rendered Polish
+ * titles match nothing derived from the English cv.md: validateCvSectionOrder()
+ * finds fewer than two comparable sections and silently returns, leaving the
+ * section-order guard disabled on every CV rendered in that mode.
+ *
+ * Keys are folded on construction so authored diacritics match stripped input.
+ */
 const SECTION_ALIASES = new Map([
+  // English — cv.md is the source of truth and is written in English.
   ['summary', 'summary'],
   ['professional summary', 'summary'],
   ['competencies', 'competencies'],
@@ -108,9 +154,42 @@ const SECTION_ALIASES = new Map([
   ['education', 'education'],
   ['education & certifications', 'education'],
   ['certifications', 'certifications'],
+  ['awards', 'awards'],
+  ['honors', 'awards'],
+  ['honours', 'awards'],
+  ['awards & honors', 'awards'],
+  ['awards and honors', 'awards'],
+  ['honors & awards', 'awards'],
+  ['awards & honours', 'awards'],
   ['skills', 'skills'],
   ['technical skills', 'skills'],
-]);
+  // Polish — the vocabulary documented in modes/pl/README.md, plus the word-order
+  // variants that turn up in practice (both "Kompetencje kluczowe" and
+  // "Kluczowe kompetencje" are used for the same section).
+  ['podsumowanie', 'summary'],
+  ['podsumowanie zawodowe', 'summary'],
+  ['profil zawodowy', 'summary'],
+  ['kompetencje', 'competencies'],
+  ['kompetencje kluczowe', 'competencies'],
+  ['kluczowe kompetencje', 'competencies'],
+  ['doświadczenie', 'experience'],
+  ['doświadczenie zawodowe', 'experience'],
+  ['przebieg kariery', 'experience'],
+  ['projekty', 'projects'],
+  ['kluczowe projekty', 'projects'],
+  ['wybrane projekty', 'projects'],
+  ['wykształcenie', 'education'],
+  ['edukacja', 'education'],
+  ['wykształcenie i certyfikaty', 'education'],
+  ['certyfikaty', 'certifications'],
+  ['certyfikaty i szkolenia', 'certifications'],
+  ['szkolenia i certyfikaty', 'certifications'],
+  ['nagrody', 'awards'],
+  ['wyróżnienia', 'awards'],
+  ['nagrody i wyróżnienia', 'awards'],
+  ['umiejętności', 'skills'],
+  ['umiejętności techniczne', 'skills'],
+].map(([alias, key]) => [foldDiacritics(alias), key]));
 
 function normalizeSectionTitle(text) {
   return text
@@ -124,7 +203,7 @@ function normalizeSectionTitle(text) {
 }
 
 function sectionKey(text) {
-  const normalized = normalizeSectionTitle(text);
+  const normalized = foldDiacritics(normalizeSectionTitle(text));
   return SECTION_ALIASES.get(normalized) ?? normalized;
 }
 
@@ -155,7 +234,16 @@ function extractSourceSectionOrder(markdown) {
   return sections;
 }
 
-function validateCvSectionOrder(html, cvMarkdown) {
+/**
+ * @param {string} html
+ * @param {string} cvMarkdown
+ * @param {{ allowReorder?: boolean }} [options] - `allowReorder` downgrades a
+ *   detected divergence from a thrown error to a console warning, for JDs
+ *   where the section order was deliberately tailored (e.g. Projects moved
+ *   ahead of Education for a technical-heavy role) rather than accidentally
+ *   scrambled by an agent. See #1646.
+ */
+export function validateCvSectionOrder(html, cvMarkdown, { allowReorder = false } = {}) {
   const rendered = extractRenderedSectionOrder(html);
   const source = extractSourceSectionOrder(cvMarkdown);
   if (rendered.length < 2 || source.length < 2) return;
@@ -173,9 +261,81 @@ function validateCvSectionOrder(html, cvMarkdown) {
         .filter(section => renderedComparable.some(renderedSection => renderedSection.key === section.key))
         .map(section => section.title)
         .join(' -> ');
-      throw new Error(`CV section order diverges from cv.md: rendered ${renderedOrder}; cv.md ${sourceOrder}`);
+      const message = `CV section order diverges from cv.md: rendered ${renderedOrder}; cv.md ${sourceOrder}`;
+      if (allowReorder) {
+        console.warn(`⚠️  ${message} (proceeding — --allow-reorder set)`);
+        return;
+      }
+      throw new Error(message);
     }
   }
+}
+
+/**
+ * Decide whether a rendered CV fits its configured page budget.
+ *
+ * This is deliberately separate from rendering: page count comes from the
+ * PDF Chromium actually produced, and the renderer never changes layout to
+ * force content under the limit.
+ *
+ * @param {number} pageCount - Actual pages in the rendered PDF.
+ * @param {{ maxPages?: number, strictPages?: boolean }} [options]
+ * @returns {void}
+ */
+export function enforcePageBudget(pageCount, { maxPages = 2, strictPages = false } = {}) {
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throw new Error(`Could not determine the rendered PDF page count (received ${pageCount}).`);
+  }
+  if (!Number.isInteger(maxPages) || maxPages < 1) {
+    throw new Error(`Invalid page budget "${maxPages}". Use a positive integer.`);
+  }
+  if (pageCount <= maxPages) return;
+
+  const actualLabel = 'pages';
+  const allowedLabel = maxPages === 1 ? 'page' : 'pages';
+  const message =
+    `CV is ${pageCount} ${actualLabel}; the allowed maximum is ${maxPages} ${allowedLabel}. ` +
+    'Trim lower-priority bullets, older roles, secondary projects, or the competencies strip, then regenerate.';
+
+  if (strictPages) {
+    throw new Error(`${message} (--strict-pages requested)`);
+  }
+
+  console.warn(`⚠️  ${message} Continuing because overflow is warning-only by default; use --strict-pages to reject it.`);
+}
+
+/**
+ * Read the page count from the PDF catalog's root /Pages dictionary.
+ *
+ * Following the catalog reference keeps page-like text in content streams or
+ * metadata from being mistaken for an actual page object.
+ *
+ * @param {Buffer} pdfBuffer - PDF bytes returned by Chromium.
+ * @returns {number}
+ */
+function countRenderedPdfPages(pdfBuffer) {
+  const pdf = pdfBuffer.toString('latin1');
+  const objects = new Map();
+  const objectPattern = /(?:^|[\r\n])(\d+)\s+(\d+)\s+obj\b([\s\S]*?)\bendobj\b/g;
+
+  for (const match of pdf.matchAll(objectPattern)) {
+    const streamIndex = match[3].search(/\bstream(?:\r?\n|\r)/);
+    const dictionary = streamIndex === -1 ? match[3] : match[3].slice(0, streamIndex);
+    objects.set(`${match[1]} ${match[2]}`, dictionary);
+  }
+
+  const catalog = [...objects.values()].find((body) => /\/Type\s*\/Catalog\b/.test(body));
+  const pagesRef = catalog?.match(/\/Pages\s+(\d+)\s+(\d+)\s+R\b/);
+  const pages = pagesRef ? objects.get(`${pagesRef[1]} ${pagesRef[2]}`) : null;
+  const count = pages && /\/Type\s*\/Pages\b/.test(pages)
+    ? pages.match(/\/Count\s+(\d+)\b/)
+    : null;
+  const pageCount = count ? Number(count[1]) : 0;
+
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throw new Error('Could not determine the rendered PDF page count from its page tree.');
+  }
+  return pageCount;
 }
 
 /**
@@ -190,6 +350,28 @@ export function repoRelativeManifestPath(pathValue) {
   const rel = relative(__dirname, resolve(pathValue));
   if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return '';
   return rel.split(sep).join('/');
+}
+
+export function injectPrintPageCss(html, format = 'a4') {
+  const normalizedFormat = String(format || 'a4').toLowerCase();
+  const pageSize = normalizedFormat === 'letter' ? 'Letter' : 'A4';
+  // Read --page-margin (set by the template's own :root default, and overridden
+  // by injectThemeStyle's block when style.margin is configured) instead of
+  // hardcoding PDF_PAGE_MARGIN outright — this @page rule is injected last, so a
+  // hardcoded value would silently win the cascade and make style.margin
+  // ineffective (#1837 review). PDF_PAGE_MARGIN is only the fallback for a
+  // template that never declares --page-margin at all.
+  const pageStyle = `<style id="career-ops-page-setup">\n@page { size: ${pageSize}; margin: var(--page-margin, ${PDF_PAGE_MARGIN}); }\n</style>`;
+
+  if (/<\/head>/i.test(html)) {
+    return html.replace(/<\/head>/i, `${pageStyle}\n</head>`);
+  }
+
+  if (/<html\b[^>]*>/i.test(html)) {
+    return html.replace(/<html\b[^>]*>/i, match => `${match}\n<head>\n${pageStyle}\n</head>`);
+  }
+
+  return `${pageStyle}\n${html}`;
 }
 
 /**
@@ -244,13 +426,23 @@ async function generatePDF() {
   const args = process.argv.slice(2);
 
   // Parse arguments
-  let inputPath, outputPath, format = 'a4', reportNum = '';
+  let inputPath, outputPath, format = 'a4', reportNum = '', resumeCompany = '', allowReorder = false;
+  let maxPages = 2, maxPagesInput = '2', strictPages = false;
 
   for (const arg of args) {
     if (arg.startsWith('--format=')) {
       format = arg.split('=')[1].toLowerCase();
     } else if (arg.startsWith('--report=')) {
       reportNum = arg.split('=')[1].trim();
+    } else if (arg.startsWith('--resume-company=')) {
+      resumeCompany = arg.slice('--resume-company='.length).trim();
+    } else if (arg.startsWith('--max-pages=')) {
+      maxPagesInput = arg.slice('--max-pages='.length);
+      maxPages = Number(maxPagesInput);
+    } else if (arg === '--allow-reorder') {
+      allowReorder = true;
+    } else if (arg === '--strict-pages') {
+      strictPages = true;
     } else if (!inputPath) {
       inputPath = arg;
     } else if (!outputPath) {
@@ -259,12 +451,17 @@ async function generatePDF() {
   }
 
   if (!inputPath || !outputPath) {
-    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN]');
+    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--resume-company=Company] [--format=letter|a4] [--report=NNN] [--allow-reorder] [--max-pages=N] [--strict-pages]');
     process.exit(1);
   }
 
   if (reportNum && !/^\d+$/.test(reportNum)) {
     console.error(`Invalid --report "${reportNum}". Use the numeric tracker/report number, e.g. --report=018`);
+    process.exit(1);
+  }
+
+  if (!Number.isInteger(maxPages) || maxPages < 1) {
+    console.error(`Invalid --max-pages "${maxPagesInput}". Use a positive integer, e.g. --max-pages=1 or --max-pages=2.`);
     process.exit(1);
   }
 
@@ -292,6 +489,7 @@ async function generatePDF() {
   console.log(`📄 Input:  ${inputPath}`);
   console.log(`📁 Output: ${outputPath}`);
   console.log(`📏 Format: ${format.toUpperCase()}`);
+  console.log(`📐 Page budget: ${maxPages}${strictPages ? ' (strict)' : ' (warning only)'}`);
 
   let html = await readFile(inputPath, 'utf-8');
   let cvMarkdown = '';
@@ -300,7 +498,7 @@ async function generatePDF() {
   } catch (err) {
     if (err?.code !== 'ENOENT') throw err;
   }
-  validateCvSectionOrder(html, cvMarkdown);
+  validateCvSectionOrder(html, cvMarkdown, { allowReorder });
 
   // Normalize text for ATS compatibility (issue #1)
   const normalized = normalizeTextForATS(html);
@@ -311,7 +509,33 @@ async function generatePDF() {
     console.log(`🧹 ATS normalization: ${totalReplacements} replacements (${breakdown})`);
   }
 
-  return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
+  const result = await renderHtmlToPdf(html, outputPath, {
+    format,
+    baseDir: dirname(inputPath),
+    reportNum,
+    inputPath,
+    maxPages,
+    strictPages,
+  });
+  if (resumeCompany) {
+    throw new Error('--resume-company is retired; select and deliver a configured canonical lane resume instead');
+  }
+  return result;
+}
+
+/** @param {{ headless: boolean, channel?: string }} options */
+async function launchPdfBrowser(options) {
+  const requested = options.channel || process.env.CAREER_OPS_BROWSER_CHANNEL || 'chrome';
+  const channels = [...new Set([requested, null])];
+  let lastError = null;
+  for (const channel of channels) {
+    try {
+      return await chromium.launch(channel ? { headless: options.headless, channel } : { headless: options.headless });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('unable to launch a PDF browser');
 }
 
 /**
@@ -367,7 +591,15 @@ export async function inlineLocalFonts(html) {
  *
  * @param {string} html - Full HTML document to render.
  * @param {string} outputPath - Absolute path to write the PDF to.
- * @param {{format?: 'a4'|'letter', baseDir?: string, reportNum?: string, inputPath?: string}} [opts]
+ * @param {{
+ *   format?: 'a4'|'letter',
+ *   baseDir?: string,
+ *   reportNum?: string,
+ *   inputPath?: string,
+ *   maxPages?: number,
+ *   strictPages?: boolean,
+ *   launchBrowser?: (options: {headless: boolean}) => Promise<import('playwright').Browser>
+ * }} [opts]
  * @returns {Promise<{outputPath: string, pageCount: number, size: number}>}
  */
 export async function renderHtmlToPdf(html, outputPath, opts = {}) {
@@ -378,6 +610,14 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
 
   mkdirSync(dirname(outputPath), { recursive: true });
 
+  // Inject the user's theme tokens (config/profile.yml `style:`) as CSS custom
+  // properties so the templates' var(--x, <default>) reads pick them up (#1837).
+  // No `style:` block → no tokens → byte-identical output. Both the CV path and
+  // the cover-letter path flow through here, so both are themed from one place.
+  const styleTokens = opts.styleTokens ?? readStyleTokens();
+  html = injectThemeStyle(html, styleTokens);
+
+  html = injectPrintPageCss(html, format);
   html = await inlineLocalFonts(html);
 
   // Write HTML to a temp file in baseDir so page.goto() gives a file://
@@ -386,8 +626,10 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
   const { writeFile, unlink } = await import('fs/promises');
   await writeFile(tmpHtmlPath, html, 'utf-8');
 
-  const browser = await chromium.launch({ headless: true });
+  const launchBrowser = opts.launchBrowser || launchPdfBrowser;
+  let browser = null;
   try {
+    browser = await launchBrowser({ headless: true });
     const page = await browser.newPage();
 
     // Load from file:// so the page origin allows local subresources
@@ -400,23 +642,28 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
 
     // Generate PDF
     const pdfBuffer = await page.pdf({
-      format: format,
       printBackground: true,
       margin: {
-        top: '0.6in',
-        right: '0.6in',
-        bottom: '0.6in',
-        left: '0.6in',
+        top: '0',
+        right: '0',
+        bottom: '0',
+        left: '0',
       },
-      preferCSSPageSize: false,
+      preferCSSPageSize: true,
     });
 
     // Write PDF
     await writeFile(outputPath, pdfBuffer);
 
-    // Count pages (approximate from PDF structure)
-    const pdfString = pdfBuffer.toString('latin1');
-    const pageCount = (pdfString.match(/\/Type\s*\/Page[^s]/g) || []).length;
+    // Read the root page-tree count so page-like text in streams is ignored.
+    const pageCount = countRenderedPdfPages(pdfBuffer);
+
+    // Strict overflow leaves the draft on disk but stops before success logs
+    // and manifest publication. Default overflow warns and continues.
+    enforcePageBudget(pageCount, {
+      maxPages: opts.maxPages ?? 2,
+      strictPages: opts.strictPages ?? false,
+    });
 
     console.log(`✅ PDF generated: ${outputPath}`);
     console.log(`📊 Pages: ${pageCount}`);
@@ -432,9 +679,17 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
 
     return { outputPath, pageCount, size: pdfBuffer.length };
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close().catch((err) => {
+        console.warn(`⚠️  Browser cleanup failed: ${err.message}`);
+      });
+    }
     // Clean up temp file
-    await unlink(tmpHtmlPath).catch(() => {});
+    await unlink(tmpHtmlPath).catch((err) => {
+      if (err?.code !== 'ENOENT') {
+        console.warn(`⚠️  Temporary HTML cleanup failed: ${err.message}`);
+      }
+    });
   }
 }
 
@@ -446,4 +701,4 @@ if (isMain) {
   });
 }
 
-export { normalizeTextForATS };
+export { normalizeTextForATS, sectionKey };

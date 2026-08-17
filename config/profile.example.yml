@@ -6,6 +6,9 @@ candidate:
   full_name: "Jane Smith"
   email: "jane@example.com"
   phone: "+1-555-0123"
+  # Optional. Used by `/career-ops email` contact blocks in markets where WeChat
+  # is an expected recruiting channel. Omit or leave blank if not applicable.
+  wechat: ""
   location: "San Francisco, CA"
   linkedin: "linkedin.com/in/janesmith"
   portfolio_url: "https://janesmith.dev"
@@ -63,5 +66,14 @@ location:
   city: "San Francisco"
   timezone: "PST"
   visa_status: "No sponsorship needed"
+  # Countries/regions where you ALREADY hold work authorization (no sponsorship
+  # needed there). Drives the Work-Authorization signal in job evaluation
+  # (modes/oferta.md → Block A "Work-authorization check"). Optional — omit or
+  # leave [] if not applicable; the free-text visa_status above still applies.
+  authorized_in: ["United States"]
+  # true if you need visa sponsorship for roles OUTSIDE authorized_in. When a JD
+  # explicitly states it will not sponsor, that is a hard blocker (see
+  # modes/_profile.md "Your Location Policy"). Omit → treated as false.
+  needs_sponsorship: false
   # For remote roles outside your country:
   # onsite_availability: "1 week/month in any city"

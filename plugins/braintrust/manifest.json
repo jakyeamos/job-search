@@ -1,0 +1,12 @@
+{
+  "id": "braintrust",
+  "name": "Braintrust authenticated opportunities",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "Read-only Braintrust opportunity evidence from a user-authorized browser session.",
+  "hooks": ["ingest"],
+  "requiredEnv": [],
+  "allowedHosts": [],
+  "skill": "skill.md",
+  "humanInTheLoop": true
+}

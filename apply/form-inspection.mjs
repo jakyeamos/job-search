@@ -1,0 +1,429 @@
+// @ts-check
+
+import { normalizeChoiceField } from './lib/choice-shape.mjs';
+import { readReactSelectOptions } from './lib/react-select-options.mjs';
+
+/** @param {string} url */
+export function normalizeApplicationUrl(url) {
+  const value = String(url || '').trim();
+  if (!value) return value;
+  try {
+    const parsed = new URL(value);
+    if (parsed.hostname.toLowerCase().includes('ashbyhq.com') && !/\/application\/?$/i.test(parsed.pathname)) {
+      parsed.pathname = `${parsed.pathname.replace(/\/+$/, '')}/application`;
+    }
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
+/** @param {unknown} value */
+export function normalizeJobTitle(value) {
+  const compact = String(value || '').replace(/\s+/g, ' ').trim();
+  const unescaped = compact.replace(/\\(?=[\[\]])/g, '');
+  return unescaped.replace(/^(?:\[[^\r\n\]]{1,40}\]\s*)+/, '').trim();
+}
+
+/** @param {string} url */
+export function applicationAdapter(url) {
+  try {
+    const host = new URL(normalizeApplicationUrl(url)).hostname.toLowerCase();
+    if (host.includes('greenhouse')) return 'greenhouse';
+    if (host.includes('ashbyhq')) return 'ashby';
+    if (host.includes('lever.co')) return 'lever';
+  } catch { /* malformed URLs are reported by the caller */ }
+  return 'unknown';
+}
+
+/**
+ * Inspect the rendered form without filling controls, selecting options,
+ * uploading files, or reading current values. Choice widgets may be opened
+ * briefly to read their rendered option labels and are closed immediately.
+ * A posting-page Apply control may be clicked only to reach the form; final
+ * submission controls remain inspection-only.
+ * @param {import('playwright').Page} page
+ * @param {{ expectedTitle?: string }} [options]
+ */
+export async function inspectApplicationPage(page, options = {}) {
+  const report = await page.evaluate((expectedTitle) => {
+    const compact = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const cleanLabel = (value) => compact(value).replace(/[\u2731*]+$/g, '').trim();
+    const fieldContainer = (el) => el.closest(
+      '[data-field-path], [data-testid*="field" i], [class*="_fieldEntry"], [class*="application-question"], [class*="question" i], fieldset, [class*="Field"], [class*="field" i]',
+    );
+    const visible = (el) => {
+      if (el.getAttribute('aria-hidden') === 'true' || el.closest('[aria-hidden="true"]')) return false;
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
+    };
+    const labelFor = (el) => {
+      const container = fieldContainer(el);
+      const choice = (el.getAttribute('type') || '').toLowerCase() === 'radio'
+        || (el.getAttribute('type') || '').toLowerCase() === 'checkbox';
+      if (choice && container) {
+        const heading = container.querySelector('legend, [class*="question-title" i], [data-field-label], [class*="_heading" i], h1, h2, h3');
+        const description = container.querySelector('[class*="description" i], [data-field-description]');
+        const headingText = compact(heading?.textContent);
+        const descriptionText = compact(description?.textContent);
+        const genericDescription = /^(input gender|gender input|input race|race input|input veteran|veteran input)$/i.test(descriptionText);
+        const sensitiveHeading = /gender|race|veteran|disabilit/i.test(headingText);
+        const groupLabel = descriptionText && !genericDescription && !sensitiveHeading
+          ? descriptionText
+          : [headingText, descriptionText].filter(Boolean).join(' ');
+        if (compact(groupLabel)) return cleanLabel(groupLabel);
+      }
+      if (el.id) {
+        const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+        if (label && compact(label.textContent)) return cleanLabel(label.textContent);
+      }
+      const labelledBy = el.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        const text = labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.textContent || '').join(' ');
+        if (compact(text)) return cleanLabel(text);
+      }
+      const wrapper = el.closest('label');
+      if (wrapper && compact(wrapper.textContent)) return cleanLabel(wrapper.textContent);
+      if (container) {
+        const heading = container.querySelector('legend, [class*="label" i], [class*="heading" i], [class*="question-title" i], label');
+        if (heading && compact(heading.textContent)) return cleanLabel(heading.textContent);
+      }
+      return cleanLabel(el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || el.id || 'Unlabeled field');
+    };
+    const requiredFor = (el, container) => el.hasAttribute('required')
+      || el.getAttribute('aria-required') === 'true'
+      || Boolean(container?.querySelector('[aria-required="true"], [class*="required" i], [data-required="true"]'));
+    const optionText = (option) => cleanLabel(option.textContent || option.getAttribute('aria-label') || option.getAttribute('data-label'));
+    const categoryFor = (label, kind) => {
+      if (kind === 'file' || /resume|résumé|curriculum vitae|cover letter|cover note/i.test(label)) return 'artifact';
+      if (/first name|last name|full name|legal name|preferred name|email|phone|linkedin|github|portfolio|website/i.test(label)
+        || /^(?:country|country\/region|country of residence)$/i.test(label)) return 'standard';
+      return 'question';
+    };
+    const manualReason = (label) => {
+      if (/gender|race|ethnic|hispanic|latino|veteran|disabilit|self[-\s]?identif|voluntary self/i.test(label)) return 'voluntary self-identification — complete manually';
+      if (/captcha|recaptcha|hcaptcha|one[- ]time password|multi[- ]factor|verification code/i.test(label)) return 'CAPTCHA or identity verification — complete manually';
+      if (/attest|certif|background|criminal|conviction|terms (?:and|of)|agree.*(?:accurate|truth|conditions|terms)|privacy\s+(?:notice|policy)|ai\s+policy|double[- ]check|accuracy is crucial|information provided above|full[- ]time\s+(?:on[- ]?site|in[- ]person)[\s\S]*\b(?:london|germany|france|spain|netherlands|belgium|italy)\b/i.test(label)) return 'legal or attestation field — review manually';
+      if (/marketing|newsletter|updates|promotional|subscribe|receive (?:emails|communications)/i.test(label)) return 'marketing consent — leave unchecked unless you choose otherwise';
+      return '';
+    };
+    const textFrom = (el) => compact(el?.innerText || el?.textContent || '');
+    const textWithoutApplicationControls = (root) => {
+      if (!root) return '';
+      const clone = root.cloneNode(true);
+      clone.querySelectorAll(
+        'input, textarea, select, button, [role="button"], [role="combobox"], [contenteditable="true"], [data-field-path], [data-testid*="field" i], [class*="application-question" i], [class*="question" i], fieldset, nav, footer',
+      ).forEach((node) => node.remove());
+      return textFrom(clone);
+    };
+    const descriptionCandidates = [];
+    const addDescriptionCandidate = (source, el, stripControls = false) => {
+      if (!el || !visible(el)) return;
+      const text = stripControls ? textWithoutApplicationControls(el) : textFrom(el);
+      if (text.length >= 120) descriptionCandidates.push({ source, text: text.slice(0, 40_000) });
+    };
+    const descriptionSelectors = [
+      '[data-testid*="job-description" i]',
+      '[data-test*="job-description" i]',
+      '[data-qa*="job-description" i]',
+      '[id*="job-description" i]',
+      '[class*="job-description" i]',
+      '[data-testid*="description" i]',
+      '[data-test*="description" i]',
+      '[data-qa*="description" i]',
+      '[id*="description" i]',
+      '[class*="description" i]',
+    ];
+    for (const selector of descriptionSelectors) {
+      for (const el of Array.from(document.querySelectorAll(selector))) addDescriptionCandidate('application-page:selector', el);
+    }
+    const scopedRoots = Array.from(document.querySelectorAll('main, [role="main"], article')).filter(visible);
+    for (const root of scopedRoots) addDescriptionCandidate('application-page:main', root, true);
+    if (!scopedRoots.length) addDescriptionCandidate('application-page:body', document.body, true);
+    const selectorCandidates = descriptionCandidates.filter((candidate) => candidate.source === 'application-page:selector');
+    const preferredCandidates = selectorCandidates.length ? selectorCandidates : descriptionCandidates;
+    preferredCandidates.sort((left, right) => right.text.length - left.text.length);
+    const jobDescription = preferredCandidates[0]?.text || '';
+    const jobDescriptionSource = preferredCandidates[0]?.source || '';
+    const controls = [];
+    const grouped = new Set();
+    const containerIds = new WeakMap();
+    let nextContainerId = 0;
+    const containerKey = (container) => {
+      if (!container) return '';
+      if (!containerIds.has(container)) containerIds.set(container, `container-${nextContainerId++}`);
+      return containerIds.get(container);
+    };
+    const elements = Array.from(document.querySelectorAll('input, textarea, select, [role="combobox"]'))
+      .filter((el) => {
+        if (el.type === 'hidden' || el.name === 'g-recaptcha-response') return false;
+        if (visible(el)) return true;
+        const type = (el.getAttribute('type') || el.tagName).toLowerCase();
+        return (type === 'radio' || type === 'checkbox') && visible(fieldContainer(el));
+      });
+
+    for (const el of elements) {
+      const tag = el.tagName.toLowerCase();
+      const type = (el.getAttribute('type') || tag).toLowerCase();
+      const container = fieldContainer(el);
+      const isChoice = type === 'radio' || type === 'checkbox';
+      const groupKey = isChoice
+        ? `${type}:${containerKey(container) || el.name || el.id}`
+        : '';
+      if (isChoice && grouped.has(groupKey)) continue;
+      if (isChoice) grouped.add(groupKey);
+      const label = labelFor(el);
+      const kind = type === 'textarea' ? 'textarea'
+        : type === 'file' ? 'file'
+          : tag === 'select' ? 'select'
+            : el.getAttribute('role') === 'combobox' ? 'combobox'
+              : isChoice ? type : 'text';
+      const options = isChoice
+        ? (() => {
+          const optionNodes = Array.from(container?.querySelectorAll('button, label, [role="option"]') || []);
+          const headingText = compact(container?.querySelector('[class*="heading" i], [class*="question-title" i]')?.textContent);
+          const descriptionText = compact(container?.querySelector('[class*="description" i], [data-field-description]')?.textContent);
+          const visibleOptions = optionNodes.map((node) => cleanLabel(node.textContent || node.getAttribute('aria-label')))
+            .filter((value) => value && value !== headingText && value !== descriptionText);
+          if (visibleOptions.length) return visibleOptions;
+          return Array.from(container?.querySelectorAll(`input[type="${type}"]`) || [el]).map((input) => {
+            const optionLabel = input.id ? document.querySelector(`label[for="${CSS.escape(input.id)}"]`) : input.closest('label');
+            return cleanLabel(optionLabel?.textContent || input.getAttribute('value'));
+          }).filter(Boolean);
+        })()
+        : tag === 'select'
+          ? Array.from(el.options).map(optionText).filter(Boolean)
+          : kind === 'combobox'
+            ? (() => {
+              const listId = el.getAttribute('aria-controls');
+              const list = listId ? document.getElementById(listId) : container;
+              return Array.from(list?.querySelectorAll('[role="option"], .select__option') || []).map(optionText).filter(Boolean);
+            })()
+            : [];
+      const fieldPath = container?.getAttribute('data-field-path') || '';
+      const field = {
+        id: el.id || '',
+        name: el.name || '',
+        tag,
+        type,
+        kind,
+        label,
+        required: requiredFor(el, container),
+        options: [...new Set(options)],
+        fieldPath,
+        category: categoryFor(label, kind),
+        manualReason: manualReason(label),
+      };
+      controls.push(field);
+    }
+
+    const hasForm = document.querySelectorAll('form').length > 0;
+    const hasApplicationShell = Boolean(document.querySelector('[class*="application-form" i], [data-testid*="application" i]'));
+    const applicationSurface = hasForm || hasApplicationShell || controls.length > 0;
+    const applyText = (value) => /^(?:apply\b|start application\b|begin application\b)/i.test(value)
+      || /\bapply\s+(?:now|to|for|on)\b/i.test(value);
+    const buttonNodes = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
+    const applyLinkNodes = Array.from(document.querySelectorAll('a[href]'))
+      .filter(visible)
+      .filter((el) => applyText(compact(el.textContent || el.getAttribute('aria-label') || '')));
+    const buttons = [...buttonNodes, ...applyLinkNodes]
+      .filter(visible)
+      .map((el) => {
+        const text = compact(el.textContent || el.getAttribute('value') || el.getAttribute('aria-label'));
+        const applyLike = applyText(text);
+        const finalSubmitLike = /submit|send application|finish|complete application|finalize/i.test(text);
+        return {
+        text,
+        type: el.getAttribute('type') || (el.tagName.toLowerCase() === 'a' ? 'link' : ''),
+        href: el.getAttribute('href') || '',
+        applyLike,
+        submitLike: finalSubmitLike || (applyLike && applicationSurface),
+        nextLike: /^(next|continue|save and continue|go to next|review application|proceed)\b/i.test(text),
+        blockedLike: /captcha|recaptcha|hcaptcha|verification|multi[- ]factor|one[- ]time password|sign in|log in/i.test(text),
+        disabled: Boolean(el.disabled),
+        };
+      })
+      .filter((button) => button.text);
+    const bodyText = textFrom(document.body);
+    const titleVisible = expectedTitle
+      ? [document.title, document.querySelector('h1')?.textContent, bodyText]
+        .map(compact)
+        .some((value) => value.toLowerCase().includes(compact(expectedTitle).toLowerCase()))
+      : Boolean(compact(document.title) || compact(document.querySelector('h1')?.textContent));
+    const authRequired = /(?:sign|log)\s*in|create an account|register to apply|account required/i.test(bodyText)
+      && Boolean(document.querySelector('input[type="password"], input[autocomplete="username"], input[autocomplete="email"]'));
+    const challengeDetected = /captcha|recaptcha|hcaptcha|verify you are human|one[- ]time password|multi[- ]factor|identity verification/i.test(bodyText)
+      || controls.some((control) => Boolean(control.manualReason && /captcha|identity verification/i.test(control.manualReason)));
+    const manualSignals = [...new Set([
+      ...controls.map((control) => control.manualReason).filter(Boolean),
+      ...buttons.map((button) => /captcha|recaptcha|hcaptcha|verification|multi[- ]factor/i.test(button.text) ? button.text : '').filter(Boolean),
+    ])];
+    return {
+      title: compact(document.title),
+      heading: compact(document.querySelector('h1')?.textContent),
+      formCount: document.querySelectorAll('form').length,
+      controls,
+      buttons,
+      manualSignals,
+      titleVisible,
+      jobDescription,
+      jobDescriptionSource,
+      jobDescriptionLength: jobDescription.length,
+      authRequired,
+      challengeDetected,
+      applicationSurface,
+      formReady: controls.length > 0 && (hasForm
+        || buttons.some((button) => button.submitLike)
+        || hasApplicationShell),
+    };
+  }, String(options.expectedTitle || ''));
+  const controls = Array.isArray(report.controls) ? report.controls : [];
+  for (const control of controls) {
+    if (control.kind !== 'combobox' || control.category !== 'question' || control.options?.length) continue;
+    const options = await readReactSelectOptions(page, {
+      id: control.id,
+      label: control.label,
+    });
+    if (options.length) control.options = options;
+  }
+  const normalizedControls = controls.map(normalizeChoiceField);
+  return { url: page.url(), ...report, controls: normalizedControls };
+}
+
+/** @param {Record<string, unknown>} [inspection] */
+export function jobDescriptionFromInspection(inspection = {}) {
+  const pages = Array.isArray(inspection.pages) && inspection.pages.length ? inspection.pages : [inspection];
+  const candidates = pages
+    .map((page) => ({
+      description: String(page.jobDescription || '').replace(/\s+/g, ' ').trim().slice(0, 40_000),
+      source: String(page.jobDescriptionSource || ''),
+    }))
+    .filter((candidate) => candidate.description.length >= 120);
+  const rank = (source) => source.includes(':selector') ? 2 : source.includes(':main') ? 1 : 0;
+  candidates.sort((left, right) => rank(right.source) - rank(left.source) || right.description.length - left.description.length);
+  return candidates[0] || { description: '', source: '' };
+}
+
+/**
+ * Traverse only safe form steps. The traversal never reads current values
+ * and never fills, selects, uploads, or submits. It may click a posting-page
+ * Apply control to reach the form and local Next/Continue controls when no
+ * required fields are present.
+ * @param {import('playwright').Page} page
+ * @param {{ maxPages?: number, settleMs?: number, expectedTitle?: string }} [options]
+ */
+export async function inspectApplicationFlow(page, options = {}) {
+  const maxPages = Math.max(1, Math.min(Number(options.maxPages || 8), 20));
+  const pages = [];
+  const warnings = [];
+  const actions = [];
+  const visited = new Set();
+  let blockedReason = '';
+
+  for (let index = 0; index < maxPages; index += 1) {
+    const inspection = await inspectApplicationPage(page, { expectedTitle: options.expectedTitle });
+    const identity = JSON.stringify({
+      url: inspection.url,
+      title: inspection.title,
+      heading: inspection.heading,
+      controls: (inspection.controls || []).map((control) => [control.label, control.kind, control.required]),
+      buttons: (inspection.buttons || []).map((button) => [button.text, button.nextLike, button.applyLike, button.submitLike]),
+    });
+    if (visited.has(identity)) {
+      warnings.push('read-only form traversal stopped because the page repeated');
+      break;
+    }
+    visited.add(identity);
+    pages.push(inspection);
+
+    if (inspection.authRequired) {
+      blockedReason = 'login or account verification is required before the application form can be inspected';
+      break;
+    }
+    if (inspection.challengeDetected) {
+      blockedReason = 'CAPTCHA, MFA, or identity verification was detected; complete it manually';
+      break;
+    }
+
+    const applyCandidates = !inspection.formReady && !(inspection.controls || []).length
+      ? (inspection.buttons || []).map((button, index) => ({ button, index }))
+        .filter(({ button }) => button.applyLike && !button.disabled && !button.submitLike && !button.blockedLike)
+      : [];
+    if (applyCandidates.length > 1) {
+      blockedReason = 'multiple posting-page Apply controls were visible; refusing to guess';
+      break;
+    }
+    const applyIndex = applyCandidates[0]?.index ?? -1;
+    if (applyIndex >= 0) {
+      try {
+        const targetButton = inspection.buttons[applyIndex];
+        const buttons = page.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible, a[href]:visible');
+        const buttonIndex = await buttons.evaluateAll((nodes, expectedText) => nodes.findIndex((node) => {
+          const text = String(node.textContent || node.getAttribute('value') || node.getAttribute('aria-label') || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          return text === String(expectedText || '');
+        }), targetButton?.text || '');
+        if (buttonIndex < 0) throw new Error(`the posting-page Apply control "${targetButton?.text || 'Apply'}" was not found`);
+        const fromUrl = page.url();
+        await buttons.nth(buttonIndex).click({ timeout: 3_000 });
+        actions.push({ type: 'click', control: targetButton?.text || 'Apply', reason: 'posting-page-apply-navigation', fromUrl });
+        await Promise.race([
+          page.waitForLoadState('domcontentloaded', { timeout: 2_000 }).catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, options.settleMs || 250)),
+        ]);
+        continue;
+      } catch (error) {
+        blockedReason = `posting-page Apply navigation could not continue: ${error instanceof Error ? error.message : String(error)}`;
+        break;
+      }
+    }
+
+    const nextIndex = (inspection.buttons || []).findIndex((button) => button.nextLike && !button.disabled && !button.submitLike && !button.blockedLike);
+    if (nextIndex < 0) break;
+    const requiredControls = (inspection.controls || []).filter((control) => control.required === true);
+    if (requiredControls.length) {
+      blockedReason = 'required application fields are present; fill them manually before continuing to the next page';
+      break;
+    }
+
+    try {
+      const targetButton = inspection.buttons[nextIndex];
+      const buttons = page.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible, a[href]:visible');
+      const buttonIndex = await buttons.evaluateAll((nodes, expectedText) => nodes.findIndex((node) => {
+        const text = String(node.textContent || node.getAttribute('value') || node.getAttribute('aria-label') || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return text === String(expectedText || '');
+      }), targetButton?.text || '');
+      if (buttonIndex < 0) throw new Error(`the local continuation control "${targetButton?.text || 'Next'}" was not found`);
+      const button = buttons.nth(buttonIndex);
+      await button.click({ timeout: 3_000 });
+      actions.push({ type: 'click', control: targetButton?.text || 'Next', reason: 'local-continuation' });
+      await Promise.race([
+        page.waitForLoadState('domcontentloaded', { timeout: 2_000 }).catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, options.settleMs || 250)),
+      ]);
+    } catch (error) {
+      blockedReason = `read-only form traversal could not continue: ${error instanceof Error ? error.message : String(error)}`;
+      break;
+    }
+  }
+
+  if (pages.length >= maxPages && !blockedReason && pages.length > 0) {
+    warnings.push(`read-only form traversal stopped at the ${maxPages}-page safety limit`);
+  }
+  const current = pages[pages.length - 1] || {
+    url: page.url(), title: '', heading: '', controls: [], buttons: [], formReady: false,
+    jobDescription: '', jobDescriptionSource: '', jobDescriptionLength: 0,
+  };
+  return {
+    ...current,
+    pages,
+    pageCount: pages.length,
+    blocked: Boolean(blockedReason),
+    blockedReason,
+    warnings,
+    actions,
+  };
+}

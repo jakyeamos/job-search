@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "testCommand": "pnpm test:coverage",
+  "coveragePaths": [
+    "coverage/lcov.info"
+  ],
+  "coverageFormat": "lcov",
+  "threshold": 0,
+  "checks": {
+    "coverage": true,
+    "security": true,
+    "checklist": true
+  },
+  "excludePatterns": [
+    "**/node_modules/**",
+    "**/.quality-runner/**"
+  ]
+}
