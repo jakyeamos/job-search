@@ -2,18 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildChromeOpenArgs,
   buildQueueUiReloadArgs,
   buildScheduledHealthArgs,
-  buildChromeRefreshScript,
+  buildScheduledBrowserPolicy,
   buildScheduledApplicationFillRequest,
-  decideLaunchAction,
-  refreshExistingQueueTab,
   shouldStartScheduledApplicationFill,
   QUEUE_UI_LAUNCH_AGENT,
   SCHEDULED_APPLICATION_LIMIT,
   SCHEDULED_HEALTH_LIMIT,
   SCHEDULED_HUMAN_TIMEOUT_SECONDS,
+  SCHEDULED_BROWSER_ACTION,
 } from '../scripts/queue-ui-launch.mjs';
 
 test('scheduled launcher rechecks the oldest queue URLs without entering the application flow', () => {
@@ -48,36 +46,12 @@ test('a fresh daily fill reloads the persistent queue service before use', () =>
   ]);
 });
 
-test('new queue tabs open in standard Chrome', () => {
-  assert.deepEqual(buildChromeOpenArgs(), ['-a', 'Google Chrome', 'http://127.0.0.1:47831/']);
-});
-
-test('existing queue tab is refreshed instead of opened again', () => {
-  assert.equal(decideLaunchAction({ tabStatus: 'refreshed', alreadyOpenedToday: true }), 'refresh');
-  assert.match(buildChromeRefreshScript('Google Chrome'), /reload currentTab/);
-  assert.match(buildChromeRefreshScript('Google Chrome'), /127\.0\.0\.1:47831/);
-});
-
-test('launcher opens only when no existing queue tab is found', () => {
-  assert.equal(decideLaunchAction({ tabStatus: 'missing', alreadyOpenedToday: false }), 'open');
-  assert.equal(decideLaunchAction({ tabStatus: 'missing', alreadyOpenedToday: true }), 'skip');
-});
-
-test('browser inspection uses standard Chrome', () => {
-  const calls = [];
-  const result = refreshExistingQueueTab(
-    (applicationName) => {
-      calls.push(applicationName);
-      return applicationName === 'Google Chrome' ? 'refreshed' : 'missing';
-    },
-    () => true,
-  );
-  assert.deepEqual(result, { status: 'refreshed', applicationName: 'Google Chrome' });
-  assert.deepEqual(calls, ['Google Chrome']);
-});
-
-test('launcher fails closed when a running browser cannot be inspected', () => {
-  const result = refreshExistingQueueTab(() => 'unavailable', () => true);
-  assert.deepEqual(result, { status: 'unknown', applicationName: '' });
-  assert.equal(decideLaunchAction({ tabStatus: result.status, alreadyOpenedToday: false }), 'skip');
+test('scheduled launcher leaves browser ownership to Daily Front Page', () => {
+  assert.deepEqual(buildScheduledBrowserPolicy(), {
+    action: SCHEDULED_BROWSER_ACTION,
+    opensBrowser: false,
+    owner: 'Daily Front Page',
+    queueUrl: 'http://127.0.0.1:47831/',
+  });
+  assert.equal(SCHEDULED_BROWSER_ACTION, 'front-page-owned');
 });

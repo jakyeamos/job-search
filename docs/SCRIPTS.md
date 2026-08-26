@@ -75,8 +75,10 @@ The local queue UI runs at `http://127.0.0.1:47831/`. It reads the existing
 queue state and keeps application actions human-in-the-loop. `Applied` also
 records the role in `data/applications.md`; opening a role does not change its
 status. `node queue.mjs install-schedule` installs both the local UI server and
-the launcher: the queue refreshes and opens at 8:00 AM Eastern, or at the
-first login after 8:00 if the laptop was asleep or off.
+the launcher: the queue refreshes at 8:00 AM Eastern, or at the first login
+after 8:00 if the laptop was asleep or off. It keeps the local UI ready but
+does not open a queue tab; Daily Front Page owns the visible daily browser
+launch, with Career Ops available from its tab-style link.
 
 The UI can filter by inferred company field, source-provided location, and role
 lane, and sort by queue priority, company field, location, company name, or
@@ -280,7 +282,9 @@ node application-queue.mjs status
 The installed macOS LaunchAgent invokes `scripts/queue-ui-launch.mjs` at 8:00 AM
 Eastern. After the scheduled refresh and liveness sweep, it starts one bounded
 six-role fill per day and leaves the dedicated Chrome handoff available for up
-to eight hours of human review. It never clicks Submit; the scheduler records a
+to eight hours of human review. It does not open a separate queue UI tab;
+Daily Front Page owns the visible daily browser launch. It never clicks Submit;
+the scheduler records a
 start date so a `RunAtLoad` retry cannot start a second daily batch.
 
 It does not retry submitted, uncertain, anti-spam, CAPTCHA, MFA, or completed

@@ -8,7 +8,6 @@ import { spawnSync } from 'node:child_process';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const UI_URL = 'http://127.0.0.1:47831/';
 const STATE_PATH = path.join(ROOT, 'data', 'queue-ui-launch-state.json');
-const BROWSER_APP = 'Google Chrome';
 export const QUEUE_UI_LAUNCH_AGENT = 'com.jakyeamos.career-ops.queue-ui';
 export const SCHEDULED_HEALTH_LIMIT = 100;
 export const SCHEDULED_APPLICATION_LIMIT = 6;
@@ -58,61 +57,15 @@ async function waitForUi(timeoutMs = 5000) {
   return false;
 }
 
-export function buildChromeRefreshScript(applicationName, queueUrl = UI_URL) {
-  const escapedUrl = queueUrl.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-  return [
-    `tell application "${applicationName}"`,
-    '  set foundQueueTab to false',
-    '  repeat with currentWindow in windows',
-    '    set currentTabIndex to 1',
-    '    repeat with currentTab in tabs of currentWindow',
-    `      if (URL of currentTab starts with "${escapedUrl}") then`,
-    '        set foundQueueTab to true',
-    '        set active tab index of currentWindow to currentTabIndex',
-    '        reload currentTab',
-    '        exit repeat',
-    '      end if',
-    '      set currentTabIndex to currentTabIndex + 1',
-    '    end repeat',
-    '    if foundQueueTab then exit repeat',
-    '  end repeat',
-    '  if foundQueueTab then',
-    '    activate',
-    '    return "refreshed"',
-    '  end if',
-    'end tell',
-    'return "missing"',
-  ].join('\n');
-}
+export const SCHEDULED_BROWSER_ACTION = 'front-page-owned';
 
-function runAppleScript(applicationName, script) {
-  const result = spawnSync('/usr/bin/osascript', ['-e', script], { encoding: 'utf8' });
-  if (result.status !== 0) return 'unavailable';
-  return String(result.stdout || '').trim() === 'refreshed' ? 'refreshed' : 'missing';
-}
-
-function browserProcessIsRunning(applicationName) {
-  return spawnSync('/usr/bin/pgrep', ['-x', applicationName], { stdio: 'ignore' }).status === 0;
-}
-
-export function refreshExistingQueueTab(
-  runScript = runAppleScript,
-  isBrowserRunning = browserProcessIsRunning,
-) {
-  let inspectionUnavailable = false;
-  const applicationName = BROWSER_APP;
-  if (isBrowserRunning(applicationName)) {
-    const result = runScript(applicationName, buildChromeRefreshScript(applicationName));
-    if (result === 'refreshed') return { status: 'refreshed', applicationName };
-    if (result === 'unavailable') inspectionUnavailable = true;
-  }
-  return inspectionUnavailable ? { status: 'unknown', applicationName: '' } : { status: 'missing', applicationName: '' };
-}
-
-export function decideLaunchAction({ tabStatus, alreadyOpenedToday }) {
-  if (tabStatus === 'refreshed') return 'refresh';
-  if (tabStatus === 'unknown' || alreadyOpenedToday) return 'skip';
-  return 'open';
+export function buildScheduledBrowserPolicy(queueUrl = UI_URL) {
+  return {
+    action: SCHEDULED_BROWSER_ACTION,
+    opensBrowser: false,
+    owner: 'Daily Front Page',
+    queueUrl,
+  };
 }
 
 export function buildScheduledHealthArgs(limit = SCHEDULED_HEALTH_LIMIT) {
@@ -124,10 +77,6 @@ export function buildScheduledHealthArgs(limit = SCHEDULED_HEALTH_LIMIT) {
     '--apply',
     '--browser',
   ];
-}
-
-export function buildChromeOpenArgs(queueUrl = UI_URL) {
-  return ['-a', BROWSER_APP, queueUrl];
 }
 
 export function buildScheduledApplicationFillRequest() {
@@ -171,7 +120,7 @@ async function startScheduledApplicationFill(alreadyStartedToday, request = buil
 async function main() {
   const date = localDateKey();
   if (localHour() < 8) {
-    console.log('Queue UI launch deferred until 8:00 AM Eastern.');
+    console.log('Scheduled Career Ops work deferred until 8:00 AM Eastern.');
     return;
   }
   const state = readState();
@@ -181,7 +130,7 @@ async function main() {
     stdio: 'inherit',
   });
   if (refresh.status !== 0) {
-    console.error(`Queue refresh exited with status ${refresh.status ?? 'unknown'}; opening the last available queue.`);
+    console.error(`Queue refresh exited with status ${refresh.status ?? 'unknown'}; keeping the last available queue for the Career Ops tab.`);
   }
 
   const health = spawnSync(process.execPath, buildScheduledHealthArgs(), {
@@ -200,23 +149,8 @@ async function main() {
 
   const ready = await waitForUi();
   if (!ready) console.warn(`Queue UI was not ready; daily application fill was not started: ${UI_URL}`);
-  const tab = refreshExistingQueueTab();
-  const action = decideLaunchAction({
-    tabStatus: tab.status,
-    alreadyOpenedToday: state.lastOpenedDate === date,
-  });
-
-  if (action === 'open') {
-    const opened = spawnSync('/usr/bin/open', buildChromeOpenArgs(), { stdio: 'inherit' });
-    if (opened.status !== 0) throw new Error(`could not open ${UI_URL}`);
-    console.log(`Queue UI opened for ${date}: ${UI_URL}`);
-  } else if (action === 'refresh') {
-    console.log(`Queue UI refreshed in ${tab.applicationName} for ${date}: ${UI_URL}`);
-  } else if (tab.status === 'unknown') {
-    console.warn(`Queue UI refresh could not inspect the running browser; skipped opening a tab to avoid a duplicate: ${UI_URL}`);
-  } else {
-    console.log(`Queue UI already opened for ${date}; refreshed data without opening another tab.`);
-  }
+  const browserPolicy = buildScheduledBrowserPolicy();
+  console.log(`Career Ops queue refreshed for ${date}; Daily Front Page owns the browser launch. Career Ops remains available at ${browserPolicy.queueUrl}`);
 
   const applicationFill = ready && serviceReload.status !== 'failed'
     ? await startScheduledApplicationFill(state.lastApplicationFillDate === date)
@@ -229,18 +163,21 @@ async function main() {
 
   writeState({
     ...state,
-    lastOpenedDate: action === 'open' ? date : state.lastOpenedDate,
-    openedAt: action === 'open' ? new Date().toISOString() : state.openedAt,
+    lastOpenedDate: null,
+    openedAt: null,
     lastRefreshedDate: date,
     refreshedAt: new Date().toISOString(),
-    lastAction: action,
+    lastAction: browserPolicy.action,
     lastApplicationFillDate: applicationFill.status === 'started' ? date : state.lastApplicationFillDate,
     applicationFillStartedAt: applicationFill.status === 'started' ? new Date().toISOString() : state.applicationFillStartedAt,
     applicationFillStatus: applicationFill.status,
     applicationFillReason: applicationFill.reason || '',
     queueUiReloadStatus: serviceReload.status,
     queueUiReloadReason: serviceReload.reason || '',
-    browserApplication: tab.applicationName || (action === 'open' ? BROWSER_APP : state.browserApplication || ''),
+    browserApplication: '',
+    browserLaunch: browserPolicy.opensBrowser,
+    browserSurface: browserPolicy.owner,
+    queueUiUrl: browserPolicy.queueUrl,
     serverReady: ready,
   });
 }
