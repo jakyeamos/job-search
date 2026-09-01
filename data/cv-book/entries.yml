@@ -1,0 +1,1085 @@
+schemaVersion: 1
+entries:
+  - id: agent-eval-contract
+    kind: tooling
+    title: Agent Eval Contract
+    organization: Jakye Amos
+    role: Author
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: published
+    summary: Portable contracts and JSON Schemas for generic agent evaluation records.
+    contributions:
+      - Published typed Pydantic models, schema export, fixture generation, and normalization helpers.
+      - Kept task, run, score, failure, and normalized-result vocabulary generic across harnesses.
+    outcomes:
+      - Published package with a public contract surface.
+    technologies:
+      - Python
+      - Pydantic
+      - JSON Schema
+      - PyPI
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: agent-eval-runtime
+    kind: project
+    title: Agent Eval Runtime
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: report-only
+    summary: Standalone owner for evaluation runs, comparisons, harnesses, benchmarks, and corpus evidence.
+    contributions:
+      - Kept provenance, hashes, checks, acceptance outcomes, and cost explicit for future provider adapters.
+      - Preserved valid zero-record and empty states as evidence rather than fallback claims.
+    outcomes: []
+    technologies:
+      - Python
+      - SQLite
+      - evaluation tooling
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: ai-context-runtime
+    kind: project
+    title: AI Context Runtime
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: private
+    summary: Append-only context and session-intelligence runtime kept separate from AIOS.
+    contributions:
+      - Built a standalone ledger for context compilation, knowledge packets, handoffs, and session intelligence.
+      - Kept weekly projection report-only and provider-independent.
+    outcomes: []
+    technologies:
+      - Python
+      - SQLite
+    visibility: private
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: ai-research-roger-french-sdle
+    kind: research
+    title: SDLE research with Roger French
+    organization: Roger French / SDLE
+    role: Research contributor — pending confirmation; research led by Roger French
+    dates:
+      start: 2026-08
+      end: null
+      label: August 2026–present
+    status: active-pending
+    summary: Active research position with Roger French leading the research; role and deliverables pending confirmation.
+    contributions: null
+    outcomes: null
+    technologies: []
+    visibility: public
+    evidence:
+      - user-confirmed-research-aug-2026
+    confidence: pending
+    reviewState: pending
+  - id: ai-workflow-leverage
+    kind: project
+    title: AI Workflow Leverage
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: review-gated
+    summary: Evidence-bounded cross-repository runtime for measuring real shipping leverage through protected reproductions.
+    contributions:
+      - Built bounded reproductions, acceptance evidence, and redacted public projections.
+      - Kept merge, push, deploy, and publish outside the initial workflow-owner rollout.
+    outcomes: []
+    technologies:
+      - Python
+      - SQLite
+      - evidence systems
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: aios
+    kind: tooling
+    title: AIOS
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: public-case-study
+    summary: Local-first operating layer for agent sessions, project memory, and reviewed knowledge promotion.
+    contributions:
+      - Designed session-lifecycle hooks that capture events at boundaries into a SQLite-backed event store.
+      - Separated raw automation artifacts from human-reviewed notes and kept Git repositories as the source of truth.
+    outcomes:
+      - Documented as a public engineering case study.
+    technologies:
+      - Python
+      - SQLite
+      - agent infrastructure
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: amazon-sde-internships
+    kind: work
+    title: Amazon
+    organization: Amazon
+    role: SDE Intern — three terms; detailed team deliverables pending confirmation
+    dates:
+      start: null
+      end: null
+      label: 2023–2025
+    status: pending-confirmation
+    summary: Three software-development internship terms across Ads and FinTech/business-systems environments; detailed scope remains intentionally limited until corroborated.
+    contributions:
+      - Completed three SDE internship terms across multiple teams.
+      - Built a data-analytics project delivering hiring insights to business leaders and hiring managers.
+      - Contributed to internal testing and pipeline capabilities across distributed-systems infrastructure.
+    outcomes: []
+    technologies:
+      - software development
+      - data analytics
+      - distributed systems
+    visibility: public
+    evidence:
+      - cv-current
+      - article-digest-current
+    confidence: pending
+    reviewState: pending
+  - id: app-developers-and-innovators-club
+    kind: leadership
+    title: App Developers and Innovators Club
+    organization: Case Western Reserve University
+    role: Vice President
+    dates:
+      start: null
+      end: null
+      label: Date to confirm
+    status: leadership
+    summary: Student leadership for technical development opportunities and collaboration programming.
+    contributions:
+      - Supported technical development opportunities and collaboration programming.
+    outcomes: []
+    technologies:
+      - community leadership
+      - software development
+    visibility: public
+    evidence:
+      - cv-current
+    confidence: high
+    reviewState: approved
+  - id: bidcamp
+    kind: project
+    title: BidCamp
+    organization: BidCamp
+    role: Lead Engineer
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: closed-beta
+    summary: Multi-tenant government-contracting SaaS for procurement intelligence, CRM workflows, compliance tracking, and proposal support.
+    contributions:
+      - Implemented Claude-powered RFP analysis, agency and prime-contractor databases, human-reviewed digests, and direct-mail workflows.
+      - Built tenant-scoped RLS and scheduled scraping and notification workers.
+    outcomes:
+      - Live in closed beta; paid adoption and customer-cohort claims remain out of scope.
+    technologies:
+      - Next.js
+      - TypeScript
+      - Supabase
+      - PostgreSQL
+      - RLS
+      - Claude
+      - Stripe
+      - Resend
+      - Vercel
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: book
+    kind: writing
+    title: Book
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: project-history
+    summary: Interactive reader with chapter manifests, motion, audio, and content workflow.
+    contributions: []
+    outcomes: []
+    technologies:
+      - web publishing
+      - Postgres
+      - content workflow
+    visibility: public
+    evidence:
+      - cv-current
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: case-western-reserve-university
+    kind: education
+    title: Case Western Reserve University
+    organization: Case Western Reserve University
+    role: Student
+    dates:
+      start: null
+      end: null
+      label: Date to confirm
+    status: current
+    summary: B.A. in Computer Science with minors in Artificial Intelligence, Applied Data Science, and Statistics.
+    contributions: []
+    outcomes: []
+    technologies:
+      - computer science
+      - artificial intelligence
+      - applied data science
+      - statistics
+    visibility: public
+    evidence:
+      - cv-current
+    confidence: high
+    reviewState: approved
+  - id: chirons-forge
+    kind: project
+    title: Chiron's Forge
+    organization: Framework Labs
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: live-product
+    summary: Applied-AI product for multi-model research, synthesis, judging, and refinement.
+    contributions: []
+    outcomes: []
+    technologies:
+      - AI systems
+      - research workflows
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: context-compiler-contract
+    kind: tooling
+    title: Context Compiler Contract
+    organization: Jakye Amos
+    role: Author
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: public
+    summary: Portable ESM validators for AIOS context-compiler and routing-manifest contracts.
+    contributions:
+      - Built independently testable contract validators.
+      - Kept source selection, ranking, receipt writing, and compilation in the owning runtime.
+    outcomes:
+      - Public ESM package.
+    technologies:
+      - JavaScript
+      - ESM
+      - JSON Schema
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: court-vision
+    kind: project
+    title: Court Vision
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: project-history
+    summary: Basketball IQ platform with real-time interaction and simulation workflows.
+    contributions: []
+    outcomes: []
+    technologies:
+      - React
+      - Node.js
+      - Express
+      - Socket.io
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: courtiq
+    kind: project
+    title: CourtIQ
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: paused-deployment
+    summary: Basketball analytics research suite and simulator/product lane with deployment status kept explicit.
+    contributions: []
+    outcomes: []
+    technologies:
+      - analytics
+      - TypeScript
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: crimclock
+    kind: project
+    title: CrimClock
+    organization: CrimClock
+    role: Lead Engineer
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: reviewer-preview
+    summary: Legal-time intelligence and decision-support platform with explainable calculation outputs.
+    contributions:
+      - Built statute and rule configuration, exclusions, tolling, calculation steps, and plain-language explanations.
+      - Preserved explicit disclaimer language and non-legal-advice boundaries.
+    outcomes:
+      - Product build and reviewer preview; no customer-adoption claim.
+    technologies:
+      - Next.js
+      - TypeScript
+      - Tailwind
+      - FastAPI
+      - Python
+      - SQLAlchemy
+      - PostgreSQL
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: cwru-flea-market
+    kind: leadership
+    title: CWRU Flea Market
+    organization: Case Western Reserve University
+    role: President & Founder
+    dates:
+      start: null
+      end: null
+      label: Date to confirm
+    status: recurring
+    summary: Student-led recurring market and community event.
+    contributions:
+      - Founded and led recurring events for the CWRU community.
+    outcomes:
+      - Recurring events averaged 600+ attendees and roughly $7K in revenue per event.
+    technologies:
+      - community operations
+      - event production
+    visibility: public
+    evidence:
+      - cv-current
+    confidence: high
+    reviewState: approved
+  - id: deepr
+    kind: work
+    title: Deepr
+    organization: Deepr
+    role: Technical Consultant
+    dates:
+      start: null
+      end: null
+      label: '2025'
+    status: completed
+    summary: Technical consulting for an a16z portfolio company.
+    contributions:
+      - Engineered an AI-powered photo-carousel content-generation system.
+      - Built an inline coverage-vector tool for real-time test-coverage awareness during code review.
+    outcomes:
+      - Increased marketing viewership through the content-generation system.
+    technologies:
+      - AI content systems
+      - TypeScript
+      - test coverage
+    visibility: public
+    evidence:
+      - cv-current
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: dispatches-from-cyberspace
+    kind: writing
+    title: Dispatches From Cyberspace
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: project-history
+    summary: Full-stack publishing platform with role-based access, revisions, comments, feeds, and cross-posting.
+    contributions: []
+    outcomes: []
+    technologies:
+      - web publishing
+      - API
+      - PostgreSQL
+      - Clerk
+    visibility: public
+    evidence:
+      - cv-current
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: dsci-proj
+    kind: project
+    title: Dsci Proj
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: project-history
+    summary: Reproducible survival-analysis pipeline paired with a triage dashboard for GitHub issue-resolution risk.
+    contributions: []
+    outcomes: []
+    technologies:
+      - Python
+      - data science
+      - Next.js
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: elevated-aperture
+    kind: work
+    title: Elevated Aperture
+    organization: Elevated Aperture
+    role: Founder / operator
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: client-facing
+    summary: Client-facing construction and arts photography and videography business.
+    contributions: []
+    outcomes: []
+    technologies:
+      - photography
+      - videography
+      - operations
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: elihealth
+    kind: project
+    title: EliHealth
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: private
+    summary: Private health and recovery data product with explicit non-diagnostic boundaries.
+    contributions: []
+    outcomes: []
+    technologies:
+      - Expo
+      - React Native
+      - Supabase
+      - PostgreSQL
+    visibility: private
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: eslint-plugin-anti-slop
+    kind: tooling
+    title: eslint-plugin-anti-slop
+    organization: Jakye Amos
+    role: Author
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: published
+    summary: Opinionated ESLint 9 plugin and CLI for product-quality rules in React and TypeScript projects.
+    contributions:
+      - Authored rules for unjustified client components, placeholder copy, arbitrary z-index, weak empty states, and missing reduced-motion fallbacks.
+      - Shipped both custom rules and anti-slop check/gate commands.
+    outcomes: []
+    technologies:
+      - ESLint 9
+      - TypeScript
+      - React
+      - Node.js
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: fantasy
+    kind: project
+    title: Fantasy
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: project-history
+    summary: Local-first dynasty fantasy-football intelligence app with ingestion, trade, dashboard, and draft workflows.
+    contributions: []
+    outcomes: []
+    technologies:
+      - FastAPI
+      - React
+      - Vite
+      - DuckDB
+      - Python
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: forward-automations
+    kind: work
+    title: Forward Automations
+    organization: Forward Automations
+    role: Lead Engineer
+    dates:
+      start: null
+      end: null
+      label: 2023–present
+    status: active
+    summary: Lead engineering work across applied AI, product systems, and evidence-driven developer tooling.
+    contributions:
+      - Delivered a Cleveland Clinic clinical-coaching MVP in two weeks.
+      - Built productivity software for a Cleveland architecture firm and led a STEM Playbook refactor for a major live event.
+      - Developed AI marketing-automation tools for an a16z startup.
+    outcomes:
+      - Approximately 400% operational-output improvement for the architecture-firm system.
+      - Approximately 90% shorter marketing-production timelines and roughly 1.5M organic views for the a16z startup work.
+      - Stable STEM Playbook launch delivered in 11 days.
+    technologies:
+      - AI systems
+      - full-stack web applications
+      - TypeScript
+      - Python
+    visibility: public
+    evidence:
+      - cv-current
+      - article-digest-current
+    confidence: high
+    reviewState: approved
+  - id: framework-labs
+    kind: project
+    title: Framework Labs
+    organization: Framework Labs
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: public
+    summary: Public software research lab building standalone reasoning engines.
+    contributions: []
+    outcomes: []
+    technologies:
+      - AI systems
+      - research software
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: hoopscout
+    kind: project
+    title: Hoopscout
+    organization: Hoopscout
+    role: Lead Engineer
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: private-beta
+    summary: Basketball recruiting-intelligence workflow for coach search, athlete review, fit weighting, and trust operations.
+    contributions:
+      - Built deterministic seeded flows with coach-specific evaluation weights and transcript controls.
+      - Kept private user data outside the public evidence layer.
+    outcomes:
+      - Private beta; public-user and adoption claims are intentionally omitted.
+    technologies:
+      - Next.js
+      - React
+      - TypeScript
+      - Prisma
+      - PostgreSQL
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: jakyeamos-agentic-setup
+    kind: tooling
+    title: Portable Agentic Workbench
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: public
+    summary: Vendor-neutral workbench packaging context management, workflow routing, safety guards, and evaluation evidence.
+    contributions:
+      - Built a manifest-aware setup engine with explicit targets, dry-run/apply boundaries, and no-overwrite behavior.
+      - Kept public and private provenance separate across supported agent hosts.
+    outcomes:
+      - 'Public repository: jakyeamos-agentic-setup.'
+    technologies:
+      - Python
+      - shell
+      - agent configuration
+      - JSON
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: macctl
+    kind: tooling
+    title: macctl
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: local
+    summary: Command-first macOS control plane with guarded GUI workflows and short-lived approval tokens.
+    contributions:
+      - Built a per-user daemon, Unix-socket transport, guarded AppKit workflows, and schema-versioned local receipts.
+      - Used prepare, approve, execute, and verify boundaries for sensitive local actions.
+    outcomes:
+      - Missing live evidence remains blocked rather than assumed.
+    technologies:
+      - Swift
+      - AppKit
+      - Unix sockets
+      - macOS
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: marketing-autoresearch
+    kind: project
+    title: Marketing Autoresearch
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: shadow-run
+    summary: Evidence-bounded SEO and AEO research loop with source freshness and claim-safety gates.
+    contributions:
+      - Built fixed prompts, source-health checks, redacted artifacts, and quality gates for portfolio surfaces.
+      - Kept hypotheses, missing analytics, paused surfaces, and unreviewed claims out of automatic publication.
+    outcomes: []
+    technologies:
+      - TypeScript
+      - Node.js
+      - SEO
+      - AEO
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: participant-deduplication
+    kind: project
+    title: Participant Deduplication
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: review-workflow
+    summary: Google Sheets review workflow for fuzzy duplicate detection and confirmed atomic cleanup.
+    contributions:
+      - Built reviewer-controlled duplicate matching and audit-trail behavior inside a spreadsheet sidebar.
+      - Kept participant data out of the repository and large-sheet matching in an owned backend.
+    outcomes: []
+    technologies:
+      - TypeScript
+      - Google Apps Script
+      - Google Sheets
+      - Railway
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: portfolio
+    kind: project
+    title: Portfolio
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: project-history
+    summary: Personal portfolio site with project-truth sync and current-work surfaces.
+    contributions: []
+    outcomes: []
+    technologies:
+      - web
+      - content systems
+    visibility: public
+    evidence:
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: pre-cr-suite
+    kind: tooling
+    title: Pre-CR Suite
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: active
+    summary: Coverage-first pre-PR readiness tooling with shared behavior across editor clients and a headless CLI.
+    contributions:
+      - Built a TypeScript monorepo with an LSP for VS Code, Neovim, and headless workflows.
+      - Kept coverage parsing, changed-line evaluation, and protocol contracts in a shared core package.
+    outcomes: []
+    technologies:
+      - TypeScript
+      - LSP
+      - VS Code
+      - Neovim
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: pronto
+    kind: project
+    title: Pronto
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: public-v1
+    summary: Local-first portfolio command center for repository discovery, quality evidence, and release preparation previews.
+    contributions:
+      - Built a Tauri and React/TypeScript desktop surface with Rust and SQLite persistence.
+      - Kept repository refresh and provider boundaries read-only and audited blocked actions.
+    outcomes:
+      - Public v1; preparation and release surfaces are previews rather than claims of completed pushes or releases.
+    technologies:
+      - Tauri
+      - React
+      - TypeScript
+      - Rust
+      - SQLite
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: quality-runner
+    kind: tooling
+    title: Quality Runner
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: read-only
+    summary: Evidence-based quality orchestrator that compiles standards, detects quality gates, and writes reviewable findings and plans.
+    contributions:
+      - Built a local-first CLI and MCP server for normalized, evidence-backed findings.
+      - Kept source edits and commits outside the tool so people and agents review evidence before acting.
+    outcomes:
+      - Shipped as a CLI and MCP server with versioned quality-runner artifacts.
+    technologies:
+      - Python
+      - CLI
+      - MCP
+      - SQLite
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: relay
+    kind: project
+    title: Relay
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: private-workbench
+    summary: Keyboard-first macOS workbench for Codex sessions, repository context, and guarded file transactions.
+    contributions:
+      - Built local session discovery, repository context, Playbook intelligence, and derived usage metrics.
+      - Kept provider-assisted analysis opt-in and redacted; Playbook changes require explicit review and a transaction record.
+    outcomes: []
+    technologies:
+      - Swift
+      - AppKit
+      - SQLite
+      - macOS
+    visibility: private
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: remodelvision
+    kind: project
+    title: RemodelVision
+    organization: RemodelVision
+    role: Lead Engineer
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: working-build
+    summary: AI remodeling visualization and rough-cost-estimation workflow.
+    contributions:
+      - Built photo analysis and visualization paths using Claude vision and fal.ai image transformation services.
+      - Implemented authenticated uploads, model selection, persisted project views, and specialist-agent coordination.
+    outcomes:
+      - Core analysis and visualization paths work; full save flow and additional specialist agents remain incomplete.
+    technologies:
+      - Next.js
+      - TypeScript
+      - Supabase
+      - PostgreSQL
+      - Prisma
+      - Clerk
+      - Claude
+      - fal.ai
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: research-domain-writing
+    kind: tooling
+    title: Research Domain Writing
+    organization: Jakye Amos
+    role: Author
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: published
+    summary: Research-grounded writing harness with structured evidence limits and confidence values.
+    contributions:
+      - Published a PyPI package that validates research packets and emits auditable prompt bundles.
+      - Added domain-aware technical, music, and basketball writing support.
+    outcomes:
+      - Published on PyPI as research-domain-writing.
+    technologies:
+      - Python
+      - PyPI
+      - JSON Schema
+      - agent tooling
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: research-position-professor-datta
+    kind: research
+    title: Research position with Professor Datta
+    organization: Professor Datta
+    role: Research participant — pending confirmation
+    dates:
+      start: 2026-08
+      end: null
+      label: August 2026–present
+    status: active-pending
+    summary: Active research position recorded; role and deliverables pending confirmation.
+    contributions: null
+    outcomes: null
+    technologies: []
+    visibility: public
+    evidence:
+      - user-confirmed-research-aug-2026
+      - datta-email-confirmation
+    confidence: pending
+    reviewState: pending
+  - id: soundscape-app
+    kind: project
+    title: Soundscape App
+    organization: Jakye Amos
+    role: Builder
+    dates:
+      start: null
+      end: null
+      label: Project history
+    status: project-history
+    summary: Full-stack music social platform.
+    contributions: []
+    outcomes: []
+    technologies:
+      - Next.js
+      - tRPC
+      - Prisma
+      - Expo
+    visibility: public
+    evidence:
+      - cv-current
+      - article-digest-current
+    confidence: medium
+    reviewState: approved
+  - id: tenure
+    kind: project
+    title: Tenure
+    organization: Tenure Systems
+    role: Lead Engineer
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: pilot-ready
+    summary: Organizational-intelligence platform that turns tacit knowledge into reviewed SOPs, searchable institutional memory, and operational reports.
+    contributions:
+      - Built the agency wiki, cited hybrid retrieval, process-intelligence reports, and specialist human-review gates.
+      - Kept no-source refusal and public-safe status boundaries explicit.
+    outcomes:
+      - LaunchNY cohort venture; v1.1 shipped and pilot-ready; pre-pilot hardening remains underway.
+    technologies:
+      - Next.js
+      - React
+      - TypeScript
+      - Supabase
+      - PostgreSQL
+      - pgvector
+      - Inngest
+      - Playwright
+      - Vitest
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: terrace
+    kind: tooling
+    title: Terrace
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: published
+    summary: Spec-driven, test-governed workflow CLI for AI-assisted development.
+    contributions:
+      - Built a published npm CLI that enforces recoverable repository state, explicit spec intent, protected tests, and deterministic quality gates.
+      - Versioned governance state in a .terrace contract and scaffolds agent configuration when absent.
+    outcomes:
+      - Published as @jakyeamos33/terrace.
+    technologies:
+      - Node.js
+      - TypeScript
+      - npm
+      - CLI
+      - CI
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved
+  - id: tmcp
+    kind: tooling
+    title: TMCP
+    organization: Jakye Amos
+    role: Creator
+    dates:
+      start: null
+      end: null
+      label: Current
+    status: active
+    summary: Portable skill-packet workflow system for MCP agents.
+    contributions:
+      - Built an MCP stdio server that turns scattered instructions, rules, prompts, and evidence into task-specific packets.
+      - Added repeatable workflow execution, skill harvesting, and confidence-scored recommendations.
+    outcomes: []
+    technologies:
+      - Node.js
+      - MCP
+      - TypeScript
+    visibility: public
+    evidence:
+      - article-digest-current
+      - current-public-artifacts
+    confidence: high
+    reviewState: approved

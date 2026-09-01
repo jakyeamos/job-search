@@ -1,0 +1,64 @@
+schemaVersion: 1
+sources:
+  - id: cv-current
+    kind: canonical-file
+    label: Current ATS/full CV
+    root: source-root
+    path: cv.md
+    status: available
+    visibility: private
+    note: Current CV is read as evidence and is never changed by CV-book automation.
+
+  - id: article-digest-current
+    kind: canonical-file
+    label: Current article digest
+    root: source-root
+    path: article-digest.md
+    status: available
+    visibility: private
+    note: Current proof-point digest is read as evidence and is never changed by CV-book automation.
+
+  - id: current-public-artifacts
+    kind: repository-evidence
+    label: Current public repository artifacts
+    root: source-root
+    path: ..
+    status: available
+    visibility: public
+    note: Repository READMEs, project-truth files, package metadata, tags, and commit evidence are scanned read-only.
+
+  - id: dated-reports
+    kind: report-archive
+    label: Dated evaluation reports
+    root: source-root
+    path: reports
+    status: available
+    visibility: private
+    note: Reports are mined for aggregate recurrence and missing-project signals; raw reports are never copied to the public projection.
+
+  - id: older-resumes
+    kind: corroborating-resumes
+    label: Older resume artifacts
+    root: source-root
+    path: ../portfolio
+    status: available
+    visibility: private
+    note: Older resume and CV artifacts are inventoried as corroboration only; their private contents are never copied to the public projection.
+
+  - id: user-confirmed-research-aug-2026
+    kind: owner-confirmation
+    label: Owner-confirmed August 2026 research scope
+    root: workspace
+    path: data/cv-book/entries.yml
+    status: confirmed
+    visibility: private
+    note: Owner supplied the dates, pending state, and Roger French research-lead relationship.
+
+  - id: datta-email-confirmation
+    kind: interactive-private-import
+    label: Professor Datta confirmation
+    root: workspace
+    path: null
+    status: pending
+    visibility: private
+    note: Gmail confirmation is pending because the token has expired or been revoked; no message content or credential is stored here.

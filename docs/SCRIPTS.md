@@ -14,6 +14,10 @@ package scripts and `pnpm exec node <script>.mjs` for direct commands.
 | `pnpm run merge` | `merge-tracker.mjs` | Merge batch TSVs into applications.md |
 | `pnpm run pdf` | `generate-pdf.mjs` | Convert HTML to ATS-optimized PDF |
 | `pnpm cv:refresh` | `cv-refresh.mjs` | Report-only scan for new, changed, or stale project evidence |
+| `pnpm cv:book:refresh` | `cv-book.mjs refresh` | Report-only CV-book evidence scan across current sources, repositories, reports, and corroborating resumes |
+| `pnpm cv:book:apply` | `cv-book.mjs apply` | Apply a source-hash-bound reviewed CV-book decision and regenerate the public projection |
+| `pnpm cv:book:validate` | `cv-book.mjs validate` | Validate CV-book schema, stable IDs, evidence references, and public projection safety |
+| `pnpm cv:book:pdf` | `cv-book.mjs pdf` | Generate the downloadable PDF from the approved public projection and write its hash manifest |
 | `pnpm run build:latex` | `build-cv-latex.mjs` | Build .tex from structured JSON payload |
 | `pnpm run sync-check` | `cv-sync-check.mjs` | Validate CV/profile consistency |
 | `pnpm run patterns` | `analyze-patterns.mjs` | Analyze tracker outcomes and report patterns |
@@ -33,6 +37,31 @@ package scripts and `pnpm exec node <script>.mjs` for direct commands.
 | `pnpm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 | `node application-ingest.mjs --board-only` | `application-ingest.mjs` | Import the timestamped Jack & Jill board snapshot into the application board |
 | `pnpm jackandjill:archive plan --write` | `jackandjill-archive.mjs` | Build an append-only, threshold-gated archive plan from the board snapshot and scored tracker |
+
+### Comprehensive CV book
+
+The CV book is a separate public reading layer. `cv.md` remains the ATS/full CV
+and `article-digest.md` remains unchanged. Refresh is report-only by default:
+it inventories current CV and digest headings, public repository evidence, all
+dated reports, and older resume/CV artifacts as corroboration. It reports new
+items, conflicts, stale references, missing confirmation, and recurring report
+signals without copying private email or Drive contents and without publishing
+the raw job-evaluation archive.
+
+```bash
+pnpm cv:book:refresh -- --source-root /path/to/career-ops --root /path/to/projects --root /path/to/Documents
+pnpm cv:book:refresh -- --check
+pnpm cv:book:validate -- --projection data/cv-book/public-projection.json
+pnpm cv:book:apply -- --review-file /path/to/review.json
+pnpm cv:book:pdf -- --projection data/cv-book/public-projection.json --output output/cv-book.pdf
+```
+
+Apply requires a reviewed JSON receipt containing `schemaVersion: 1`,
+`reviewed: true`, the exact current refresh `sourceHash`, and an explicit list
+of accepted stable candidate IDs. It writes only `data/cv-book/entries.yml`,
+the public projection, and refresh outputs. The projection filters private,
+held, unsafe, and unsupported material; pending titles remain visibly pending.
+The PDF manifest records the same projection hash used by the website.
 
 ### Civic discovery lane
 

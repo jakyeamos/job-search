@@ -1,0 +1,15 @@
+schemaVersion: 1
+exclusions:
+  - id: gcc
+    title: GCC
+    aliases: [GNU Compiler Collection, GNU/GCC]
+    status: held
+    reason: Owner hold; do not publish or add to the public CV-book projection yet.
+    evidence: []
+
+  - id: csds-312-gnu-gcc
+    title: CSDS 312 GNU/GCC project
+    aliases: [CSDS 312 GCC, CSDS 312 GNU Compiler Collection]
+    status: held
+    reason: Owner hold; do not publish or add to the public CV-book projection yet.
+    evidence: []

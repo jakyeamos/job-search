@@ -9,6 +9,10 @@ These files contain your personal data, customizations, and work product. Update
 | File | Purpose |
 |------|---------|
 | `cv.md` | Your CV in markdown |
+| `data/cv-book/entries.yml` | Reviewed, normalized entries for the separate public CV book |
+| `data/cv-book/sources.yml` | Provenance references and confirmation state; private contents are never copied |
+| `data/cv-book/exclusions.yml` | Explicit holds for source items that must stay out of the public book |
+| `data/cv-book/public-projection.json` | Reviewed public projection consumed by the website and PDF; changed only by the explicit CV-book apply step |
 | `config/profile.yml` | Your identity, targets, comp range |
 | `config/google-sheets.json` | The user-owned Google Sheet target and tab mapping for tracker sync |
 | `modes/_profile.md` | Your archetypes, narrative, negotiation scripts |
@@ -41,6 +45,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/oferta.md` | Evaluation mode instructions |
 | `modes/pdf.md` | PDF generation instructions |
 | `resume-contract.mjs` | Single queue-facing resume request, manifest, and artifact contract |
+| `cv-book.mjs` | Report-only CV-book refresh, reviewed source-layer apply, projection validation, and PDF generation |
 | `resume.mjs` | Resume plan and artifact-registration commands |
 | `apply/application-artifacts.mjs` | Evidence-bound per-role resume and cover-letter generator |
 | `modes/scan.md` | Portal scanner instructions |

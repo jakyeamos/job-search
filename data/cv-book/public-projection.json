@@ -1,0 +1,3054 @@
+{
+  "entries": [
+    {
+      "confidence": "pending",
+      "contributions": null,
+      "dates": {
+        "end": null,
+        "label": "August 2026–present",
+        "start": "2026-08"
+      },
+      "evidence": [
+        "user-confirmed-research-aug-2026",
+        "datta-email-confirmation"
+      ],
+      "id": "research-position-professor-datta",
+      "kind": "research",
+      "organization": "Professor Datta",
+      "outcomes": null,
+      "reviewState": "pending",
+      "role": "Research participant — pending confirmation",
+      "status": "active-pending",
+      "summary": "Active research position recorded; role and deliverables pending confirmation.",
+      "technologies": [],
+      "title": "Research position with Professor Datta",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": null,
+      "dates": {
+        "end": null,
+        "label": "August 2026–present",
+        "start": "2026-08"
+      },
+      "evidence": [
+        "user-confirmed-research-aug-2026"
+      ],
+      "id": "ai-research-roger-french-sdle",
+      "kind": "research",
+      "organization": "Roger French / SDLE",
+      "outcomes": null,
+      "reviewState": "pending",
+      "role": "Research contributor — pending confirmation; research led by Roger French",
+      "status": "active-pending",
+      "summary": "Active research position with Roger French leading the research; role and deliverables pending confirmation.",
+      "technologies": [],
+      "title": "SDLE research with Roger French",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Published typed Pydantic models, schema export, fixture generation, and normalization helpers.",
+        "Kept task, run, score, failure, and normalized-result vocabulary generic across harnesses."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "agent-eval-contract",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Published package with a public contract surface."
+      ],
+      "reviewState": "approved",
+      "role": "Author",
+      "status": "published",
+      "summary": "Portable contracts and JSON Schemas for generic agent evaluation records.",
+      "technologies": [
+        "Python",
+        "Pydantic",
+        "JSON Schema",
+        "PyPI"
+      ],
+      "title": "Agent Eval Contract",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Kept provenance, hashes, checks, acceptance outcomes, and cost explicit for future provider adapters.",
+        "Preserved valid zero-record and empty states as evidence rather than fallback claims."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "agent-eval-runtime",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "report-only",
+      "summary": "Standalone owner for evaluation runs, comparisons, harnesses, benchmarks, and corpus evidence.",
+      "technologies": [
+        "Python",
+        "SQLite",
+        "evaluation tooling"
+      ],
+      "title": "Agent Eval Runtime",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "agent-router",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Agent Router",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built bounded reproductions, acceptance evidence, and redacted public projections.",
+        "Kept merge, push, deploy, and publish outside the initial workflow-owner rollout."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "ai-workflow-leverage",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "review-gated",
+      "summary": "Evidence-bounded cross-repository runtime for measuring real shipping leverage through protected reproductions.",
+      "technologies": [
+        "Python",
+        "SQLite",
+        "evidence systems"
+      ],
+      "title": "AI Workflow Leverage",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Designed session-lifecycle hooks that capture events at boundaries into a SQLite-backed event store.",
+        "Separated raw automation artifacts from human-reviewed notes and kept Git repositories as the source of truth."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "aios",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Documented as a public engineering case study."
+      ],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "public-case-study",
+      "summary": "Local-first operating layer for agent sessions, project memory, and reviewed knowledge promotion.",
+      "technologies": [
+        "Python",
+        "SQLite",
+        "agent infrastructure"
+      ],
+      "title": "AIOS",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [
+        "Completed three SDE internship terms across multiple teams.",
+        "Built a data-analytics project delivering hiring insights to business leaders and hiring managers.",
+        "Contributed to internal testing and pipeline capabilities across distributed-systems infrastructure."
+      ],
+      "dates": {
+        "end": null,
+        "label": "2023–2025",
+        "start": null
+      },
+      "evidence": [
+        "cv-current",
+        "article-digest-current"
+      ],
+      "id": "amazon-sde-internships",
+      "kind": "work",
+      "organization": "Amazon",
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": "SDE Intern — three terms; detailed team deliverables pending confirmation",
+      "status": "pending-confirmation",
+      "summary": "Three software-development internship terms across Ads and FinTech/business-systems environments; detailed scope remains intentionally limited until corroborated.",
+      "technologies": [
+        "software development",
+        "data analytics",
+        "distributed systems"
+      ],
+      "title": "Amazon",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Supported technical development opportunities and collaboration programming."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "cv-current"
+      ],
+      "id": "app-developers-and-innovators-club",
+      "kind": "leadership",
+      "organization": "Case Western Reserve University",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Vice President",
+      "status": "leadership",
+      "summary": "Student leadership for technical development opportunities and collaboration programming.",
+      "technologies": [
+        "community leadership",
+        "software development"
+      ],
+      "title": "App Developers and Innovators Club",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "attentiond",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Attentiond",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "automation-flight-recorder",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Automation Flight Recorder",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "backend-heavy-service",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Backend Heavy Service",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "bballedu",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Bballedu",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "behavior-coverage-atlas",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Behavior Coverage Atlas",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Implemented Claude-powered RFP analysis, agency and prime-contractor databases, human-reviewed digests, and direct-mail workflows.",
+        "Built tenant-scoped RLS and scheduled scraping and notification workers."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "bidcamp",
+      "kind": "project",
+      "organization": "BidCamp",
+      "outcomes": [
+        "Live in closed beta; paid adoption and customer-cohort claims remain out of scope."
+      ],
+      "reviewState": "approved",
+      "role": "Lead Engineer",
+      "status": "closed-beta",
+      "summary": "Multi-tenant government-contracting SaaS for procurement intelligence, CRM workflows, compliance tracking, and proposal support.",
+      "technologies": [
+        "Next.js",
+        "TypeScript",
+        "Supabase",
+        "PostgreSQL",
+        "RLS",
+        "Claude",
+        "Stripe",
+        "Resend",
+        "Vercel"
+      ],
+      "title": "BidCamp",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "bip-console",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "BIP Console",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "cv-current",
+        "article-digest-current"
+      ],
+      "id": "book",
+      "kind": "writing",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "project-history",
+      "summary": "Interactive reader with chapter manifests, motion, audio, and content workflow.",
+      "technologies": [
+        "web publishing",
+        "Postgres",
+        "content workflow"
+      ],
+      "title": "Book",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "browser-control",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Browser Control",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "cap-fit-builder",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Cap Fit Builder",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "career-ops",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Career Ops",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "cv-current"
+      ],
+      "id": "case-western-reserve-university",
+      "kind": "education",
+      "organization": "Case Western Reserve University",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Student",
+      "status": "current",
+      "summary": "B.A. in Computer Science with minors in Artificial Intelligence, Applied Data Science, and Statistics.",
+      "technologies": [
+        "computer science",
+        "artificial intelligence",
+        "applied data science",
+        "statistics"
+      ],
+      "title": "Case Western Reserve University",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "change-integration-simulator",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Change Integration Simulator",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "change-radius",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Change Radius",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "chirons-forge",
+      "kind": "project",
+      "organization": "Framework Labs",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "live-product",
+      "summary": "Applied-AI product for multi-model research, synthesis, judging, and refinement.",
+      "technologies": [
+        "AI systems",
+        "research workflows"
+      ],
+      "title": "Chiron's Forge",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "ci-incident-router",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Ci Incident Router",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "claude-config",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Claude Config",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "clean-small-app",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Clean Small App",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "clfe",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "CLFE",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "codex",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Codex",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built independently testable contract validators.",
+        "Kept source selection, ranking, receipt writing, and compilation in the owning runtime."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "context-compiler-contract",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Public ESM package."
+      ],
+      "reviewState": "approved",
+      "role": "Author",
+      "status": "public",
+      "summary": "Portable ESM validators for AIOS context-compiler and routing-manifest contracts.",
+      "technologies": [
+        "JavaScript",
+        "ESM",
+        "JSON Schema"
+      ],
+      "title": "Context Compiler Contract",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "contract-watch",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Contract Watch",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "court-vision",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "project-history",
+      "summary": "Basketball IQ platform with real-time interaction and simulation workflows.",
+      "technologies": [
+        "React",
+        "Node.js",
+        "Express",
+        "Socket.io"
+      ],
+      "title": "Court Vision",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "courtiq",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "paused-deployment",
+      "summary": "Basketball analytics research suite and simulator/product lane with deployment status kept explicit.",
+      "technologies": [
+        "analytics",
+        "TypeScript"
+      ],
+      "title": "CourtIQ",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built statute and rule configuration, exclusions, tolling, calculation steps, and plain-language explanations.",
+        "Preserved explicit disclaimer language and non-legal-advice boundaries."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "crimclock",
+      "kind": "project",
+      "organization": "CrimClock",
+      "outcomes": [
+        "Product build and reviewer preview; no customer-adoption claim."
+      ],
+      "reviewState": "approved",
+      "role": "Lead Engineer",
+      "status": "reviewer-preview",
+      "summary": "Legal-time intelligence and decision-support platform with explainable calculation outputs.",
+      "technologies": [
+        "Next.js",
+        "TypeScript",
+        "Tailwind",
+        "FastAPI",
+        "Python",
+        "SQLAlchemy",
+        "PostgreSQL"
+      ],
+      "title": "CrimClock",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Founded and led recurring events for the CWRU community."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "cv-current"
+      ],
+      "id": "cwru-flea-market",
+      "kind": "leadership",
+      "organization": "Case Western Reserve University",
+      "outcomes": [
+        "Recurring events averaged 600+ attendees and roughly $7K in revenue per event."
+      ],
+      "reviewState": "approved",
+      "role": "President & Founder",
+      "status": "recurring",
+      "summary": "Student-led recurring market and community event.",
+      "technologies": [
+        "community operations",
+        "event production"
+      ],
+      "title": "CWRU Flea Market",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "daily-front-page",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Daily Front Page",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "debug-trail",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Debug Trail",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [
+        "Engineered an AI-powered photo-carousel content-generation system.",
+        "Built an inline coverage-vector tool for real-time test-coverage awareness during code review."
+      ],
+      "dates": {
+        "end": null,
+        "label": "2025",
+        "start": null
+      },
+      "evidence": [
+        "cv-current",
+        "article-digest-current"
+      ],
+      "id": "deepr",
+      "kind": "work",
+      "organization": "Deepr",
+      "outcomes": [
+        "Increased marketing viewership through the content-generation system."
+      ],
+      "reviewState": "approved",
+      "role": "Technical Consultant",
+      "status": "completed",
+      "summary": "Technical consulting for an a16z portfolio company.",
+      "technologies": [
+        "AI content systems",
+        "TypeScript",
+        "test coverage"
+      ],
+      "title": "Deepr",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "deepr-a16z-portfolio",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Deepr (a16z portfolio)",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "deletion-proof-workbench",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Deletion Proof Workbench",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "cv-current",
+        "article-digest-current"
+      ],
+      "id": "dispatches-from-cyberspace",
+      "kind": "writing",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "project-history",
+      "summary": "Full-stack publishing platform with role-based access, revisions, comments, feeds, and cross-posting.",
+      "technologies": [
+        "web publishing",
+        "API",
+        "PostgreSQL",
+        "Clerk"
+      ],
+      "title": "Dispatches From Cyberspace",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "dotfiles",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Dotfiles",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "dsci-proj",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "project-history",
+      "summary": "Reproducible survival-analysis pipeline paired with a triage dashboard for GitHub issue-resolution risk.",
+      "technologies": [
+        "Python",
+        "data science",
+        "Next.js"
+      ],
+      "title": "Dsci Proj",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "editors-desk-newsletter",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Editors Desk Newsletter",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "elevated-aperture",
+      "kind": "work",
+      "organization": "Elevated Aperture",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Founder / operator",
+      "status": "client-facing",
+      "summary": "Client-facing construction and arts photography and videography business.",
+      "technologies": [
+        "photography",
+        "videography",
+        "operations"
+      ],
+      "title": "Elevated Aperture",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Authored rules for unjustified client components, placeholder copy, arbitrary z-index, weak empty states, and missing reduced-motion fallbacks.",
+        "Shipped both custom rules and anti-slop check/gate commands."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "eslint-plugin-anti-slop",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Author",
+      "status": "published",
+      "summary": "Opinionated ESLint 9 plugin and CLI for product-quality rules in React and TypeScript projects.",
+      "technologies": [
+        "ESLint 9",
+        "TypeScript",
+        "React",
+        "Node.js"
+      ],
+      "title": "eslint-plugin-anti-slop",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "evidence-replay",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Evidence Replay",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "failure-capsule",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Failure Capsule",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "fantasy",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "project-history",
+      "summary": "Local-first dynasty fantasy-football intelligence app with ingestion, trade, dashboard, and draft workflows.",
+      "technologies": [
+        "FastAPI",
+        "React",
+        "Vite",
+        "DuckDB",
+        "Python"
+      ],
+      "title": "Fantasy",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "fleet-radar",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Fleet Radar",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Delivered a Cleveland Clinic clinical-coaching MVP in two weeks.",
+        "Built productivity software for a Cleveland architecture firm and led a STEM Playbook refactor for a major live event.",
+        "Developed AI marketing-automation tools for an a16z startup."
+      ],
+      "dates": {
+        "end": null,
+        "label": "2023–present",
+        "start": null
+      },
+      "evidence": [
+        "cv-current",
+        "article-digest-current"
+      ],
+      "id": "forward-automations",
+      "kind": "work",
+      "organization": "Forward Automations",
+      "outcomes": [
+        "Approximately 400% operational-output improvement for the architecture-firm system.",
+        "Approximately 90% shorter marketing-production timelines and roughly 1.5M organic views for the a16z startup work.",
+        "Stable STEM Playbook launch delivered in 11 days."
+      ],
+      "reviewState": "approved",
+      "role": "Lead Engineer",
+      "status": "active",
+      "summary": "Lead engineering work across applied AI, product systems, and evidence-driven developer tooling.",
+      "technologies": [
+        "AI systems",
+        "full-stack web applications",
+        "TypeScript",
+        "Python"
+      ],
+      "title": "Forward Automations",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "framework-labs",
+      "kind": "project",
+      "organization": "Framework Labs",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "public",
+      "summary": "Public software research lab building standalone reasoning engines.",
+      "technologies": [
+        "AI systems",
+        "research software"
+      ],
+      "title": "Framework Labs",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "gmail-mcp-bridge",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Gmail Mcp Bridge",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built deterministic seeded flows with coach-specific evaluation weights and transcript controls.",
+        "Kept private user data outside the public evidence layer."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "hoopscout",
+      "kind": "project",
+      "organization": "Hoopscout",
+      "outcomes": [
+        "Private beta; public-user and adoption claims are intentionally omitted."
+      ],
+      "reviewState": "approved",
+      "role": "Lead Engineer",
+      "status": "private-beta",
+      "summary": "Basketball recruiting-intelligence workflow for coach search, athlete review, fit weighting, and trust operations.",
+      "technologies": [
+        "Next.js",
+        "React",
+        "TypeScript",
+        "Prisma",
+        "PostgreSQL"
+      ],
+      "title": "Hoopscout",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "intentionally-messy-gildedrose",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Intentionally Messy Gildedrose",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "jakye-skill-family",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Jakye Skill Family",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "jakyeamos-agent-skills",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Jakyeamos Agent Skills",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "jakyeamos-profile",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Jakyeamos Profile",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "js-ts-nextjs-saas-starter",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Js Ts Nextjs Saas Starter",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "laxds",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "LaxDS",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "mac-control",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Mac Control",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built a per-user daemon, Unix-socket transport, guarded AppKit workflows, and schema-versioned local receipts.",
+        "Used prepare, approve, execute, and verify boundaries for sensitive local actions."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "macctl",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Missing live evidence remains blocked rather than assumed."
+      ],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "local",
+      "summary": "Command-first macOS control plane with guarded GUI workflows and short-lived approval tokens.",
+      "technologies": [
+        "Swift",
+        "AppKit",
+        "Unix sockets",
+        "macOS"
+      ],
+      "title": "macctl",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built fixed prompts, source-health checks, redacted artifacts, and quality gates for portfolio surfaces.",
+        "Kept hypotheses, missing analytics, paused surfaces, and unreviewed claims out of automatic publication."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "marketing-autoresearch",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "shadow-run",
+      "summary": "Evidence-bounded SEO and AEO research loop with source freshness and claim-safety gates.",
+      "technologies": [
+        "TypeScript",
+        "Node.js",
+        "SEO",
+        "AEO"
+      ],
+      "title": "Marketing Autoresearch",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "messy-monorepo",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Messy Monorepo",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "mixed-monorepo-turborepo",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Mixed Monorepo Turborepo",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "paperwhite-web",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Paperwhite Web",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "participant-dedup",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Participant Dedup",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built reviewer-controlled duplicate matching and audit-trail behavior inside a spreadsheet sidebar.",
+        "Kept participant data out of the repository and large-sheet matching in an owned backend."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "participant-deduplication",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "review-workflow",
+      "summary": "Google Sheets review workflow for fuzzy duplicate detection and confirmed atomic cleanup.",
+      "technologies": [
+        "TypeScript",
+        "Google Apps Script",
+        "Google Sheets",
+        "Railway"
+      ],
+      "title": "Participant Deduplication",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "pattern-atlas",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Pattern Atlas",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "pixel-art-workbench",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Pixel Art Workbench",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "playlist-appender",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Playlist Appender",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built a manifest-aware setup engine with explicit targets, dry-run/apply boundaries, and no-overwrite behavior.",
+        "Kept public and private provenance separate across supported agent hosts."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "jakyeamos-agentic-setup",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Public repository: jakyeamos-agentic-setup."
+      ],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "public",
+      "summary": "Vendor-neutral workbench packaging context management, workflow routing, safety guards, and evaluation evidence.",
+      "technologies": [
+        "Python",
+        "shell",
+        "agent configuration",
+        "JSON"
+      ],
+      "title": "Portable Agentic Workbench",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current"
+      ],
+      "id": "portfolio",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "project-history",
+      "summary": "Personal portfolio site with project-truth sync and current-work surfaces.",
+      "technologies": [
+        "web",
+        "content systems"
+      ],
+      "title": "Portfolio",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "pre-cr-suite-lsp",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Pre Cr Suite Lsp",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built a TypeScript monorepo with an LSP for VS Code, Neovim, and headless workflows.",
+        "Kept coverage parsing, changed-line evaluation, and protocol contracts in a shared core package."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "pre-cr-suite",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "active",
+      "summary": "Coverage-first pre-PR readiness tooling with shared behavior across editor clients and a headless CLI.",
+      "technologies": [
+        "TypeScript",
+        "LSP",
+        "VS Code",
+        "Neovim"
+      ],
+      "title": "Pre-CR Suite",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built a Tauri and React/TypeScript desktop surface with Rust and SQLite persistence.",
+        "Kept repository refresh and provider boundaries read-only and audited blocked actions."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "pronto",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Public v1; preparation and release surfaces are previews rather than claims of completed pushes or releases."
+      ],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "public-v1",
+      "summary": "Local-first portfolio command center for repository discovery, quality evidence, and release preparation previews.",
+      "technologies": [
+        "Tauri",
+        "React",
+        "TypeScript",
+        "Rust",
+        "SQLite"
+      ],
+      "title": "Pronto",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "python-backend-fastapi-template",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Python Backend Fastapi Template",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "quality-lens",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Quality Lens",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built a local-first CLI and MCP server for normalized, evidence-backed findings.",
+        "Kept source edits and commits outside the tool so people and agents review evidence before acting."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "quality-runner",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Shipped as a CLI and MCP server with versioned quality-runner artifacts."
+      ],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "read-only",
+      "summary": "Evidence-based quality orchestrator that compiles standards, detects quality gates, and writes reviewable findings and plans.",
+      "technologies": [
+        "Python",
+        "CLI",
+        "MCP",
+        "SQLite"
+      ],
+      "title": "Quality Runner",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "quality-setup",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Quality Setup",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "readiness-inspector",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Readiness Inspector",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "remediation-canvas",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Remediation Canvas",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built photo analysis and visualization paths using Claude vision and fal.ai image transformation services.",
+        "Implemented authenticated uploads, model selection, persisted project views, and specialist-agent coordination."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "remodelvision",
+      "kind": "project",
+      "organization": "RemodelVision",
+      "outcomes": [
+        "Core analysis and visualization paths work; full save flow and additional specialist agents remain incomplete."
+      ],
+      "reviewState": "approved",
+      "role": "Lead Engineer",
+      "status": "working-build",
+      "summary": "AI remodeling visualization and rough-cost-estimation workflow.",
+      "technologies": [
+        "Next.js",
+        "TypeScript",
+        "Supabase",
+        "PostgreSQL",
+        "Prisma",
+        "Clerk",
+        "Claude",
+        "fal.ai"
+      ],
+      "title": "RemodelVision",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Published a PyPI package that validates research packets and emits auditable prompt bundles.",
+        "Added domain-aware technical, music, and basketball writing support."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "research-domain-writing",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Published on PyPI as research-domain-writing."
+      ],
+      "reviewState": "approved",
+      "role": "Author",
+      "status": "published",
+      "summary": "Research-grounded writing harness with structured evidence limits and confidence values.",
+      "technologies": [
+        "Python",
+        "PyPI",
+        "JSON Schema",
+        "agent tooling"
+      ],
+      "title": "Research Domain Writing",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "review-attention-map",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Review Attention Map",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "review-sandbox",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Review Sandbox",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "rte-transferable-signals",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "RTE Transferable Signals",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "rule-lab",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Rule Lab",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "signal-lab",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Signal Lab",
+      "visibility": "public"
+    },
+    {
+      "confidence": "medium",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Project history",
+        "start": null
+      },
+      "evidence": [
+        "cv-current",
+        "article-digest-current"
+      ],
+      "id": "soundscape-app",
+      "kind": "project",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Builder",
+      "status": "project-history",
+      "summary": "Full-stack music social platform.",
+      "technologies": [
+        "Next.js",
+        "tRPC",
+        "Prisma",
+        "Expo"
+      ],
+      "title": "Soundscape App",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "steward",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Steward",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "structural-diff",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Structural Diff",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "surface-flow",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Surface Flow",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built the agency wiki, cited hybrid retrieval, process-intelligence reports, and specialist human-review gates.",
+        "Kept no-source refusal and public-safe status boundaries explicit."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "tenure",
+      "kind": "project",
+      "organization": "Tenure Systems",
+      "outcomes": [
+        "LaunchNY cohort venture; v1.1 shipped and pilot-ready; pre-pilot hardening remains underway."
+      ],
+      "reviewState": "approved",
+      "role": "Lead Engineer",
+      "status": "pilot-ready",
+      "summary": "Organizational-intelligence platform that turns tacit knowledge into reviewed SOPs, searchable institutional memory, and operational reports.",
+      "technologies": [
+        "Next.js",
+        "React",
+        "TypeScript",
+        "Supabase",
+        "PostgreSQL",
+        "pgvector",
+        "Inngest",
+        "Playwright",
+        "Vitest"
+      ],
+      "title": "Tenure",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built a published npm CLI that enforces recoverable repository state, explicit spec intent, protected tests, and deterministic quality gates.",
+        "Versioned governance state in a .terrace contract and scaffolds agent configuration when absent."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "terrace",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [
+        "Published as @jakyeamos33/terrace."
+      ],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "published",
+      "summary": "Spec-driven, test-governed workflow CLI for AI-assisted development.",
+      "technologies": [
+        "Node.js",
+        "TypeScript",
+        "npm",
+        "CLI",
+        "CI"
+      ],
+      "title": "Terrace",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "test-intent-registry",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Test Intent Registry",
+      "visibility": "public"
+    },
+    {
+      "confidence": "high",
+      "contributions": [
+        "Built an MCP stdio server that turns scattered instructions, rules, prompts, and evidence into task-specific packets.",
+        "Added repeatable workflow execution, skill harvesting, and confidence-scored recommendations."
+      ],
+      "dates": {
+        "end": null,
+        "label": "Current",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "current-public-artifacts"
+      ],
+      "id": "tmcp",
+      "kind": "tooling",
+      "organization": "Jakye Amos",
+      "outcomes": [],
+      "reviewState": "approved",
+      "role": "Creator",
+      "status": "active",
+      "summary": "Portable skill-packet workflow system for MCP agents.",
+      "technologies": [
+        "Node.js",
+        "MCP",
+        "TypeScript"
+      ],
+      "title": "TMCP",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "weak-tests-ui",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Weak Tests Ui",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "womens-stats",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Womens Stats",
+      "visibility": "public"
+    },
+    {
+      "confidence": "pending",
+      "contributions": [],
+      "dates": {
+        "end": null,
+        "label": "Date to confirm",
+        "start": null
+      },
+      "evidence": [
+        "article-digest-current",
+        "cv-current"
+      ],
+      "id": "workflow-gateboard",
+      "kind": "project",
+      "organization": null,
+      "outcomes": [],
+      "reviewState": "pending",
+      "role": null,
+      "status": "pending-confirmation",
+      "summary": "Source item found in the current CV or article digest; description pending review.",
+      "technologies": [],
+      "title": "Workflow Gateboard",
+      "visibility": "public"
+    }
+  ],
+  "evidenceNotes": {
+    "excluded": [],
+    "pending": [
+      "Research position with Professor Datta: role or deliverables pending confirmation.",
+      "SDLE research with Roger French: role or deliverables pending confirmation.",
+      "Agent Router: role or deliverables pending confirmation.",
+      "Amazon: role or deliverables pending confirmation.",
+      "Attentiond: role or deliverables pending confirmation.",
+      "Automation Flight Recorder: role or deliverables pending confirmation.",
+      "Backend Heavy Service: role or deliverables pending confirmation.",
+      "Bballedu: role or deliverables pending confirmation.",
+      "Behavior Coverage Atlas: role or deliverables pending confirmation.",
+      "BIP Console: role or deliverables pending confirmation.",
+      "Browser Control: role or deliverables pending confirmation.",
+      "Cap Fit Builder: role or deliverables pending confirmation.",
+      "Career Ops: role or deliverables pending confirmation.",
+      "Change Integration Simulator: role or deliverables pending confirmation.",
+      "Change Radius: role or deliverables pending confirmation.",
+      "Ci Incident Router: role or deliverables pending confirmation.",
+      "Claude Config: role or deliverables pending confirmation.",
+      "Clean Small App: role or deliverables pending confirmation.",
+      "CLFE: role or deliverables pending confirmation.",
+      "Codex: role or deliverables pending confirmation.",
+      "Contract Watch: role or deliverables pending confirmation.",
+      "Daily Front Page: role or deliverables pending confirmation.",
+      "Debug Trail: role or deliverables pending confirmation.",
+      "Deepr (a16z portfolio): role or deliverables pending confirmation.",
+      "Deletion Proof Workbench: role or deliverables pending confirmation.",
+      "Dotfiles: role or deliverables pending confirmation.",
+      "Editors Desk Newsletter: role or deliverables pending confirmation.",
+      "Evidence Replay: role or deliverables pending confirmation.",
+      "Failure Capsule: role or deliverables pending confirmation.",
+      "Fleet Radar: role or deliverables pending confirmation.",
+      "Gmail Mcp Bridge: role or deliverables pending confirmation.",
+      "Intentionally Messy Gildedrose: role or deliverables pending confirmation.",
+      "Jakye Skill Family: role or deliverables pending confirmation.",
+      "Jakyeamos Agent Skills: role or deliverables pending confirmation.",
+      "Jakyeamos Profile: role or deliverables pending confirmation.",
+      "Js Ts Nextjs Saas Starter: role or deliverables pending confirmation.",
+      "LaxDS: role or deliverables pending confirmation.",
+      "Mac Control: role or deliverables pending confirmation.",
+      "Messy Monorepo: role or deliverables pending confirmation.",
+      "Mixed Monorepo Turborepo: role or deliverables pending confirmation.",
+      "Paperwhite Web: role or deliverables pending confirmation.",
+      "Participant Dedup: role or deliverables pending confirmation.",
+      "Pattern Atlas: role or deliverables pending confirmation.",
+      "Pixel Art Workbench: role or deliverables pending confirmation.",
+      "Playlist Appender: role or deliverables pending confirmation.",
+      "Pre Cr Suite Lsp: role or deliverables pending confirmation.",
+      "Python Backend Fastapi Template: role or deliverables pending confirmation.",
+      "Quality Lens: role or deliverables pending confirmation.",
+      "Quality Setup: role or deliverables pending confirmation.",
+      "Readiness Inspector: role or deliverables pending confirmation.",
+      "Remediation Canvas: role or deliverables pending confirmation.",
+      "Review Attention Map: role or deliverables pending confirmation.",
+      "Review Sandbox: role or deliverables pending confirmation.",
+      "RTE Transferable Signals: role or deliverables pending confirmation.",
+      "Rule Lab: role or deliverables pending confirmation.",
+      "Signal Lab: role or deliverables pending confirmation.",
+      "Steward: role or deliverables pending confirmation.",
+      "Structural Diff: role or deliverables pending confirmation.",
+      "Surface Flow: role or deliverables pending confirmation.",
+      "Test Intent Registry: role or deliverables pending confirmation.",
+      "Weak Tests Ui: role or deliverables pending confirmation.",
+      "Womens Stats: role or deliverables pending confirmation.",
+      "Workflow Gateboard: role or deliverables pending confirmation."
+    ],
+    "precedence": "Owner confirmation and current public artifacts take precedence over current CV/digest text; older or private sources corroborate but do not silently resolve conflicts.",
+    "publicBoundary": "This book publishes only reviewed public-safe entries. Private source contents, raw reports, email, Drive references, and held work are excluded.",
+    "sourceLabels": [
+      {
+        "id": "cv-current",
+        "label": "Current CV"
+      },
+      {
+        "id": "article-digest-current",
+        "label": "Current article digest"
+      },
+      {
+        "id": "current-public-artifacts",
+        "label": "Current public repository artifacts"
+      },
+      {
+        "id": "user-confirmed-research-aug-2026",
+        "label": "Owner-confirmed August 2026 research scope"
+      }
+    ]
+  },
+  "generatedFrom": {
+    "sourceHash": "bef79617c22c00dacd8cadcff9b729ab7bec18aa9c848583cd58c216e44546aa",
+    "sourceLayer": "data/cv-book"
+  },
+  "profile": {
+    "headline": "Lead Engineer, Forward Automations",
+    "name": "Jakye Amos",
+    "summary": "Lead engineer building applied AI products, agent infrastructure, and evidence-driven developer tooling."
+  },
+  "projectionHash": "d24c16e452114400705934cf4fc91c4957d1d795fad0a2d45784dae500029037",
+  "projectionId": "comprehensive-cv-book",
+  "schemaVersion": 1,
+  "sections": [
+    {
+      "entryIds": [
+        "research-position-professor-datta",
+        "ai-research-roger-french-sdle",
+        "agent-eval-contract",
+        "agent-eval-runtime",
+        "agent-router",
+        "ai-workflow-leverage",
+        "aios",
+        "amazon-sde-internships",
+        "app-developers-and-innovators-club",
+        "attentiond",
+        "automation-flight-recorder",
+        "backend-heavy-service",
+        "bballedu",
+        "behavior-coverage-atlas",
+        "bidcamp",
+        "bip-console",
+        "book",
+        "browser-control",
+        "cap-fit-builder",
+        "career-ops",
+        "case-western-reserve-university",
+        "change-integration-simulator",
+        "change-radius",
+        "chirons-forge",
+        "ci-incident-router",
+        "claude-config",
+        "clean-small-app",
+        "clfe",
+        "codex",
+        "context-compiler-contract",
+        "contract-watch",
+        "court-vision",
+        "courtiq",
+        "crimclock",
+        "cwru-flea-market",
+        "daily-front-page",
+        "debug-trail",
+        "deepr",
+        "deepr-a16z-portfolio",
+        "deletion-proof-workbench",
+        "dispatches-from-cyberspace",
+        "dotfiles",
+        "dsci-proj",
+        "editors-desk-newsletter",
+        "elevated-aperture",
+        "eslint-plugin-anti-slop",
+        "evidence-replay",
+        "failure-capsule",
+        "fantasy",
+        "fleet-radar",
+        "forward-automations",
+        "framework-labs",
+        "gmail-mcp-bridge",
+        "hoopscout",
+        "intentionally-messy-gildedrose",
+        "jakye-skill-family",
+        "jakyeamos-agent-skills",
+        "jakyeamos-profile",
+        "js-ts-nextjs-saas-starter",
+        "laxds",
+        "mac-control",
+        "macctl",
+        "marketing-autoresearch",
+        "messy-monorepo",
+        "mixed-monorepo-turborepo",
+        "paperwhite-web",
+        "participant-dedup",
+        "participant-deduplication",
+        "pattern-atlas",
+        "pixel-art-workbench",
+        "playlist-appender",
+        "jakyeamos-agentic-setup",
+        "portfolio",
+        "pre-cr-suite-lsp",
+        "pre-cr-suite",
+        "pronto",
+        "python-backend-fastapi-template",
+        "quality-lens",
+        "quality-runner",
+        "quality-setup",
+        "readiness-inspector",
+        "remediation-canvas",
+        "remodelvision",
+        "research-domain-writing",
+        "review-attention-map",
+        "review-sandbox",
+        "rte-transferable-signals",
+        "rule-lab",
+        "signal-lab",
+        "soundscape-app",
+        "steward",
+        "structural-diff",
+        "surface-flow",
+        "tenure",
+        "terrace",
+        "test-intent-registry",
+        "tmcp",
+        "weak-tests-ui",
+        "womens-stats",
+        "workflow-gateboard"
+      ],
+      "id": "timeline",
+      "title": "Chronological timeline"
+    },
+    {
+      "entryIds": [
+        "forward-automations",
+        "terrace",
+        "quality-runner",
+        "pre-cr-suite",
+        "tenure",
+        "pronto",
+        "macctl"
+      ],
+      "id": "case-studies",
+      "title": "Selected narrative case studies"
+    },
+    {
+      "entryIds": [
+        "research-position-professor-datta",
+        "ai-research-roger-french-sdle",
+        "agent-eval-contract",
+        "agent-eval-runtime",
+        "agent-router",
+        "ai-workflow-leverage",
+        "aios",
+        "amazon-sde-internships",
+        "app-developers-and-innovators-club",
+        "attentiond",
+        "automation-flight-recorder",
+        "backend-heavy-service",
+        "bballedu",
+        "behavior-coverage-atlas",
+        "bidcamp",
+        "bip-console",
+        "book",
+        "browser-control",
+        "cap-fit-builder",
+        "career-ops",
+        "case-western-reserve-university",
+        "change-integration-simulator",
+        "change-radius",
+        "chirons-forge",
+        "ci-incident-router",
+        "claude-config",
+        "clean-small-app",
+        "clfe",
+        "codex",
+        "context-compiler-contract",
+        "contract-watch",
+        "court-vision",
+        "courtiq",
+        "crimclock",
+        "cwru-flea-market",
+        "daily-front-page",
+        "debug-trail",
+        "deepr",
+        "deepr-a16z-portfolio",
+        "deletion-proof-workbench",
+        "dispatches-from-cyberspace",
+        "dotfiles",
+        "dsci-proj",
+        "editors-desk-newsletter",
+        "elevated-aperture",
+        "eslint-plugin-anti-slop",
+        "evidence-replay",
+        "failure-capsule",
+        "fantasy",
+        "fleet-radar",
+        "forward-automations",
+        "framework-labs",
+        "gmail-mcp-bridge",
+        "hoopscout",
+        "intentionally-messy-gildedrose",
+        "jakye-skill-family",
+        "jakyeamos-agent-skills",
+        "jakyeamos-profile",
+        "js-ts-nextjs-saas-starter",
+        "laxds",
+        "mac-control",
+        "macctl",
+        "marketing-autoresearch",
+        "messy-monorepo",
+        "mixed-monorepo-turborepo",
+        "paperwhite-web",
+        "participant-dedup",
+        "participant-deduplication",
+        "pattern-atlas",
+        "pixel-art-workbench",
+        "playlist-appender",
+        "jakyeamos-agentic-setup",
+        "portfolio",
+        "pre-cr-suite-lsp",
+        "pre-cr-suite",
+        "pronto",
+        "python-backend-fastapi-template",
+        "quality-lens",
+        "quality-runner",
+        "quality-setup",
+        "readiness-inspector",
+        "remediation-canvas",
+        "remodelvision",
+        "research-domain-writing",
+        "review-attention-map",
+        "review-sandbox",
+        "rte-transferable-signals",
+        "rule-lab",
+        "signal-lab",
+        "soundscape-app",
+        "steward",
+        "structural-diff",
+        "surface-flow",
+        "tenure",
+        "terrace",
+        "test-intent-registry",
+        "tmcp",
+        "weak-tests-ui",
+        "womens-stats",
+        "workflow-gateboard"
+      ],
+      "id": "project-index",
+      "title": "Complete searchable project and work index"
+    },
+    {
+      "entryIds": [
+        "research-position-professor-datta",
+        "ai-research-roger-french-sdle",
+        "book",
+        "case-western-reserve-university",
+        "dispatches-from-cyberspace"
+      ],
+      "id": "research-labs",
+      "title": "Research, labs, education, and writing"
+    },
+    {
+      "entryIds": [
+        "agent-eval-contract",
+        "aios",
+        "context-compiler-contract",
+        "eslint-plugin-anti-slop",
+        "macctl",
+        "jakyeamos-agentic-setup",
+        "pre-cr-suite",
+        "quality-runner",
+        "research-domain-writing",
+        "terrace",
+        "tmcp"
+      ],
+      "id": "open-source-tooling",
+      "title": "Open-source packages and developer tooling"
+    },
+    {
+      "entryIds": [],
+      "id": "evidence-notes",
+      "title": "Public-safe appendix and evidence notes"
+    }
+  ]
+}

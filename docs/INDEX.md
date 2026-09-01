@@ -11,6 +11,7 @@ full map see [../INDEX.md](../INDEX.md).
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Understanding how the pipeline/scripts fit together |
 | [SCRIPTS.md](SCRIPTS.md) | Full reference for every `.mjs` script and flags |
 | [CV_REFRESH.md](CV_REFRESH.md) | Weekly report-only project and evidence freshness scan |
+| [CV_BOOK.md](CV_BOOK.md) | Evidence-backed public CV book source layer, refresh, review, projection, and PDF |
 | [FAQ.md](FAQ.md) | Common user questions / troubleshooting |
 | [SUPPORTED_CLIS.md](SUPPORTED_CLIS.md) | Which CLIs run career-ops (Claude Code, OpenCode, etc.) |
 | [SUPPORTED_JOB_BOARDS.md](SUPPORTED_JOB_BOARDS.md) | Which job boards the scanner covers |
