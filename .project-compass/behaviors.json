@@ -1,0 +1,41 @@
+{
+  "schema": "compass-behavior-inventory/v1",
+  "behaviors": [
+    {
+      "id": "evidence-ranked-queue",
+      "title": "Combine discovery, current liveness and evidence-backed fit into a private next-action queue",
+      "spec_ref": "README.md",
+      "authority": "accepted"
+    },
+    {
+      "id": "claim-safe-materials",
+      "title": "Bind resume and application artifacts to explicit source proof and supported formats",
+      "spec_ref": "README.md",
+      "authority": "accepted"
+    },
+    {
+      "id": "explicit-submission-authority",
+      "title": "Block submission without explicit policy, eligible adapter and resolved required answers",
+      "spec_ref": "README.md",
+      "authority": "accepted"
+    },
+    {
+      "id": "truthful-human-handoff",
+      "title": "Keep prepared, question-blocked and timeout states distinct from confirmed submission",
+      "spec_ref": "README.md",
+      "authority": "accepted"
+    },
+    {
+      "id": "reviewable-outreach",
+      "title": "Keep post-application outreach evidence, drafting and delivery status distinct",
+      "spec_ref": "README.md",
+      "authority": "accepted"
+    },
+    {
+      "id": "private-queue-projection",
+      "title": "Project actionable queue state without implicit submission or unknown-state success",
+      "spec_ref": "README.md",
+      "authority": "accepted"
+    }
+  ]
+}

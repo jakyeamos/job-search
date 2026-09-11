@@ -1,0 +1,29 @@
+{
+  "schema_version": "change-surface-matrix/v1",
+  "subject": {
+    "kind": "repository",
+    "id": "career-ops"
+  },
+  "owner": "repository-owner",
+  "last_reviewed": "2026-09-11",
+  "surfaces": [
+    {
+      "id": "source-association",
+      "scope": "local",
+      "path": "README.md; .project-compass/**; source, tests and distribution paths declared by development.json",
+      "owner": "repository-owner",
+      "condition": "Intent, source ownership or proof associations change.",
+      "operations": [
+        "add",
+        "change",
+        "remove"
+      ],
+      "validation": [
+        "Review canonical source constraints and exact affected local oracles.",
+        "Run source-bound Compass completion and independent authoritative QR when enrolled; preserve live and installed proof gaps."
+      ],
+      "status": "applicable"
+    }
+  ],
+  "unresolved_surfaces": []
+}
