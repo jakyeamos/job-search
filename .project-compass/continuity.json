@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "revision": 2,
+  "commitments": [
+    {
+      "id": "bootstrap-boundary",
+      "kind": "constraint",
+      "statement": "Only .project-compass/ may be changed by this bootstrap; preserve unrelated dirty work and active application ownership.",
+      "status": "active",
+      "source": {
+        "ref": "conversation:2026-08-02-project-compass-fleet-bootstrap",
+        "note": "User-authorized scope.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      }
+    },
+    {
+      "id": "human-controlled-external-actions",
+      "kind": "constraint",
+      "statement": "Application submission and outreach sending remain human-controlled; provider-generated or unauthenticated evidence cannot promote a role or trigger external contact.",
+      "status": "active",
+      "source": {
+        "ref": "AGENTS.md",
+        "note": "Career Ops safety boundary.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      }
+    },
+    {
+      "id": "current-canonical-port",
+      "kind": "constraint",
+      "statement": "Port only source-supported Compass metadata onto canonical dev62557cc; preserve original accepted intent and keep older maturity in historical provenance, without claiming current broad verification. No runtime, user data, updater or external actions.",
+      "status": "active",
+      "source": {
+        "ref": "conversation:2026-09-11-career-ops-current-source-port",
+        "note": "Parent delegated current-source port under user-authorized fleet bootstrap.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      }
+    }
+  ],
+  "reconciliations": [],
+  "updated_at": "2026-09-11T15:15:02.486061Z"
+}
