@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "revision": 2,
+  "project": {
+    "name": "career-ops",
+    "identity": "A human-in-the-loop job search command center that turns official postings into evidence-bound fit evaluations, tailored materials, tracker records, and draft-only outreach.",
+    "audience": "Job seekers who want a governed, evidence-backed application workflow rather than spray-and-pray automation.",
+    "core_loop": "Resolve an official posting, evaluate fit against evidence, create tailored PDFs and application materials, update the canonical tracker, and prepare outreach drafts for human review.",
+    "north_star": "High-fit opportunities become clear and actionable while unsupported applications, provider-generated noise, and unsent external actions remain out of the workflow.",
+    "not_this": [
+      "A bulk auto-apply bot",
+      "A source of truth based on provider newsletters or stale intermediary links",
+      "An agent that submits applications or sends outreach without human control"
+    ]
+  },
+  "targets": {
+    "mvp": {
+      "definition": "An official posting can be resolved, evaluated, tailored into reviewed application artifacts, recorded in the canonical tracker, and accompanied by a Gmail draft without submission or sending."
+    },
+    "complete_product": {
+      "definition": "Career Ops reliably manages the evidence-bound lifecycle from official posting discovery through evaluation, tailored materials, tracker reconciliation, draft-only outreach, and human-controlled submission across supported providers."
+    }
+  },
+  "pillars": [
+    {
+      "id": "evidence-bound-evaluation",
+      "name": "Evidence-bound evaluation",
+      "outcomes": [
+        {
+          "id": "verified-fit-decision",
+          "name": "A role is promoted only when its official source and fit evidence meet the documented threshold, with unknowns preserved.",
+          "targets": [
+            "mvp",
+            "complete_product"
+          ],
+          "maturity": 25,
+          "confidence": "medium",
+          "layers": {
+            "intended": "The user can tell why a role is a fit and which claims remain unresolved.",
+            "planned": "The product documents official-posting resolution, evaluation, tracker, and artifact stages.",
+            "implemented": "Current canonical source contains local resume-lane and copy-receipt primitives. This port does not establish the full workflow on this older canonical branch.",
+            "verified": "Only synthetic resume-lane and candidate-copy fixtures are verified. No full end-to-end workflow, factual review, live provider, sending, submission or tracker synchronization is established."
+          },
+          "evidence": [
+            {
+              "ref": "README.md",
+              "note": "Defines the full job-search command-center lifecycle and human-in-loop boundary.",
+              "observed_at": "2026-09-11T15:15:02.486061Z"
+            },
+            {
+              "ref": "AGENTS.md",
+              "note": "Defines product purpose, evidence rules, and controlled external actions.",
+              "observed_at": "2026-09-11T15:15:02.486061Z"
+            }
+          ],
+          "blockers": [
+            {
+              "kind": "verification",
+              "summary": "Provider-native submission and live recruiter response remain human-controlled and are not product verification claims."
+            },
+            {
+              "kind": "verification",
+              "summary": "The six broad accepted behavior IDs remain unbound; canonical dev lacks five prior oracle files and application-handoff.mjs. Maturity25 denotes existing foundations/contracts only."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "safe-application-projection",
+      "name": "Safe application projection",
+      "outcomes": [
+        {
+          "id": "reviewed-materials-and-drafts",
+          "name": "Verified role decisions project into tailored materials, canonical tracker records, and draft-only outreach without silently sending or submitting.",
+          "targets": [
+            "complete_product"
+          ],
+          "maturity": 25,
+          "confidence": "medium",
+          "layers": {
+            "intended": "Application work remains useful, reversible, and auditable until the human takes the final external action.",
+            "planned": "The project separates tracker reconciliation, PDF artifacts, Gmail drafts, and submission boundaries.",
+            "implemented": "Current canonical source contains local resume-lane and copy-receipt primitives. This port does not establish the full workflow on this older canonical branch.",
+            "verified": "Only synthetic resume-lane and candidate-copy fixtures are verified. No full end-to-end workflow, factual review, live provider, sending, submission or tracker synchronization is established."
+          },
+          "evidence": [
+            {
+              "ref": "README.md",
+              "note": "Describes tailored artifacts, tracker state, and draft-only outreach.",
+              "observed_at": "2026-09-11T15:15:02.486061Z"
+            },
+            {
+              "ref": "AGENTS.md",
+              "note": "Separates prepared work from human-controlled submission and sending.",
+              "observed_at": "2026-09-11T15:15:02.486061Z"
+            }
+          ],
+          "blockers": [
+            {
+              "kind": "external",
+              "summary": "Human review, provider authentication, and provider-native application state remain required for external completion."
+            },
+            {
+              "kind": "verification",
+              "summary": "The six broad accepted behavior IDs remain unbound; canonical dev lacks five prior oracle files and application-handoff.mjs. Maturity25 denotes existing foundations/contracts only."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "source_layers": {
+    "intended": [
+      {
+        "ref": "AGENTS.md",
+        "note": "Product purpose and human-controlled boundary.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      }
+    ],
+    "planned": [
+      {
+        "ref": "README.md",
+        "note": "Documented lifecycle and safety constraints.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      }
+    ],
+    "implemented": [
+      {
+        "ref": "README.md",
+        "note": "Current command-center workflows.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      }
+    ],
+    "verified": [
+      {
+        "ref": "tests/application-humanizer.test.mjs",
+        "note": "Synthetic token preservation, exact-copy receipt tampering and dash-style assertions only; no claim truth or actual Humanizer execution.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      },
+      {
+        "ref": "tests/resume-contract.test.mjs",
+        "note": "Temporary-root lane selection, formats, manifest fields and missing-lane rejection only; auditStatus is assigned, not factual auditing.",
+        "observed_at": "2026-09-11T15:15:02.486061Z"
+      }
+    ]
+  },
+  "drift": [
+    {
+      "kind": "verification-gap",
+      "summary": "Prepared application artifacts and drafts are implemented locally, while provider-native submission, sending, and recruiter response remain outside the verified product boundary.",
+      "status": "open",
+      "observed_at": "2026-09-11T15:15:02.486061Z",
+      "evidence": [
+        {
+          "ref": "AGENTS.md",
+          "note": "Documents the human-controlled external-action boundary.",
+          "observed_at": "2026-09-11T15:15:02.486061Z"
+        }
+      ]
+    },
+    {
+      "kind": "verification-gap",
+      "summary": "Canonical dev registry referenced absent contract.json. Current root reconstructed from prior 2a0a6d0 intent with current AGENTS/DATA_CONTRACT sources. Prior maturity75/50 preserved only in external historical provenance; current maturity25 follows foundations/contracts semantics. This is metadata port, not merge of newer source history.",
+      "status": "open",
+      "observed_at": "2026-09-11T15:15:02.486061Z",
+      "evidence": [
+        {
+          "ref": "AGENTS.md",
+          "note": "Current human review and protected data ownership requirements.",
+          "observed_at": "2026-09-11T15:15:02.486061Z"
+        }
+      ]
+    }
+  ],
+  "updated_at": "2026-09-11T15:15:02.486061Z"
+}

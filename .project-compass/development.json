@@ -1,0 +1,124 @@
+{
+  "schema": "compass-development/v1",
+  "revision": 3,
+  "inventory": {
+    "source": "git-tracked",
+    "include": [
+      "**"
+    ],
+    "exclude": [],
+    "behavior_ref": ".project-compass/behaviors.json"
+  },
+  "bindings": [
+    {
+      "id": "resume-lane-fixtures",
+      "compass_id": "project",
+      "authority": "accepted",
+      "paths": [
+        "resume-contract.mjs",
+        "tests/resume-contract.test.mjs",
+        ".project-compass/contract.json",
+        ".project-compass/continuity.json",
+        ".project-compass/development.json",
+        ".project-compass/behaviors.json"
+      ],
+      "outcomes": [
+        "reviewed-materials-and-drafts"
+      ],
+      "references": [
+        "AGENTS.md",
+        "DATA_CONTRACT.md"
+      ],
+      "dependencies": [
+        "package.json",
+        "pnpm-lock.yaml",
+        ".project-compass/compasses.json"
+      ],
+      "constraints": [
+        "Preserve human review before Submit, Send or Apply; a copy receipt does not confer external action authority.",
+        "Preserve DATA_CONTRACT User Layer ownership and locally customized system files; these fixtures do not verify updater safety.",
+        "Do not infer factual accuracy, actual Humanizer execution or human approval from protected-token equality or hash identity.",
+        "Do not infer rendered PDF quality or factual audit from lane selection or assigned auditStatus fields."
+      ],
+      "proof": [
+        {
+          "id": "resume-lane-fixtures-oracle",
+          "receipt": ".project-compass/evidence/resume-lane-fixtures.json",
+          "command": [
+            "node",
+            "--test",
+            "tests/resume-contract.test.mjs"
+          ],
+          "oracle_ref": "tests/resume-contract.test.mjs",
+          "behavior_ids": [
+            "fixture-resume-lane-contract"
+          ]
+        }
+      ],
+      "behavior_ids": [
+        "fixture-resume-lane-contract"
+      ],
+      "handoff_review": "Narrow current-source fixture association only. Original six broad accepted requirements remain unbound. All remaining tracked source, docs, configuration and assets remain visible inventory gaps; this port does not imply whole-repository coverage.",
+      "decision_id": "current-source-fixture-association"
+    },
+    {
+      "id": "copy-receipt-fixtures",
+      "compass_id": "project",
+      "authority": "accepted",
+      "paths": [
+        "apply/application-humanizer.mjs",
+        "tests/application-humanizer.test.mjs",
+        ".project-compass/contract.json",
+        ".project-compass/continuity.json",
+        ".project-compass/development.json",
+        ".project-compass/behaviors.json"
+      ],
+      "outcomes": [
+        "reviewed-materials-and-drafts"
+      ],
+      "references": [
+        "AGENTS.md",
+        "DATA_CONTRACT.md"
+      ],
+      "dependencies": [
+        "package.json",
+        "pnpm-lock.yaml",
+        ".project-compass/compasses.json"
+      ],
+      "constraints": [
+        "Preserve human review before Submit, Send or Apply; a copy receipt does not confer external action authority.",
+        "Preserve DATA_CONTRACT User Layer ownership and locally customized system files; these fixtures do not verify updater safety.",
+        "Do not infer factual accuracy, actual Humanizer execution or human approval from protected-token equality or hash identity.",
+        "Do not infer rendered PDF quality or factual audit from lane selection or assigned auditStatus fields."
+      ],
+      "proof": [
+        {
+          "id": "copy-receipt-fixtures-oracle",
+          "receipt": ".project-compass/evidence/copy-receipt-fixtures.json",
+          "command": [
+            "node",
+            "--test",
+            "tests/application-humanizer.test.mjs"
+          ],
+          "oracle_ref": "tests/application-humanizer.test.mjs",
+          "behavior_ids": [
+            "synthetic-copy-receipt-integrity"
+          ]
+        }
+      ],
+      "behavior_ids": [
+        "synthetic-copy-receipt-integrity"
+      ],
+      "handoff_review": "Narrow current-source fixture association only. Original six broad accepted requirements remain unbound. All remaining tracked source, docs, configuration and assets remain visible inventory gaps; this port does not imply whole-repository coverage.",
+      "decision_id": "current-source-fixture-association"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "current-source-fixture-association",
+      "status": "accepted",
+      "source": "DATA_CONTRACT.md",
+      "summary": "Coordinator and independent agent source review on2026-09-11 accepted these narrow existing fixture/spec associations under authorized fleet bootstrap. Current AGENTS/DATA_CONTRACT and exact eleven test assertions reviewed; reviewers did not rerun tests. Six broad accepted requirements remain unbound; no new product purpose or external acceptance inferred."
+    }
+  ]
+}
