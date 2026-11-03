@@ -18,6 +18,7 @@
  *   3. Free API key: https://openrouter.ai
  */
 
+import { launchExternalBrowser } from './external-browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -406,7 +407,7 @@ async function fetchJobPage(url) {
   if (chromium) {
     let browser;
     try {
-      browser = await chromium.launch({ headless: true });
+      browser = await launchExternalBrowser(chromium, { headless: true });
       const page = await browser.newPage();
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       await page.waitForTimeout(2000); // wait for SPA render

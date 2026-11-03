@@ -10,6 +10,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import { discoverPlugins, pluginRoots, pluginStatus } from './plugins/_engine.mjs';
+import { launchExternalBrowser } from './external-browser.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -58,24 +59,21 @@ async function checkPlaywright() {
   } catch {
     return {
       pass: false,
-      label: 'Playwright chromium not installed',
-      fix: 'Run: npx playwright install chromium',
+      label: 'Playwright package not installed',
+      fix: 'Run: pnpm install',
     };
   }
-  // Validate by launching — chromium.executablePath() points at Chrome for Testing
-  // (full binary) but chromium.launch() may use the headless-shell binary, which
-  // lives at a different path and requires a separate install. Launching directly
-  // tests the exact binary the runtime uses and catches stub-installs (directory
-  // present but no binary — just ABOUT + LICENSE files).
+  // Exercise the same sandboxed stable-Chrome launch used for external pages.
+  // A pinned Chromium cache is not evidence that this runtime is available.
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
-    return { pass: true, label: 'Playwright chromium installed' };
-  } catch {
+    browser = await launchExternalBrowser(chromium);
+    return { pass: true, label: 'Sandboxed stable Chrome launches with Playwright' };
+  } catch (error) {
     return {
       pass: false,
-      label: 'Playwright chromium not installed',
-      fix: 'Run: npx playwright install chromium',
+      label: 'Sandboxed stable Chrome could not launch',
+      fix: error.message,
     };
   } finally {
     try { await browser?.close(); } catch { /* ignore */ }

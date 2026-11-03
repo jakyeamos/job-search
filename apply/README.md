@@ -156,6 +156,11 @@ pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --cover
 pnpm exec node apply/application-packets.mjs --queue-id <queue-id> --no-artifacts
 ```
 
+New browser sessions use installed stable Chrome with sandboxing enabled; select
+stable Edge with `--browser msedge`. Launch failure does not fall back to bundled
+Chromium. An explicit `--cdp-endpoint` attaches to the existing process without
+changing or verifying its sandbox settings. See [Browser runtime](../docs/BROWSER_RUNTIME.md).
+
 Statuses are `ready-for-human-review`, `needs-user-input`, `blocked`, and
 `stale`. Login redirects, CAPTCHA/MFA/identity checks, required fields needed
 to continue, missing form evidence, bridge loss, and unsupported flows are
@@ -331,7 +336,7 @@ without retrying. The default observation window is ten minutes; override it wit
 | `--cover-text "..."` | Long-form text for Lever's "Additional information" textarea |
 | `--answers <file.json>` | Per-posting custom answers (see below) |
 | `--profile <path>` | Alternate profile file (default `config/application-profile.json`) |
-| `--browser <channel>` | System browser channel, default `chrome`, with fallback to bundled Chromium |
+| `--browser <channel>` | Installed stable `chrome` (default) or `msedge`; sandbox enabled, no alternate-browser fallback |
 | `--submit` | Request the final submit click; still requires the local policy and all safety gates |
 | `--ledger <path>` | Question-ledger file used for explicit recurring answers |
 | `--human-handoff` | Fill in a visible browser and watch for a human CAPTCHA/Submit action; never clicks Submit |

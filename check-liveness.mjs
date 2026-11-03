@@ -15,6 +15,7 @@
  * Exit code: 0 if all active, 1 if any expired or uncertain
  */
 
+import { launchExternalBrowser } from './external-browser.mjs';
 import { chromium } from 'playwright';
 import { readFile } from 'fs/promises';
 import {
@@ -65,7 +66,7 @@ async function main() {
   let browser = null, page = null, headed = null;
   async function ensureBrowser() {
     if (browser) return;
-    browser = await chromium.launch({ headless: true });
+    browser = await launchExternalBrowser(chromium, { headless: true });
     page = await newLivenessPage(browser);
     headed = noFallback ? null : createHeadedPageProvider(chromium);
   }

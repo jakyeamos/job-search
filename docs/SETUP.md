@@ -58,6 +58,14 @@ Then open your AI CLI in the folder — the same first-run onboarding applies. U
 
 </details>
 
+### External browsing
+
+Install and keep stable Google Chrome updated for job-page extraction, liveness
+checks, and application workflows. `pnpm doctor` checks that Chrome launches with
+sandboxing requested by the shared runtime policy. See
+[Browser runtime](BROWSER_RUNTIME.md) for stable Edge selection, launch failures,
+and existing-session attachment.
+
 ### PDF rendering (one-time)
 
 PDFs are rendered with a headless Chromium. Install it once per machine:

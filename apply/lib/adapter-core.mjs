@@ -13,6 +13,7 @@ import { DEFAULT_LEDGER_PATH, answerTable, isAISafetyQuestion, loadLedger, recor
 import { LEGAL_LABEL_RE } from '../question-visibility.mjs';
 import { projectAccomplishmentAnswerTable } from '../../project-accomplishment-ledger.mjs';
 import { motivationAnswerForItem } from '../motivation-answer.mjs';
+import { launchExternalBrowser } from '../../external-browser.mjs';
 
 const DEFAULT_PROFILE = fileURLToPath(
   new URL('../../config/application-profile.json', import.meta.url),
@@ -310,20 +311,12 @@ export async function loadLedgerAnswers(path, context = {}) {
   ];
 }
 
-/** @param {import('playwright').ChromiumType} chromium @param {{ headless: boolean, channel?: string }} options */
+/** @param {typeof import('playwright').chromium} chromium @param {{ headless?: boolean, channel?: string, cdpEndpoint?: string }} options */
 export async function launchBrowser(chromium, options) {
+  // Explicit attachment preserves the existing process; it does not establish
+  // or alter that browser's sandbox policy. See docs/BROWSER_RUNTIME.md.
   if (options.cdpEndpoint) return chromium.connectOverCDP(options.cdpEndpoint);
-  const requested = options.channel || 'chrome';
-  const channels = [requested, null].filter((value, index, all) => value !== null ? all.indexOf(value) === index : all.indexOf(value) === index);
-  let lastError = null;
-  for (const channel of channels) {
-    try {
-      return await chromium.launch(channel ? { headless: options.headless, channel } : { headless: options.headless });
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError || new Error('unable to launch a browser');
+  return launchExternalBrowser(chromium, { headless: options.headless, channel: options.channel });
 }
 
 /** @param {import('playwright').Browser} browser @param {{ shared?: boolean }} [options] */

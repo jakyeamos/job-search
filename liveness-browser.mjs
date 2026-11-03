@@ -5,6 +5,7 @@
  * Returns the same shape as classifyLiveness: { result, reason }.
  */
 
+import { launchExternalBrowser } from './external-browser.mjs';
 import { classifyLiveness } from './liveness-core.mjs';
 
 const NAVIGATE_TIMEOUT_MS = 15_000;
@@ -319,7 +320,7 @@ export function createHeadedPageProvider(chromium) {
       if (page) return page;
       if (launchFailed) return null;
       try {
-        browser = await chromium.launch({ headless: false });
+        browser = await launchExternalBrowser(chromium, { headless: false });
         const context = await browser.newContext(LIVENESS_CONTEXT_OPTIONS);
         page = await context.newPage();
         return page;

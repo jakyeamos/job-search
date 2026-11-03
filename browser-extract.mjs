@@ -31,6 +31,7 @@
  * realistic-UA context so it isn't instantly bot-walled.
  */
 
+import { launchExternalBrowser } from './external-browser.mjs';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -209,7 +210,7 @@ async function main() {
 
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await launchExternalBrowser(chromium, { headless: true });
     const context = await browser.newContext(LIVENESS_CONTEXT_OPTIONS);
     // Block every request (main navigation, redirect hop, or subresource) to a
     // private/loopback/link-local or non-http(s) host. Guarding only the initial

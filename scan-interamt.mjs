@@ -17,6 +17,7 @@
  *   node scan-interamt.mjs --keyword "Softwareentwickler"
  */
 
+import { launchExternalBrowser } from './external-browser.mjs';
 import { chromium } from 'playwright';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import yaml from 'js-yaml';
@@ -274,7 +275,7 @@ async function main() {
   const dupeSkipped = [];
   const errors = [];
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchExternalBrowser(chromium, { headless: true });
   const context = await browser.newContext({ locale: 'de-DE', timezoneId: 'Europe/Berlin' });
   const page = await context.newPage();
 

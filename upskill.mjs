@@ -22,6 +22,7 @@
  *      node upskill.mjs --self-test
  */
 
+import { launchExternalBrowser } from './external-browser.mjs';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -473,7 +474,7 @@ if (urlTextIdx !== -1 || directUrl) {
       try {
         const secureUrl = await validateUrlSecurity(inputSource);
         const { chromium } = await import('playwright');
-        browser = await chromium.launch({ headless: true });
+        browser = await launchExternalBrowser(chromium, { headless: true });
         const page = await browser.newPage();
 
         await page.route('**/*', async (route) => {

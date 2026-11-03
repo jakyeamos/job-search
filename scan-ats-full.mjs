@@ -30,6 +30,7 @@
  *   node scan-ats-full.mjs --help               # print this usage block and exit
  */
 
+import { launchExternalBrowser } from './external-browser.mjs';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync, unlinkSync } from 'fs';
 import { pathToFileURL } from 'url';
 import { createHash } from 'crypto';
@@ -558,12 +559,12 @@ async function filterLive(offers) {
     ({ checkUrlLiveness, newLivenessPage } = await import('./liveness-browser.mjs'));
   } catch (err) {
     throw new Error(
-      `--liveness requires Playwright with Chromium (run "npx playwright install chromium"): ${err.message}`,
+      `--liveness requires the Playwright package (run "pnpm install") and installed stable Chrome: ${err.message}`,
       { cause: err },
     );
   }
   console.error(`\nVerifying liveness of ${offers.length} match(es) with Playwright (sequential)...`);
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchExternalBrowser(chromium, { headless: true });
   const live = [];
   try {
     const page = await newLivenessPage(browser);
